@@ -381,11 +381,14 @@ export function attachChartEditor(cfg) {
     panel.querySelector('h4 button').addEventListener('click', () => { closePanel(); selectedId = null; syncSelection(); });
   }
   function elLabel(id) {
-    const map = { title: lang === 'es' ? 'Título de la figura' : 'Figure title',
-                  xtitle: lang === 'es' ? 'Título eje X' : 'X axis title',
-                  ytitle: lang === 'es' ? 'Título eje Y' : 'Y axis title',
-                  legend: lang === 'es' ? 'Leyenda' : 'Legend' };
-    return map[id] || id;
+    const es = lang === 'es';
+    const map = { title: es ? 'Título de la figura' : 'Figure title',
+                  xtitle: es ? 'Título eje X' : 'X axis title',
+                  ytitle: es ? 'Título eje Y' : 'Y axis title',
+                  legend: es ? 'Leyenda' : 'Legend' };
+    if (map[id]) return map[id];
+    if (/^grp\d+$/.test(id) || /^set\d+$/.test(id)) return es ? 'Etiqueta de grupo' : 'Group label';
+    return id;
   }
   function row(label) {
     const r = document.createElement('div');

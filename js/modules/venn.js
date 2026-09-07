@@ -5,8 +5,9 @@
 // mano; 5+ → vista tipo UpSet (barras de intersección).
 
 import { state, subscribe } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { loadRealCounts, loadExampleCounts, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -93,8 +94,10 @@ export function render(container) {
   let minSamples = 1;
   let viewMode = 'auto'; // 'auto' | 'venn' | 'upset'
   let openMask = null;    // región seleccionada en la tabla
+  let editor = null;
 
   function paint() {
+    if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
     header.className = 'ql-page-header';
@@ -296,20 +299,33 @@ export function render(container) {
     // ---- gráfico (ancho completo) ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + (useUpset ? t('venn.chartUpset') : t('venn.chartVenn')) + '</h2>' +
-      '<p class="ql-panel-note">' + (useUpset ? t('venn.chartNoteUpset') : t('venn.chartNoteVenn')) + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + (useUpset ? t('venn.chartNoteUpset') : t('venn.chartNoteVenn')) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     if (!useUpset) { chartWrap.style.maxWidth = '620px'; chartWrap.style.margin = '0 auto'; }
     chartPanel.appendChild(chartWrap);
     container.appendChild(chartPanel);
 
+    let chartSvg = null;
     if (groups.length < 2) {
       chartWrap.innerHTML = '<p class="ql-field-help">' + t('venn.need2') + '</p>';
     } else if (useUpset) {
-      drawUpset(chartWrap, groups, byMask, presence, (mask) => { openMask = mask; renderTable(); });
+      chartSvg = drawUpset(chartWrap, groups, byMask, presence, (mask) => { openMask = mask; renderTable(); });
     } else {
-      drawVenn(chartWrap, groups, byMask, (mask) => { openMask = mask; renderTable(); });
+      chartSvg = drawVenn(chartWrap, groups, byMask, (mask) => { openMask = mask; renderTable(); });
+    }
+
+    if (chartSvg) {
+      const vb = chartSvg.viewBox.baseVal;
+      const labelIds = groups.map((_, gi) => ({ id: (useUpset ? 'set' : 'grp') + gi, selector: '[data-ce="' + (useUpset ? 'set' : 'grp') + gi + '"]' }));
+      editor = attachChartEditor({
+        key: 'venn', svg: chartSvg, mount: chartPanel, filename: (useUpset ? 'upset' : 'venn') + '-' + groupCol, lang: getLang(),
+        elements: [
+          { id: 'title', create: { text: useUpset ? t('venn.chartUpset') : t('venn.chartVenn'), x: vb.x + vb.width / 2, y: vb.y + 16, anchor: 'middle', cls: 'ce-title' } },
+          ...labelIds,
+        ],
+        onReset: () => paint(),
+      });
     }
 
     // ---- tabla de regiones ----
@@ -362,7 +378,8 @@ export function render(container) {
   }
 
   paint();
-  return subscribe(paint);
+  const stop = subscribe(paint);
+  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
 }
 
 // ---- construir la matriz taxón × muestra ----
@@ -393,7 +410,8 @@ function buildMatrix(tc, taxonCol, transposed) {
 function drawVenn(host, groups, byMask, onRegion) {
   const layout = VENN_LAYOUTS[groups.length];
   host.innerHTML = '';
-  const svg = svgEl('svg', { class: 'ql-svg', viewBox: layout.vb.join(' '), role: 'img', 'aria-label': t('a11y.chartVenn') });
+  const vb = [layout.vb[0], layout.vb[1] - 34, layout.vb[2], layout.vb[3] + 34];
+  const svg = svgEl('svg', { class: 'ql-svg', viewBox: vb.join(' '), role: 'img', 'aria-label': t('a11y.chartVenn') });
 
   layout.shapes.forEach((sh) => {
     const col = 'var(' + CAT_VARS[sh.ci % CAT_VARS.length] + ')';
@@ -406,10 +424,10 @@ function drawVenn(host, groups, byMask, onRegion) {
   groups.forEach((g, gi) => {
     const at = layout.nameAt[gi];
     if (!at) return;
-    const t = svgEl('text', { x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle', 'font-weight': 700 });
-    t.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
-    t.setAttribute('fill', 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')');
-    svg.appendChild(t);
+    const tx = svgEl('text', { x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle', 'font-weight': 700, 'data-ce': 'grp' + gi });
+    tx.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
+    tx.setAttribute('fill', 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')');
+    svg.appendChild(tx);
   });
 
   // etiquetas de región (recorremos TODAS las máscaras posibles del layout)
@@ -427,6 +445,7 @@ function drawVenn(host, groups, byMask, onRegion) {
   });
 
   host.appendChild(svg);
+  return svg;
 }
 
 // ---- UpSet ----
@@ -447,7 +466,7 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
   const matrixY0 = topH + 28;
   const W = matrixX0 + combos.length * colW + 16;
   const H = matrixY0 + groups.length * rowH + 14;
-  const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t('a11y.chartUpset') });
+  const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 -34 ' + W + ' ' + (H + 34), role: 'img', 'aria-label': t('a11y.chartUpset') });
   svg.style.width = Math.max(W, 680) + 'px';
   svg.style.maxWidth = 'none';
 
@@ -475,7 +494,7 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
     const y = matrixY0 + gi * rowH;
     const w = (setSizes[gi] / maxSet) * barMaxW;
     svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')', rx: 2 }));
-    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label' });
+    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', 'data-ce': 'set' + gi });
     lbl.textContent = (g.length > 20 ? g.slice(0, 19) + '…' : g) + ' · ' + setSizes[gi];
     svg.appendChild(lbl);
   });
@@ -500,4 +519,5 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
     note.textContent = t('venn.hiddenNote', { max: MAX_COMBOS, hidden });
     host.appendChild(note);
   }
+  return svg;
 }
