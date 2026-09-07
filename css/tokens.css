@@ -1,0 +1,127 @@
+/*
+  QiimeLab — design tokens
+  Paleta compartida por todos los módulos. Basada en el par divergente
+  azul/rojo (identidad = enriquecido/reducido) más una escala categórica
+  de 8 tonos para los taxones del barplot. No cambies esto módulo a
+  módulo: si un color no está aquí, no se usa en la app.
+*/
+
+:root {
+  color-scheme: light;
+
+  /* superficies */
+  --surface: #fcfcfb;
+  --page: #f7f7f5;
+  --border: rgba(11, 11, 11, 0.10);
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 8px 24px rgba(11, 11, 11, 0.05);
+
+  /* tinta */
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+
+  /* acento de marca (= slot categórico 1) */
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+
+  /* par divergente: enriquecido / reducido */
+  --enriched: #e34948;
+  --depleted: #2a78d6;
+  --neutral: #a6a49c;
+
+  /* estado */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+
+  /* paleta categórica (orden fijo, no ciclar) — para barplots taxonómicos */
+  --cat-1: #2a78d6; /* azul */
+  --cat-2: #eb6834; /* naranja */
+  --cat-3: #1baf7a; /* aguamarina */
+  --cat-4: #eda100; /* amarillo */
+  --cat-5: #e87ba4; /* magenta */
+  --cat-6: #008300; /* verde */
+  --cat-7: #4a3aa7; /* violeta */
+  --cat-8: #a6a49c; /* "otros" — siempre gris, nunca un 9º tono */
+
+  /* tipografía */
+  --font-display: "IBM Plex Serif", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --page: #0d0d0d;
+    --border: rgba(255, 255, 255, 0.10);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+
+    --accent: #3987e5;
+    --accent-ink: #0b0b0b;
+
+    --enriched: #e66767;
+    --depleted: #3987e5;
+    --neutral: #6f6d67;
+
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #e66767;
+
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #c98500;
+    --cat-5: #d55181;
+    --cat-6: #2fbf2f;
+    --cat-7: #9085e9;
+    --cat-8: #6f6d67;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19;
+  --page: #0d0d0d;
+  --border: rgba(255, 255, 255, 0.10);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-muted: #898781;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+
+  --accent: #3987e5;
+  --accent-ink: #0b0b0b;
+
+  --enriched: #e66767;
+  --depleted: #3987e5;
+  --neutral: #6f6d67;
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #e66767;
+
+  --cat-1: #3987e5;
+  --cat-2: #d95926;
+  --cat-3: #199e70;
+  --cat-4: #c98500;
+  --cat-5: #d55181;
+  --cat-6: #2fbf2f;
+  --cat-7: #9085e9;
+  --cat-8: #6f6d67;
+}

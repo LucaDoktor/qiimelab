@@ -1,0 +1,64 @@
+/* QiimeLab — reset y tipografía base */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--page);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 0 0 8px;
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+p { margin: 0 0 12px; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); }
+
+.mono { font-family: var(--font-mono); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+img, svg { max-width: 100%; }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* contenedores anchos con scroll propio: nunca scroll horizontal del body */
+.scroll-x { overflow-x: auto; }
+
+input[type="file"] { display: none; }
+
+input[type="number"],
+input[type="text"],
+input[type="search"],
+select {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  width: 100%;
+}
+
+input[type="range"] { accent-color: var(--accent); }

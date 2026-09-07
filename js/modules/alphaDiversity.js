@@ -1,0 +1,283 @@
+import { state, subscribe } from '../state.js';
+import { kruskalWallis, quartiles, formatP } from '../lib/stats.js';
+import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function render(container) {
+  let metric = null;
+  let groupCol = null;
+
+  function paint() {
+    container.innerHTML = '';
+    const header = document.createElement('header');
+    header.className = 'ql-page-header';
+    header.innerHTML =
+      '<p class="ql-eyebrow">Diversidad dentro de cada muestra</p>' +
+      '<h1 class="ql-page-title">Diversidad alfa</h1>' +
+      '<p class="ql-page-sub">Compara una métrica de diversidad alfa (Shannon, Observed Features, Faith\'s PD…) entre los grupos de tus metadatos, con un test de Kruskal-Wallis.</p>';
+    container.appendChild(header);
+
+    if (!state.alphaDiversity || !state.metadata) {
+      const card = document.createElement('div');
+      card.className = 'ql-card ql-panel';
+      const missing = [];
+      if (!state.alphaDiversity) missing.push('un vector de diversidad alfa (p. ej. <span class="mono">shannon_vector.qza</span>)');
+      if (!state.metadata) missing.push('los metadatos de las muestras, con la columna de grupo');
+      card.innerHTML =
+        '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="9" width="4" height="11"/><rect x="10" y="4" width="4" height="16"/><rect x="16" y="12" width="4" height="8"/></svg>' +
+        '<h3>Faltan datos</h3><p>Necesitas: ' + missing.join(' y ') + '.</p>' +
+        '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+        '<a href="#/cargar" class="ql-btn">Ir a cargar datos</a></div></div>';
+      container.appendChild(card);
+      mountExampleButtons(card.querySelector('.ql-empty'), {
+        real: loadRealCommunityData,
+        synthetic: loadExampleCommunityData,
+      });
+      return;
+    }
+
+    const metrics = Object.keys(state.alphaDiversity.metrics);
+    if (!metric || !metrics.includes(metric)) metric = metrics[0];
+    const groupOptions = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
+    if (!groupCol || !groupOptions.includes(groupCol)) groupCol = groupOptions[0] || null;
+
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    const chartPanel = document.createElement('section');
+    chartPanel.className = 'ql-card ql-panel';
+    chartPanel.innerHTML = '<h2>' + escapeHtml(metric || '') + '</h2><p class="ql-panel-note">Cada punto es una muestra; la caja muestra Q1–mediana–Q3, los bigotes llegan hasta 1.5×RIC.</p>';
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'ql-chartwrap';
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': 'Boxplot de diversidad alfa por grupo' });
+    const tooltip = document.createElement('div');
+    tooltip.className = 'ql-tooltip';
+    chartWrap.appendChild(svg);
+    chartWrap.appendChild(tooltip);
+    chartPanel.appendChild(chartWrap);
+    grid.appendChild(chartPanel);
+
+    const controls = document.createElement('aside');
+    controls.className = 'ql-card ql-panel';
+    controls.innerHTML = '<h2>Controles</h2>';
+
+    if (metrics.length > 1) {
+      const f = document.createElement('div');
+      f.className = 'ql-field';
+      f.innerHTML = '<label>Métrica</label>';
+      const sel = document.createElement('select');
+      metrics.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        if (m === metric) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => { metric = sel.value; paint(); });
+      f.appendChild(sel);
+      controls.appendChild(f);
+    }
+
+    if (groupOptions.length > 0) {
+      const f = document.createElement('div');
+      f.className = 'ql-field';
+      f.innerHTML = '<label>Agrupar por</label>';
+      const sel = document.createElement('select');
+      groupOptions.forEach((g) => {
+        const opt = document.createElement('option');
+        opt.value = g; opt.textContent = g;
+        if (g === groupCol) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => { groupCol = sel.value; paint(); });
+      f.appendChild(sel);
+      controls.appendChild(f);
+    }
+
+    const statsBox = document.createElement('div');
+    statsBox.style.marginTop = '18px';
+    controls.appendChild(statsBox);
+
+    grid.appendChild(controls);
+    container.appendChild(grid);
+
+    // tabla
+    const tableCard = document.createElement('section');
+    tableCard.className = 'ql-card ql-panel';
+    tableCard.style.marginTop = '20px';
+    tableCard.innerHTML = '<h2>Valores por muestra</h2>';
+    container.appendChild(tableCard);
+
+    if (!groupCol) return;
+
+    // ---- construir grupos ----
+    const values = state.alphaDiversity.metrics[metric].values;
+    const metaByKey = {};
+    state.metadata.rows.forEach((r) => { metaByKey[r[state.metadata.sampleIdKey]] = r; });
+
+    const groupNames = [];
+    const groupData = {};
+    const perSampleRows = [];
+    Object.keys(values).forEach((sampleId) => {
+      const meta = metaByKey[sampleId];
+      const g = meta ? meta[groupCol] : undefined;
+      if (g === undefined || g === '') return;
+      if (!groupData[g]) { groupData[g] = []; groupNames.push(g); }
+      groupData[g].push(values[sampleId]);
+      perSampleRows.push({ sampleId, group: g, value: values[sampleId] });
+    });
+    groupNames.sort();
+
+    if (groupNames.length === 0) {
+      statsBox.innerHTML = '<p class="ql-field-help">Ninguna muestra de los metadatos coincide con las muestras de la métrica de diversidad. Revisa que los IDs de muestra coincidan.</p>';
+      return;
+    }
+
+    const kw = groupNames.length >= 2 ? kruskalWallis(groupNames.map((g) => groupData[g])) : null;
+
+    statsBox.innerHTML =
+      '<div class="ql-stats">' +
+      '<div class="ql-stat"><div class="ql-stat-label">Grupos</div><div class="ql-stat-value" style="font-size:20px;">' + groupNames.length + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">Muestras</div><div class="ql-stat-value" style="font-size:20px;">' + perSampleRows.length + '</div></div>' +
+      '</div>' +
+      (kw ? '<div style="margin-top:14px;padding:12px;border-radius:var(--radius-md);background:var(--page);border:1px solid var(--border);">' +
+        '<div style="font-size:11px;color:var(--ink-muted);margin-bottom:4px;">Kruskal-Wallis</div>' +
+        '<div class="mono tabular" style="font-size:13px;">H = ' + kw.H.toFixed(3) + ', df = ' + kw.df + '</div>' +
+        '<div class="mono tabular" style="font-size:13px;">p = ' + formatP(kw.p) + (kw.p < 0.05 ? ' <span class="ql-badge ql-badge-good" style="margin-left:6px;">significativo</span>' : '') + '</div>' +
+        '</div>' +
+        '<p class="ql-field-help">Alternativa no paramétrica a un ANOVA de un factor — no asume normalidad, adecuada para índices de diversidad.</p>'
+        : '<p class="ql-field-help">Con un solo grupo no hay comparación que hacer.</p>');
+
+    const legend = document.createElement('div');
+    legend.className = 'ql-legend';
+    legend.style.marginTop = '14px';
+    legend.style.paddingTop = '14px';
+    legend.style.borderTop = '1px solid var(--border)';
+    legend.innerHTML = groupNames.map((g, i) =>
+      '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(' + CAT_VARS[i % CAT_VARS.length] + ')"></span>' + escapeHtml(String(g)) + ' (n=' + groupData[g].length + ')</span>'
+    ).join('');
+    chartPanel.appendChild(legend);
+
+    // ---- dibujar boxplot ----
+    const marginL = 50, marginR = 20, marginT = 20, marginB = 44;
+    const innerH = 360;
+    const slotW = 140;
+    const W = marginL + marginR + slotW * groupNames.length;
+    const H = marginT + innerH + marginB;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+    const allVals = perSampleRows.map((r) => r.value);
+    const vMin = Math.min(...allVals), vMax = Math.max(...allVals);
+    const pad = (vMax - vMin) * 0.15 || 1;
+    const yMin = vMin - pad, yMax = vMax + pad;
+    function yScale(v) { return marginT + innerH - ((v - yMin) / (yMax - yMin)) * innerH; }
+
+    // gridlines
+    const ticks = 5;
+    for (let i = 0; i <= ticks; i++) {
+      const v = yMin + (i / ticks) * (yMax - yMin);
+      const y = yScale(v);
+      svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+      const t = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+      t.textContent = v.toFixed(2);
+      svg.appendChild(t);
+    }
+    svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerH, class: 'ql-baseline-line' }));
+
+    const rnd = mulberry32(42);
+    groupNames.forEach((g, gi) => {
+      const cx = marginL + slotW * gi + slotW / 2;
+      const vals = groupData[g].slice().sort((a, b) => a - b);
+      const { q1, median, q3 } = quartiles(vals);
+      const iqr = q3 - q1;
+      const loFence = q1 - 1.5 * iqr, hiFence = q3 + 1.5 * iqr;
+      const whiskerLo = Math.min(...vals.filter((v) => v >= loFence));
+      const whiskerHi = Math.max(...vals.filter((v) => v <= hiFence));
+      const colorVar = CAT_VARS[gi % CAT_VARS.length];
+      const boxW = 44;
+
+      // bigotes
+      svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(whiskerLo), y2: yScale(q1), class: 'ql-baseline-line' }));
+      svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(q3), y2: yScale(whiskerHi), class: 'ql-baseline-line' }));
+      svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerLo), y2: yScale(whiskerLo), class: 'ql-baseline-line' }));
+      svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerHi), y2: yScale(whiskerHi), class: 'ql-baseline-line' }));
+
+      // caja
+      svg.appendChild(svgEl('rect', {
+        x: cx - boxW / 2, y: yScale(q3), width: boxW, height: Math.max(1, yScale(q1) - yScale(q3)),
+        fill: 'var(' + colorVar + ')', opacity: 0.18, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.4, rx: 3,
+      }));
+      // mediana
+      svg.appendChild(svgEl('line', { x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.4 }));
+
+      // puntos individuales con jitter
+      vals.forEach((v) => {
+        const jitter = (rnd() - 0.5) * boxW * 0.7;
+        const c = svgEl('circle', { cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', opacity: 0.75, stroke: 'var(--surface)', 'stroke-width': 1 });
+        c.addEventListener('mouseenter', () => {
+          const wrapRect = chartWrap.getBoundingClientRect();
+          const svgRect = svg.getBoundingClientRect();
+          const scaleX = svgRect.width / W, scaleY = svgRect.height / H;
+          tooltip.style.left = ((svgRect.left - wrapRect.left) + (cx + jitter) * scaleX) + 'px';
+          tooltip.style.top = ((svgRect.top - wrapRect.top) + yScale(v) * scaleY) + 'px';
+          tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(String(g)) + '</div><div class="ql-tt-row">' + metric + ': ' + v.toFixed(3) + '</div>';
+          tooltip.classList.add('is-show');
+        });
+        c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+        svg.appendChild(c);
+      });
+
+      const labelT = svgEl('text', { x: cx, y: marginT + innerH + 24, class: 'ql-tick-label', 'text-anchor': 'middle' });
+      labelT.textContent = String(g);
+      svg.appendChild(labelT);
+    });
+
+    const yTitle = svgEl('text', {
+      x: 14, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+      transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')',
+    });
+    yTitle.textContent = metric;
+    svg.appendChild(yTitle);
+
+    // tabla
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    tbl.innerHTML = '<thead><tr><th><button type="button">Muestra</button></th><th><button type="button">' +
+      escapeHtml(groupCol) + '</button></th><th><button type="button">' + escapeHtml(metric) + '</button></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    perSampleRows.sort((a, b) => a.group === b.group ? a.value - b.value : String(a.group).localeCompare(String(b.group)))
+      .forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + escapeHtml(r.sampleId) + '</td><td>' + escapeHtml(String(r.group)) + '</td><td class="ql-num tabular">' + r.value.toFixed(4) + '</td>';
+        tbody.appendChild(tr);
+      });
+    tbl.appendChild(tbody);
+    scrollDiv.appendChild(tbl);
+    tableCard.appendChild(scrollDiv);
+  }
+
+  paint();
+  return subscribe(paint);
+}

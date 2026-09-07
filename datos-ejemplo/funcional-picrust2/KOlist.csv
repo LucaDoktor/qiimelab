@@ -1,0 +1,53 @@
+Functional Module,KO,Gene,Enzyme,EC Number,Specific Substrate,Substrate Category,Functional Role
+Carbohydrate hydrolysis,K01176,amyA,Alpha-amylase,3.2.1.1,Starch / Glycogen,Polysaccharides,Starch hydrolysis
+Carbohydrate hydrolysis,K01198,amyX,Alpha-amylase,3.2.1.1,Starch / Glycogen,Polysaccharides,Starch hydrolysis
+Carbohydrate hydrolysis,K01187,malZ,Alpha-glucosidase,3.2.1.20,Maltooligosaccharides,Polysaccharides,Oligosaccharide hydrolysis
+Carbohydrate hydrolysis,K01190,malQ,4-alpha-glucanotransferase,2.4.1.25,Maltodextrins,Polysaccharides,Starch degradation
+Carbohydrate hydrolysis,K05349,pulA,Pullulanase,3.2.1.41,Pullulan / Starch,Polysaccharides,Debranching enzyme
+Carbohydrate hydrolysis,K01200,glgX,Glycogen debranching enzyme,3.2.1.-,Glycogen,Polysaccharides,Glycogen degradation
+Lactic acid fermentation,K01610,ldh,L-lactate dehydrogenase,1.1.1.27,Pyruvate / L-lactate,Organic acids,L-lactate production
+Lactic acid fermentation,K00016,ldhA,D-lactate dehydrogenase,1.1.1.28,Pyruvate / D-lactate,Organic acids,D-lactate production
+Organic acid utilization,K03778,lldD,L-lactate dehydrogenase (quinone),1.1.2.3,L-lactate,Organic acids,L-lactate oxidation
+Organic acid utilization,K00101,dld,D-lactate dehydrogenase,1.1.1.28,D-lactate,Organic acids,D-lactate oxidation
+Organic acid utilization,K00467,lldP,Lactate permease,-,Lactate,Organic acids,Lactate transport
+Acetate production,K00925,ackA,Acetate kinase,2.7.2.1,Acetyl phosphate,Organic acids,Acetate production (SCFA)
+Acetate production,K01512,pta,Phosphate acetyltransferase,2.3.1.8,Acetyl-CoA,Organic acids,Acetate production (SCFA)
+Organic acid utilization,K00132,acs,Acetyl-CoA synthetase,6.2.1.1,Acetate,Organic acids,Acetate assimilation / activation
+Organic acid utilization,K00625,eutD,Phosphotransacetylase,2.3.1.8,Acetyl-CoA,Organic acids,Acetate metabolism
+Butyrate production,K00929,buk,Butyrate kinase,2.7.2.7,Butyryl phosphate,Organic acids,Butyrate production
+Butyrate production,K00634,ptb,Phosphate butyryltransferase,2.3.1.19,Butyryl-CoA,Organic acids,Butyrate production
+Butyrate production,K01034,atoA,Acetate CoA-transferase subunit A,2.8.3.-,Acetoacetyl-CoA,Organic acids,SCFA metabolism
+Butyrate production,K01035,atoD,Acetate CoA-transferase subunit B,2.8.3.-,Acetoacetyl-CoA,Organic acids,SCFA metabolism
+Butyrate production,K00077,bdhA,D-beta-hydroxybutyrate dehydrogenase,1.1.1.30,Acetoacetate,Organic acids,Butyrate metabolism
+Mixed-acid fermentation,K00656,pflB,Pyruvate formate-lyase,2.3.1.54,Pyruvate,Organic acids,Mixed-acid fermentation
+Mixed-acid fermentation,K00123,fdhF,Formate dehydrogenase H,1.17.1.9,Formate,Organic acids,Formate metabolism
+Propionate production,K01026,pct,Propionate CoA-transferase,2.8.3.1,Propionyl-CoA,Organic acids,Propionate production
+Propionate production,K13923,prpE,Propionyl-CoA synthetase,6.2.1.17,Propionate,Organic acids,Propionate metabolism
+Proteolysis,K01256,prtP,Cell envelope-associated serine proteinase,3.4.21.96,Proteins / Peptides,Proteins,Extracellular proteolysis
+Proteolysis,K01258,prtB,Oligopeptidase B,3.4.21.83,Peptides,Proteins,Peptide degradation
+Proteolysis,K01331,prtS,Subtilisin-like serine protease,3.4.21.62,Proteins,Proteins,Extracellular proteolysis
+Proteolysis,K01362,pepA,Glutamyl aminopeptidase,3.4.11.7,Peptides,Proteins,Peptide degradation
+Urea metabolism,K03187,urtA,Urea ABC transporter substrate-binding protein,-,Urea,Nitrogen compounds,Urea uptake
+Urea metabolism,K01428,ureA,Urease subunit gamma,3.5.1.5,Urea,Nitrogen compounds,Urea hydrolysis
+Urea metabolism,K01429,ureB,Urease subunit beta,3.5.1.5,Urea,Nitrogen compounds,Urea hydrolysis
+Urea metabolism,K01430,ureC,Urease subunit alpha,3.5.1.5,Urea,Nitrogen compounds,Urea hydrolysis
+Urea metabolism,K01432,ureE,Urease accessory protein UreE,-,Urease complex,Nitrogen compounds,Urease maturation
+Urea metabolism,K01434,ureG,Urease accessory protein UreG,-,Urease complex,Nitrogen compounds,Urease maturation
+Nitrogen assimilation,K00261,gdhA,Glutamate dehydrogenase,1.4.1.4,Ammonium,Ammonium,Ammonium assimilation
+Nitrogen assimilation,K01915,glnA,Glutamine synthetase,6.3.1.2,Ammonium,Ammonium,Ammonium assimilation
+Nitrogen assimilation,K00265,gltD,Glutamate synthase small subunit,1.4.1.13,Glutamine,Amino acids,Ammonium assimilation
+Nitrogen assimilation,K00284,gltB,Glutamate synthase large subunit,1.4.1.13,Glutamine,Amino acids,Ammonium assimilation
+Nitrogen assimilation,K01952,asnA,Asparagine synthetase,6.3.1.1,Aspartate / Ammonia,Ammonium,Ammonium assimilation
+Nitrification,K10944,amoA,Ammonia monooxygenase subunit A,1.14.99.39,Ammonia,Reactive nitrogen species,Ammonia oxidation
+Nitrification,K10945,amoB,Ammonia monooxygenase subunit B,1.14.99.39,Ammonia,Reactive nitrogen species,Ammonia oxidation
+Nitrification,K10946,amoC,Ammonia monooxygenase subunit C,1.14.99.39,Ammonia,Reactive nitrogen species,Ammonia oxidation
+Nitrification,K10535,hao,Hydroxylamine dehydrogenase,1.7.2.6,Hydroxylamine,Reactive nitrogen species,Hydroxylamine oxidation
+Denitrification,K00367,narG / nxrA,Respiratory nitrate reductase alpha chain / Nitrite oxidoreductase alpha subunit,1.7.5.1,Nitrate / Nitrite,Reactive nitrogen species,Nitrate reduction or nitrite oxidation
+Denitrification,K00368,nirK,Copper-containing nitrite reductase,1.7.2.1,Nitrite,Reactive nitrogen species,Nitrite reduction (NO formation)
+Denitrification,K04561,norB,Nitric oxide reductase subunit B,1.7.2.5,Nitric oxide,Reactive nitrogen species,Nitric oxide reduction
+DNRA,K03385,nrfA,Cytochrome c nitrite reductase,1.7.2.2,Nitrite,Reactive nitrogen species,Nitrite reduction to ammonium
+DNRA,K15876,nrfH,Cytochrome c nitrite reductase small subunit,1.7.2.2,Nitrite,Reactive nitrogen species,Electron transfer during DNRA
+Anammox,K20935,hzsA,Hydrazine synthase subunit A,1.7.99.8,Nitric oxide + Ammonium,Reactive nitrogen species,Hydrazine synthesis
+Anammox,K20934,hzsB,Hydrazine synthase subunit B,1.7.99.8,Nitric oxide + Ammonium,Reactive nitrogen species,Hydrazine synthesis
+Anammox,K20932,hdh,Hydrazine dehydrogenase,1.7.2.8,Hydrazine,Reactive nitrogen species,Hydrazine oxidation
+Anammox,K20933,hdh,Hydrazine dehydrogenase,1.7.2.8,Hydrazine,Reactive nitrogen species,Hydrazine oxidation

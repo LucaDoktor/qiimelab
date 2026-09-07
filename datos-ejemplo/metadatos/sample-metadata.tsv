@@ -1,0 +1,44 @@
+sample-id	fase	variable_1	variable_2	variable_3	variable_4	tiempo_dias	replicate	grupo
+#q2:types	categorical	categorical	categorical	categorical	categorical	numeric	numeric	categorical
+A-1	basal	no	nivel_0	nivel_0	no	0	1	Control
+A-2	basal	no	nivel_0	nivel_0	no	0	2	Control
+A-3	basal	no	nivel_0	nivel_0	no	0	3	Control
+B-1	validacion	si	nivel_0	nivel_0	no	14	1	Grupo B
+B-2	validacion	si	nivel_0	nivel_0	no	14	2	Grupo B
+B-3	validacion	si	nivel_0	nivel_0	no	14	3	Grupo B
+C-1	validacion	no	nivel_0	nivel_0	no	14	1	Grupo C
+C-2	validacion	no	nivel_0	nivel_0	no	14	2	Grupo C
+C-3	validacion	no	nivel_0	nivel_0	no	14	3	Grupo C
+D-1	validacion	si	nivel_0	nivel_0	si	14	1	Grupo D
+D-2	validacion	si	nivel_0	nivel_0	si	14	2	Grupo D
+D-3	validacion	si	nivel_0	nivel_0	si	14	3	Grupo D
+E-1	validacion	no	nivel_0	nivel_0	si	14	1	Grupo E
+E-2	validacion	no	nivel_0	nivel_0	si	14	2	Grupo E
+E-3	validacion	no	nivel_0	nivel_0	si	14	3	Grupo E
+F-1	ensayo_1	no	nivel_0	nivel_0	no	3	1	Grupo F
+F-2	ensayo_1	no	nivel_0	nivel_0	no	3	2	Grupo F
+F-3	ensayo_1	no	nivel_0	nivel_0	no	3	3	Grupo F
+G-1	ensayo_1	si	nivel_0	nivel_0	no	3	1	Grupo G
+G-2	ensayo_1	si	nivel_0	nivel_0	no	3	2	Grupo G
+G-3	ensayo_1	si	nivel_0	nivel_0	no	3	3	Grupo G
+H-1	ensayo_2	si	nivel_0	nivel_0	no	3	1	Grupo H
+H-2	ensayo_2	si	nivel_0	nivel_0	no	3	2	Grupo H
+H-3	ensayo_2	si	nivel_0	nivel_0	no	3	3	Grupo H
+I-1	ensayo_2	si	nivel_1	nivel_0	no	3	1	Grupo I
+I-2	ensayo_2	si	nivel_1	nivel_0	no	3	2	Grupo I
+I-3	ensayo_2	si	nivel_1	nivel_0	no	3	3	Grupo I
+J-1	ensayo_2	si	nivel_2	nivel_0	no	3	1	Grupo J
+J-2	ensayo_2	si	nivel_2	nivel_0	no	3	2	Grupo J
+J-3	ensayo_2	si	nivel_2	nivel_0	no	3	3	Grupo J
+K-1	ensayo_3	si	nivel_0	nivel_0	no	3	1	Grupo K
+K-2	ensayo_3	si	nivel_0	nivel_0	no	3	2	Grupo K
+K-3	ensayo_3	si	nivel_0	nivel_0	no	3	3	Grupo K
+L-1	ensayo_3	si	nivel_0	nivel_1	no	3	1	Grupo L
+L-2	ensayo_3	si	nivel_0	nivel_1	no	3	2	Grupo L
+L-3	ensayo_3	si	nivel_0	nivel_1	no	3	3	Grupo L
+M-1	ensayo_3	si	nivel_0	nivel_2	no	3	1	Grupo M
+M-2	ensayo_3	si	nivel_0	nivel_2	no	3	2	Grupo M
+M-3	ensayo_3	si	nivel_0	nivel_2	no	3	3	Grupo M
+N-1	ensayo_4	si	nivel_0	nivel_2	no	3	1	Grupo N
+N-2	ensayo_4	si	nivel_0	nivel_2	no	3	2	Grupo N
+N-3	ensayo_4	si	nivel_0	nivel_2	no	3	3	Grupo N

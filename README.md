@@ -1,0 +1,143 @@
+# QiimeLab
+
+Analiza resultados de **QIIME2** y archivos **FASTQ** enteramente en el
+navegador: barplots taxonómicos, diversidad alfa y beta, abundancia
+diferencial, diagramas de Venn/UpSet y control de calidad de secuencias
+estilo FastQC.
+
+**Sin backend. Sin instalación. Sin subir datos a ningún sitio** — se abre el
+archivo, se parsea con JavaScript y se dibuja al momento. Todo el cálculo
+ocurre en tu máquina.
+
+Interfaz en **español, inglés, italiano, alemán y chino** (selector en la
+barra lateral).
+
+## Probarlo
+
+- **En local**, con Python (suele venir instalado):
+
+  ```bash
+  cd qiimelab            # la carpeta de este repo
+  python3 -m http.server 8000
+  # abre http://localhost:8000
+  ```
+
+  Hace falta servirlo por HTTP: los `<script type="module">` no funcionan
+  abriendo `index.html` con doble clic (`file://`).
+
+- **En VS Code**: clic derecho sobre `index.html` → "Open with Live Server".
+
+- **En GitHub Pages / Netlify / cualquier hosting estático**: sube la carpeta
+  tal cual. No hay build step.
+
+## Qué puede hacer
+
+| Módulo | Entrada | Qué produce |
+|---|---|---|
+| **Carga de datos** | `.qza` / `.qzv` / `.tsv` / `.csv` / `.tsv.gz` / `.fastq[.gz]` | Detecta el tipo de cada archivo y lo enruta al módulo correspondiente |
+| **Barplots taxonómicos** | tabla de abundancia por taxón (o el `.qzv` de `qiime taxa barplot`) | Barras apiladas de abundancia relativa, top 7 + «Otros», agrupables por metadatos |
+| **Diversidad alfa** | vector de diversidad alfa + metadatos | Boxplot por grupo + test de Kruskal-Wallis |
+| **Diversidad beta** | matriz de distancias (`.qza` o `.tsv`) | Mapa de calor ordenado por dendrograma UPGMA |
+| **Abundancia diferencial** | tabla tipo DESeq2 / ANCOM-BC | Volcano plot interactivo + generador de script de R |
+| **Venn / UpSet** | tabla de conteos taxón × muestra + metadatos | Taxones compartidos y exclusivos entre grupos (Venn hasta 4 grupos, UpSet 5+) |
+| **Control de calidad (FASTQ)** | `.fastq` / `.fq` / `.fastq.gz` / `.fq.gz` | Informe estilo FastQC: calidad por posición, composición de bases, %GC, duplicación, sobrerrepresentadas, adaptadores, tabla comparativa multi-muestra |
+
+Cada módulo tiene un **estado vacío con botón de ejemplo** (real y sintético),
+deja **corregir a mano el mapeo de columnas** y ofrece una **tabla** como
+alternativa a cada gráfico.
+
+## Qué archivos acepta
+
+- **`.qza` / `.qzv` directamente** — se desempaquetan en el navegador
+  (`js/lib/minizip.js`, sin librerías) y se busca dentro lo que cada módulo
+  necesita.
+- **`.tsv` / `.csv` / `.txt`** ya exportados.
+- **`.tsv.gz` / `.csv.gz`** — gzip suelto (el formato de
+  `pred_metagenome_unstrat.tsv.gz` de PICRUSt2).
+- **`.fastq` / `.fq` / `.fastq.gz` / `.fq.gz`** — se leen en *streaming*, sin
+  cargar el archivo entero en memoria; el análisis se basa en una submuestra
+  configurable (200 000 lecturas por defecto).
+
+La detección de tipo (`js/lib/ingest.js`) es una heurística sobre las
+cabeceras, siempre pensada para poder equivocarse sin romper nada: el mapeo
+de columnas se puede corregir en cada módulo.
+
+**Limitación conocida:** la tabla de conteos de `feature-table.qza` suele
+venir en BIOM (HDF5 binario), que esta versión aún no lee. Expórtala antes:
+
+```bash
+qiime tools export --input-path feature-table.qza --output-path exported/
+biom convert -i exported/feature-table.biom -o feature-table.tsv --to-tsv
+```
+
+## Dependencias
+
+**Ninguna a nivel de código** — son módulos ES nativos, sin `npm install`, sin
+bundler. La única petición externa es la hoja de estilos de **Google Fonts**
+(IBM Plex); si no carga, se usa la tipografía del sistema y la app funciona
+igual.
+
+## Datos de ejemplo (`datos-ejemplo/`)
+
+Recorte pequeño y curado de resultados **reales** de un estudio de microbioma
+16S con varios grupos de tratamiento y una fase de validación, **anonimizado**
+(nombres de grupo, de muestra y de las variables del diseño son genéricos; los
+valores numéricos, los nombres de taxones y las categorías de KEGG se
+conservan). Cada módulo tiene un botón **«Cargar ejemplo real»** que hace
+`fetch()` de estos archivos y los pasa por el mismo `ingest.js` que un archivo
+subido a mano — sirve además de referencia de «así tiene que verse tu
+archivo». Ver `datos-ejemplo/README.md` para el detalle de cada uno.
+
+La carpeta se regenera con un script que vive **fuera de este repositorio**
+(en el repo de datos privado): lee los resultados originales, aplica el
+diccionario de anonimización, reescribe `datos-ejemplo/` y verifica con una
+lista negra que no se cuele ningún identificador. Ni el script ni el
+diccionario se publican; solo el resultado ya anonimizado.
+
+## Estructura
+
+```
+qiimelab/
+├── index.html
+├── .nojekyll                 # desactiva el procesado Jekyll de GitHub Pages
+├── datos-ejemplo/            # recorte real anonimizado + su README
+├── css/                      # tokens.css (paleta), base.css, components.css
+└── js/
+    ├── app.js                 # router por hash + carga perezosa de módulos
+    ├── state.js               # almacén compartido (slots: metadata, taxonomy…)
+    ├── lib/
+    │   ├── csv.js               # parser TSV/CSV
+    │   ├── minizip.js           # lector ZIP (.qza/.qzv) + gunzip
+    │   ├── fastq.js             # lector y analizador FASTQ en streaming
+    │   ├── ingest.js            # detección de tipo de archivo
+    │   ├── route.js             # "resultado de ingest → slot del estado"
+    │   ├── stats.js             # Kruskal-Wallis, chi², UPGMA
+    │   ├── i18n.js              # traducciones (es/en/it/de/zh) + t()
+    │   └── exampleData.js       # cargadores de ejemplo (sintéticos y reales)
+    ├── workers/
+    │   └── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
+    └── modules/                 # un archivo por módulo (shell, home, upload,
+        │                        # taxaBarplot, alphaDiversity, betaDiversity,
+        │                        # differentialAbundance, venn, sequenceQC)
+```
+
+Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
+`moduleLoaders` de `js/app.js` y otra en `ROUTES` de `js/modules/shell.js`.
+
+## Notas de desarrollo
+
+- **`js/lib/minizip.js`** — lector de ZIP escrito a mano (sin JSZip) porque el
+  entorno donde se generó este scaffold no tenía acceso de red. Verificado
+  contra un ZIP construido con Node (`zlib.deflateRawSync` / `inflateRawSync`).
+  Si un `.qza` no se lee, comprueba con `unzip -l` que no sea ZIP64.
+- **`js/lib/stats.js`** — el p-valor de chi-cuadrado (gamma incompleta,
+  Lanczos) se verificó contra valores críticos de tabla; el UPGMA, con un caso
+  de juguete con distancias conocidas.
+- **`js/lib/fastq.js`** — un solo recorrido en streaming acumula todas las
+  métricas; los percentiles de calidad por posición salen de un histograma
+  `[posición][Phred]`, sin guardar las lecturas. **No sustituye a
+  DADA2/QIIME2**: son estadísticas descriptivas sobre el FASTQ tal cual.
+
+## Licencia
+
+MIT — ver `LICENSE`.
