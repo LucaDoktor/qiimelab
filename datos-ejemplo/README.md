@@ -6,8 +6,9 @@ réplicas por grupo (42 muestras). Los nombres de grupo, de muestra y de las
 variables del diseño están **anonimizados** — se ve la estructura exacta
 (grupos, réplicas, variables categóricas), no de qué va el estudio.
 
-Todo sale de un pipeline QIIME2 + DESeq2 + PICRUSt2 **ya ejecutado**;
-QiimeLab no procesa secuencias crudas. Sirve para dos cosas:
+Casi todo sale de un pipeline QIIME2 + DESeq2 + PICRUSt2 **ya ejecutado**
+(la excepción es el par FASTQ de `qc/`, para el módulo de control de calidad).
+Sirve para dos cosas:
 
 1. Probar cada módulo sin tener datos propios (botón **"Cargar ejemplo real"**).
 2. Ver **la estructura exacta** que debe tener tu propio archivo antes de subirlo.
@@ -30,6 +31,7 @@ igual que harías con los tuyos.
 | `funcional-picrust2/KOlist.csv` | 53 KOs (ortólogos KEGG) agrupados en **módulos funcionales** (`Lactic acid fermentation`, `Urea metabolism`, `Proteolysis`…). Columnas: `Functional Module, KO, Gene, Enzyme, EC Number, …`. | Lista curada a mano (bioquímica estándar de KEGG). |
 | `funcional-picrust2/KO_pred_metagenome_unstrat.tsv.gz` | Abundancia predicha de **cada KO en cada muestra** (metagenoma inferido). `function` (= KO) en filas, muestras en columnas. Viene en **gzip suelto** (`.tsv.gz`) — QiimeLab lo descomprime en el navegador. | PICRUSt2 → `KO_metagenome_out/pred_metagenome_unstrat.tsv.gz` (versión **unstrat**, resumen ya agregado). |
 | `pcoa/bray_curtis_ordination.txt` | Coordenadas PCoA ya calculadas (formato "Ordination Results" de scikit-bio): secciones `Eigvals`, `Proportion explained`, `Site`. | `qiime diversity pcoa` → `bray_curtis_pcoa.qza`, exportado a `ordination.txt`. |
+| `qc/muestra_ejemplo_R1.fastq.gz`<br>`qc/muestra_ejemplo_R2.fastq.gz` | Par de lecturas FASTQ 16S (submuestra de 3.000 lecturas de 301 nt, R1 + R2) para el módulo de control de calidad. Se conservan secuencia y calidad tal cual (fragmentos del gen 16S rRNA), pero la cabecera es **totalmente sintética** (`@SIM-#####/1`): nada del instrumento, run, celda de flujo ni índices reales. | Recorte de un `.fastq.gz` real recién salido del secuenciador (antes de cutadapt/DADA2). |
 
 ## Estructura de los grupos
 

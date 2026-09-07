@@ -712,6 +712,8 @@ export function render(container) {
     fileList.innerHTML = '<h2 style="margin-bottom:6px;">' + t('slots.fastq') + ' (' + entries.length + ')</h2>';
     const list = document.createElement('div');
     list.className = 'ql-filelist';
+    const BIG = 100 * 1024 * 1024;
+    let anyBig = false;
     entries.forEach((e) => {
       const row = document.createElement('div');
       row.className = 'ql-file-row';
@@ -719,7 +721,8 @@ export function render(container) {
       if (e.report) status = fmtInt(e.report.nReads) + ' ' + t('qc.stats.reads').toLowerCase() + (e.report.subsampled ? ' · sub' : '');
       else if (errors.has(e.name)) status = '⚠ ' + errors.get(e.name);
       else if (running.has(e.name)) status = '';
-      else status = '…';
+      else status = fmtBytes(e.file && e.file.size);
+      if (e.file && e.file.size > BIG && !e.report) anyBig = true;
       row.innerHTML = '<span class="ql-file-name">' + escapeHtml(e.name) + '</span>' +
         '<span class="ql-file-meta" id="' + safeId(e.name) + '_prog">' + escapeHtml(status) + '</span>';
       const rm = document.createElement('button');
@@ -732,6 +735,13 @@ export function render(container) {
       if (running.has(e.name)) updateProgress(e.name);
     });
     fileList.appendChild(list);
+    if (anyBig) {
+      const w = document.createElement('p');
+      w.className = 'ql-field-help';
+      w.style.cssText = 'margin-top:10px;color:#8a5a00;';
+      w.textContent = t('qc.bigFileWarn', { size: '> 100 MB', n: fmtInt(maxReads) });
+      fileList.appendChild(w);
+    }
     container.appendChild(fileList);
 
     // --- comparativa ---
