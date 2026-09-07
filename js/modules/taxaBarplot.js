@@ -1,4 +1,5 @@
 import { state, subscribe } from '../state.js';
+import { t } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -10,7 +11,7 @@ function shortTaxonName(fullTax) {
   const parts = fullTax.split(';').map((p) => p.trim()).filter(Boolean);
   const last = parts[parts.length - 1] || fullTax;
   const cleaned = last.replace(/^[a-z]__/i, '');
-  return cleaned || 'Sin clasificar';
+  return cleaned || t('barplots.unclassified');
 }
 
 function svgEl(tag, attrs) {
@@ -31,7 +32,7 @@ function emptyState(container, title, desc) {
   const goUpload = document.createElement('a');
   goUpload.href = '#/cargar';
   goUpload.className = 'ql-btn';
-  goUpload.textContent = 'Ir a cargar datos';
+  goUpload.textContent = t('ui.goLoadData');
   btnRow.appendChild(goUpload);
   box.appendChild(btnRow);
   mountExampleButtons(box, {
@@ -51,19 +52,15 @@ export function render(container) {
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">Composición de la comunidad</p>' +
-      '<h1 class="ql-page-title">Barplots taxonómicos</h1>' +
-      '<p class="ql-page-sub">Abundancia relativa por muestra. Se muestran los ' + TOP_N + ' taxones más abundantes en promedio; el resto se agrupa en "Otros" — mostrar cada taxón individual (a menudo 30-40 colores) es el error más común en este tipo de gráfico.</p>';
+      '<p class="ql-eyebrow">' + t('barplots.eyebrow') + '</p>' +
+      '<h1 class="ql-page-title">' + t('barplots.title') + '</h1>' +
+      '<p class="ql-page-sub">' + t('barplots.subtitle', { n: TOP_N }) + '</p>';
     container.appendChild(header);
 
     if (!state.taxaBarplot) {
       const card = document.createElement('div');
       card.className = 'ql-card ql-panel';
-      emptyState(
-        card,
-        'Todavía no hay una tabla de barplot cargada',
-        'Sube el .qzv que genera "qiime taxa barplot" (se leen sus niveles automáticamente), o la tabla de un nivel exportada como .csv.'
-      );
+      emptyState(card, t('barplots.emptyTitle'), t('barplots.emptyDesc'));
       container.appendChild(card);
       return;
     }
@@ -85,11 +82,11 @@ export function render(container) {
     // ---- panel principal: gráfico ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>Abundancia relativa por muestra</h2><p class="ql-panel-note">Pasa el cursor sobre un segmento para ver el detalle.</p>';
+    chartPanel.innerHTML = '<h2>' + t('barplots.chartTitle') + '</h2><p class="ql-panel-note">' + t('barplots.chartNote') + '</p>';
 
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': 'Barplot taxonómico apilado' });
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBarplot') });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg);
@@ -108,16 +105,16 @@ export function render(container) {
     // ---- panel lateral: controles ----
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
-    controls.innerHTML = '<h2>Controles</h2>';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
     const levelField = document.createElement('div');
     levelField.className = 'ql-field';
-    levelField.innerHTML = '<label>Nivel taxonómico</label>';
+    levelField.innerHTML = '<label>' + t('barplots.levelLabel') + '</label>';
     const levelSelect = document.createElement('select');
     levels.forEach((lv) => {
       const opt = document.createElement('option');
       opt.value = lv;
-      opt.textContent = 'Nivel ' + lv + (Number(lv) === 6 ? ' (género)' : Number(lv) === 2 ? ' (filo)' : '');
+      opt.textContent = t('barplots.level', { n: lv }) + (Number(lv) === 6 ? t('barplots.levelGenus') : Number(lv) === 2 ? t('barplots.levelPhylum') : '');
       if (String(level) === lv) opt.selected = true;
       levelSelect.appendChild(opt);
     });
@@ -127,11 +124,11 @@ export function render(container) {
     if (groupOptions.length > 0) {
       const groupField = document.createElement('div');
       groupField.className = 'ql-field';
-      groupField.innerHTML = '<label>Agrupar / ordenar por</label>';
+      groupField.innerHTML = '<label>' + t('barplots.groupLabel') + '</label>';
       const groupSelect = document.createElement('select');
       const noneOpt = document.createElement('option');
       noneOpt.value = '';
-      noneOpt.textContent = 'Sin agrupar (orden original)';
+      noneOpt.textContent = t('barplots.groupNone');
       groupSelect.appendChild(noneOpt);
       groupOptions.forEach((g) => {
         const opt = document.createElement('option');
@@ -151,13 +148,13 @@ export function render(container) {
     } else {
       const note = document.createElement('p');
       note.className = 'ql-field-help';
-      note.textContent = 'Carga también los metadatos para poder agrupar las muestras por variable.';
+      note.textContent = t('barplots.groupHint');
       controls.appendChild(note);
     }
 
     const privacy = document.createElement('p');
     privacy.className = 'ql-privacy';
-    privacy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z"/></svg>Cálculo 100% local.';
+    privacy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z"/></svg>' + t('barplots.localCalc');
     controls.appendChild(privacy);
 
     grid.appendChild(controls);
@@ -169,7 +166,7 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>Tabla de abundancia relativa</h2>';
+    tableCard.innerHTML = '<h2>' + t('barplots.tableTitle') + '</h2>';
     container.appendChild(tableCard);
 
     // ---- datos ----
@@ -218,8 +215,8 @@ export function render(container) {
 
     const series = topTaxa.map((h, i) => ({ key: h, label: shortTaxonName(h), colorVar: CAT_VARS[i] }));
     const otherLabel = preAggOtherHeaders.length
-      ? 'Otros (' + otherTaxa.length + ' taxones + resto ya agregado del archivo)'
-      : 'Otros (' + otherTaxa.length + ' taxones)';
+      ? t('barplots.othersNplus', { n: otherTaxa.length })
+      : t('barplots.othersN', { n: otherTaxa.length });
     series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
 
     // legend
@@ -292,7 +289,7 @@ export function render(container) {
     });
 
     const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: H - 4, class: 'ql-axis-label', 'text-anchor': 'middle' });
-    xTitle.textContent = groupCol ? 'Muestras, agrupadas por ' + groupCol : 'Muestras';
+    xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
     svg.appendChild(xTitle);
 
     // tabla
@@ -301,7 +298,7 @@ export function render(container) {
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th><button type="button">Muestra</button></th>' +
+    thead.innerHTML = '<tr><th><button type="button">' + t('barplots.colSample') + '</button></th>' +
       (groupCol ? '<th><button type="button">' + escapeHtml(groupCol) + '</button></th>' : '') +
       series.map((s) => '<th><button type="button">' + escapeHtml(s.label) + '</button></th>').join('') + '</tr>';
     tbl.appendChild(thead);

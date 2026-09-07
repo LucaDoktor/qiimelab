@@ -1,4 +1,5 @@
 import { state, subscribe } from '../state.js';
+import { t } from '../lib/i18n.js';
 import { kruskalWallis, quartiles, formatP } from '../lib/stats.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 
@@ -33,22 +34,22 @@ export function render(container) {
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">Diversidad dentro de cada muestra</p>' +
-      '<h1 class="ql-page-title">Diversidad alfa</h1>' +
-      '<p class="ql-page-sub">Compara una métrica de diversidad alfa (Shannon, Observed Features, Faith\'s PD…) entre los grupos de tus metadatos, con un test de Kruskal-Wallis.</p>';
+      '<p class="ql-eyebrow">' + t('alpha.eyebrow') + '</p>' +
+      '<h1 class="ql-page-title">' + t('alpha.title') + '</h1>' +
+      '<p class="ql-page-sub">' + t('alpha.subtitle') + '</p>';
     container.appendChild(header);
 
     if (!state.alphaDiversity || !state.metadata) {
       const card = document.createElement('div');
       card.className = 'ql-card ql-panel';
       const missing = [];
-      if (!state.alphaDiversity) missing.push('un vector de diversidad alfa (p. ej. <span class="mono">shannon_vector.qza</span>)');
-      if (!state.metadata) missing.push('los metadatos de las muestras, con la columna de grupo');
+      if (!state.alphaDiversity) missing.push(t('alpha.needMetric'));
+      if (!state.metadata) missing.push(t('alpha.needMeta'));
       card.innerHTML =
         '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="9" width="4" height="11"/><rect x="10" y="4" width="4" height="16"/><rect x="16" y="12" width="4" height="8"/></svg>' +
-        '<h3>Faltan datos</h3><p>Necesitas: ' + missing.join(' y ') + '.</p>' +
+        '<h3>' + t('alpha.emptyTitle') + '</h3><p>' + t('alpha.emptyNeed', { list: missing.join(t('ui.needAnd')) }) + '</p>' +
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
-        '<a href="#/cargar" class="ql-btn">Ir a cargar datos</a></div></div>';
+        '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
       container.appendChild(card);
       mountExampleButtons(card.querySelector('.ql-empty'), {
         real: loadRealCommunityData,
@@ -67,10 +68,10 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + escapeHtml(metric || '') + '</h2><p class="ql-panel-note">Cada punto es una muestra; la caja muestra Q1–mediana–Q3, los bigotes llegan hasta 1.5×RIC.</p>';
+    chartPanel.innerHTML = '<h2>' + escapeHtml(metric || '') + '</h2><p class="ql-panel-note">' + t('alpha.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': 'Boxplot de diversidad alfa por grupo' });
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBoxplotAlpha') });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg);
@@ -80,12 +81,12 @@ export function render(container) {
 
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
-    controls.innerHTML = '<h2>Controles</h2>';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
     if (metrics.length > 1) {
       const f = document.createElement('div');
       f.className = 'ql-field';
-      f.innerHTML = '<label>Métrica</label>';
+      f.innerHTML = '<label>' + t('alpha.metricLabel') + '</label>';
       const sel = document.createElement('select');
       metrics.forEach((m) => {
         const opt = document.createElement('option');
@@ -101,7 +102,7 @@ export function render(container) {
     if (groupOptions.length > 0) {
       const f = document.createElement('div');
       f.className = 'ql-field';
-      f.innerHTML = '<label>Agrupar por</label>';
+      f.innerHTML = '<label>' + t('alpha.groupLabel') + '</label>';
       const sel = document.createElement('select');
       groupOptions.forEach((g) => {
         const opt = document.createElement('option');
@@ -125,7 +126,7 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>Valores por muestra</h2>';
+    tableCard.innerHTML = '<h2>' + t('alpha.tableTitle') + '</h2>';
     container.appendChild(tableCard);
 
     if (!groupCol) return;
@@ -149,7 +150,7 @@ export function render(container) {
     groupNames.sort();
 
     if (groupNames.length === 0) {
-      statsBox.innerHTML = '<p class="ql-field-help">Ninguna muestra de los metadatos coincide con las muestras de la métrica de diversidad. Revisa que los IDs de muestra coincidan.</p>';
+      statsBox.innerHTML = '<p class="ql-field-help">' + t('alpha.noMatch') + '</p>';
       return;
     }
 
@@ -157,16 +158,16 @@ export function render(container) {
 
     statsBox.innerHTML =
       '<div class="ql-stats">' +
-      '<div class="ql-stat"><div class="ql-stat-label">Grupos</div><div class="ql-stat-value" style="font-size:20px;">' + groupNames.length + '</div></div>' +
-      '<div class="ql-stat"><div class="ql-stat-label">Muestras</div><div class="ql-stat-value" style="font-size:20px;">' + perSampleRows.length + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('alpha.statGroups') + '</div><div class="ql-stat-value" style="font-size:20px;">' + groupNames.length + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('alpha.statSamples') + '</div><div class="ql-stat-value" style="font-size:20px;">' + perSampleRows.length + '</div></div>' +
       '</div>' +
       (kw ? '<div style="margin-top:14px;padding:12px;border-radius:var(--radius-md);background:var(--page);border:1px solid var(--border);">' +
         '<div style="font-size:11px;color:var(--ink-muted);margin-bottom:4px;">Kruskal-Wallis</div>' +
         '<div class="mono tabular" style="font-size:13px;">H = ' + kw.H.toFixed(3) + ', df = ' + kw.df + '</div>' +
-        '<div class="mono tabular" style="font-size:13px;">p = ' + formatP(kw.p) + (kw.p < 0.05 ? ' <span class="ql-badge ql-badge-good" style="margin-left:6px;">significativo</span>' : '') + '</div>' +
+        '<div class="mono tabular" style="font-size:13px;">p = ' + formatP(kw.p) + (kw.p < 0.05 ? ' <span class="ql-badge ql-badge-good" style="margin-left:6px;">' + t('alpha.kwSignificant') + '</span>' : '') + '</div>' +
         '</div>' +
-        '<p class="ql-field-help">Alternativa no paramétrica a un ANOVA de un factor — no asume normalidad, adecuada para índices de diversidad.</p>'
-        : '<p class="ql-field-help">Con un solo grupo no hay comparación que hacer.</p>');
+        '<p class="ql-field-help">' + t('alpha.kwHelp') + '</p>'
+        : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
 
     const legend = document.createElement('div');
     legend.className = 'ql-legend';
@@ -264,7 +265,7 @@ export function render(container) {
     scrollDiv.className = 'ql-table-scroll';
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
-    tbl.innerHTML = '<thead><tr><th><button type="button">Muestra</button></th><th><button type="button">' +
+    tbl.innerHTML = '<thead><tr><th><button type="button">' + t('alpha.colSample') + '</button></th><th><button type="button">' +
       escapeHtml(groupCol) + '</button></th><th><button type="button">' + escapeHtml(metric) + '</button></th></tr></thead>';
     const tbody = document.createElement('tbody');
     perSampleRows.sort((a, b) => a.group === b.group ? a.value - b.value : String(a.group).localeCompare(String(b.group)))

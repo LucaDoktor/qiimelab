@@ -1,4 +1,5 @@
 import { state, subscribe } from '../state.js';
+import { t } from '../lib/i18n.js';
 import { upgma, leafOrder } from '../lib/stats.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 
@@ -39,9 +40,9 @@ export function render(container) {
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">Diversidad entre muestras</p>' +
-      '<h1 class="ql-page-title">Diversidad beta</h1>' +
-      '<p class="ql-page-sub">Mapa de calor de la matriz de distancias (p. ej. Bray-Curtis, UniFrac), ordenado por un dendrograma UPGMA calculado en el navegador.</p>';
+      '<p class="ql-eyebrow">' + t('beta.eyebrow') + '</p>' +
+      '<h1 class="ql-page-title">' + t('beta.title') + '</h1>' +
+      '<p class="ql-page-sub">' + t('beta.subtitle') + '</p>';
     container.appendChild(header);
 
     if (!state.betaDiversity) {
@@ -49,10 +50,10 @@ export function render(container) {
       card.className = 'ql-card ql-panel';
       card.innerHTML =
         '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="17" r="2.4"/><circle cx="17" cy="17" r="2.4"/><circle cx="12" cy="7" r="2.4"/><path d="m9 15.5 1.7-6M15 15.5l-1.7-6"/></svg>' +
-        '<h3>Todavía no hay una matriz de distancias cargada</h3>' +
-        '<p>Sube el .qza de <span class="mono">core-metrics</span> (p. ej. <span class="mono">bray_curtis_distance_matrix.qza</span>) o el .tsv exportado.</p>' +
+        '<h3>' + t('beta.emptyTitle') + '</h3>' +
+        '<p>' + t('beta.emptyDesc') + '</p>' +
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
-        '<a href="#/cargar" class="ql-btn">Ir a cargar datos</a></div></div>';
+        '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
       container.appendChild(card);
       mountExampleButtons(card.querySelector('.ql-empty'), {
         real: loadRealCommunityData,
@@ -70,10 +71,10 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + escapeHtml(metric) + '</h2><p class="ql-panel-note">Filas y columnas ordenadas por el clustering jerárquico (average linkage). Pasa el cursor sobre una celda para ver el par de muestras.</p>';
+    chartPanel.innerHTML = '<h2>' + escapeHtml(metric) + '</h2><p class="ql-panel-note">' + t('beta.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': 'Mapa de calor de distancias beta' });
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartHeatmapBeta') });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg);
@@ -83,11 +84,11 @@ export function render(container) {
 
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
-    controls.innerHTML = '<h2>Controles</h2>';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
     if (metrics.length > 1) {
       const f = document.createElement('div');
       f.className = 'ql-field';
-      f.innerHTML = '<label>Métrica</label>';
+      f.innerHTML = '<label>' + t('beta.metricLabel') + '</label>';
       const sel = document.createElement('select');
       metrics.forEach((m) => {
         const opt = document.createElement('option');
@@ -101,19 +102,19 @@ export function render(container) {
     }
     const statsBox = document.createElement('div');
     statsBox.innerHTML = '<div class="ql-stats">' +
-      '<div class="ql-stat"><div class="ql-stat-label">Muestras</div><div class="ql-stat-value" style="font-size:20px;">' + data.sampleIds.length + '</div></div></div>';
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('beta.statSamples') + '</div><div class="ql-stat-value" style="font-size:20px;">' + data.sampleIds.length + '</div></div></div>';
     controls.appendChild(statsBox);
 
     const legendBox = document.createElement('div');
     legendBox.style.marginTop = '18px';
-    legendBox.innerHTML = '<div class="ql-field-help" style="margin-bottom:6px;">Distancia</div>' +
+    legendBox.innerHTML = '<div class="ql-field-help" style="margin-bottom:6px;">' + t('beta.legendTitle') + '</div>' +
       '<div style="height:12px;border-radius:4px;background:linear-gradient(90deg, var(--surface), var(--depleted));border:1px solid var(--border);"></div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted);margin-top:4px;"><span>similar (0)</span><span>distinta</span></div>';
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted);margin-top:4px;"><span>' + t('beta.legendSimilar') + '</span><span>' + t('beta.legendDistinct') + '</span></div>';
     controls.appendChild(legendBox);
 
     const privacy = document.createElement('p');
     privacy.className = 'ql-privacy';
-    privacy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z"/></svg>Clustering UPGMA calculado localmente.';
+    privacy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z"/></svg>' + t('beta.upgmaLocal');
     controls.appendChild(privacy);
 
     grid.appendChild(controls);
@@ -123,7 +124,7 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>Matriz de distancias</h2><p class="ql-panel-note">Mismo orden que el mapa de calor.</p>';
+    tableCard.innerHTML = '<h2>' + t('beta.tableTitle') + '</h2><p class="ql-panel-note">' + t('beta.tableNote') + '</p>';
     container.appendChild(tableCard);
 
     // ---- clustering ----
@@ -171,7 +172,7 @@ export function render(container) {
           const cx = marginL + ci * cellSize + cellSize / 2, cy = marginT + ri * cellSize + cellSize / 2;
           tooltip.style.left = ((svgRect.left - wrapRect.left) + cx * scaleX + chartWrap.scrollLeft) + 'px';
           tooltip.style.top = ((svgRect.top - wrapRect.top) + cy * scaleY) + 'px';
-          tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(rowId) + ' — ' + escapeHtml(colId) + '</div><div class="ql-tt-row">distancia: ' + v.toFixed(4) + '</div>';
+          tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(rowId) + ' — ' + escapeHtml(colId) + '</div><div class="ql-tt-row">' + t('beta.ttDistance') + ': ' + v.toFixed(4) + '</div>';
           tooltip.classList.add('is-show');
         });
         rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
@@ -193,7 +194,7 @@ export function render(container) {
     scrollDiv.className = 'ql-table-scroll scroll-x';
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
-    let theadHtml = '<thead><tr><th><button type="button">Muestra</button></th>';
+    let theadHtml = '<thead><tr><th><button type="button">' + t('beta.colSample') + '</button></th>';
     order.forEach((id) => { theadHtml += '<th><button type="button">' + escapeHtml(id) + '</button></th>'; });
     theadHtml += '</tr></thead>';
     tbl.innerHTML = theadHtml;

@@ -725,7 +725,7 @@ export function render(container) {
       const rm = document.createElement('button');
       rm.type = 'button';
       rm.textContent = '✕';
-      rm.title = 'Quitar';
+      rm.title = t('ui.remove');
       rm.addEventListener('click', () => { errors.delete(e.name); if (selected === e.name) selected = null; removeFile(e.sourceFileId); });
       row.appendChild(rm);
       list.appendChild(row);

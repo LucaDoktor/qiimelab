@@ -5,6 +5,7 @@
 // mano; 5+ → vista tipo UpSet (barras de intersección).
 
 import { state, subscribe } from '../state.js';
+import { t } from '../lib/i18n.js';
 import { loadRealCounts, loadExampleCounts, mountExampleButtons } from '../lib/exampleData.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -72,16 +73,14 @@ function emptyState(container) {
   card.innerHTML =
     '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">' +
     '<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/></svg>' +
-    '<h3>Faltan datos para el diagrama de Venn</h3>' +
-    '<p>Necesitas una <b>tabla de conteos</b> (taxones en filas, muestras en columnas — sin normalizar, sin "top N") ' +
-    'y los <b>metadatos</b> con la columna de grupo. La abundancia relativa o el "top 14" <b>no sirven</b>: ' +
-    'esconden en "Otros" justo los taxones raros que un Venn saca a la luz.</p>' +
+    '<h3>' + t('venn.emptyTitle') + '</h3>' +
+    '<p>' + t('venn.emptyDesc') + '</p>' +
     '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
-    '<a href="#/cargar" class="ql-btn">Ir a cargar datos</a></div></div>';
+    '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
   mountExampleButtons(card.querySelector('.ql-empty'), {
     real: loadRealCounts,
     synthetic: loadExampleCounts,
-    syntheticLabel: 'Cargar ejemplo sintético (4 grupos)',
+    syntheticLabel: t('venn.exSynthLabel'),
   });
   container.appendChild(card);
 }
@@ -100,9 +99,9 @@ export function render(container) {
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">Taxones compartidos y exclusivos</p>' +
-      '<h1 class="ql-page-title">Diagramas de Venn / UpSet</h1>' +
-      '<p class="ql-page-sub">Qué taxones aparecen en cada grupo y cuáles son exclusivos. Un taxón "está" en un grupo si su conteo supera un umbral en al menos N muestras de ese grupo. Hasta 4 grupos se dibuja un Venn; con 5 o más se pasa a una vista UpSet (barras de intersección), que no se lía como un Venn de 5 círculos.</p>';
+      '<p class="ql-eyebrow">' + t('venn.eyebrow') + '</p>' +
+      '<h1 class="ql-page-title">' + t('venn.title') + '</h1>' +
+      '<p class="ql-page-sub">' + t('venn.subtitle') + '</p>';
     container.appendChild(header);
 
     if (!state.taxaCounts || !state.metadata) { emptyState(container); return; }
@@ -126,17 +125,17 @@ export function render(container) {
     const mapCard = document.createElement('section');
     mapCard.className = 'ql-card ql-panel';
     mapCard.style.marginBottom = '20px';
-    mapCard.innerHTML = '<h2>Tabla de conteos</h2><p class="ql-panel-note">Confirma qué columna es el taxón. Si tu tabla tiene las muestras en filas y los taxones en columnas, marca "traspuesta".</p>';
+    mapCard.innerHTML = '<h2>' + t('venn.mapTitle') + '</h2><p class="ql-panel-note">' + t('venn.mapNote') + '</p>';
     const mapGrid = document.createElement('div');
     mapGrid.className = 'ql-mapping-grid';
 
     const fTaxon = document.createElement('div');
     fTaxon.className = 'ql-field';
-    fTaxon.innerHTML = '<label>Columna del taxón</label>';
+    fTaxon.innerHTML = '<label>' + t('venn.taxonColumn') + '</label>';
     const selTaxon = document.createElement('select');
     tc.headers.forEach((h, i) => {
       const o = document.createElement('option');
-      o.value = h; o.textContent = h || ('columna ' + (i + 1));
+      o.value = h; o.textContent = h || t('ui.columnN', { n: i + 1 });
       if (h === taxonCol) o.selected = true;
       selTaxon.appendChild(o);
     });
@@ -146,14 +145,14 @@ export function render(container) {
 
     const fT = document.createElement('div');
     fT.className = 'ql-field';
-    fT.innerHTML = '<label>Orientación</label>';
+    fT.innerHTML = '<label>' + t('venn.orientation') + '</label>';
     const tWrap = document.createElement('label');
     tWrap.style.cssText = 'display:flex;align-items:center;gap:8px;font-weight:400;font-size:13px;';
     const tChk = document.createElement('input');
     tChk.type = 'checkbox'; tChk.checked = transposed; tChk.style.width = 'auto';
     tChk.addEventListener('change', () => { transposed = tChk.checked; openMask = null; paint(); });
     tWrap.appendChild(tChk);
-    tWrap.appendChild(document.createTextNode(' la tabla está traspuesta (muestras en filas)'));
+    tWrap.appendChild(document.createTextNode(t('venn.transposed')));
     fT.appendChild(tWrap);
     mapGrid.appendChild(fT);
     mapCard.appendChild(mapGrid);
@@ -164,7 +163,7 @@ export function render(container) {
     if (!matrix || matrix.taxa.length === 0 || matrix.samples.length === 0) {
       const warn = document.createElement('div');
       warn.className = 'ql-card ql-panel';
-      warn.innerHTML = '<p class="ql-field-help">No se ha podido leer la tabla como taxón × muestra. Revisa el mapeo de columnas / la orientación.</p>';
+      warn.innerHTML = '<p class="ql-field-help">' + t('venn.cannotRead') + '</p>';
       container.appendChild(warn);
       return;
     }
@@ -218,46 +217,46 @@ export function render(container) {
     const controls = document.createElement('section');
     controls.className = 'ql-card ql-panel';
     controls.style.marginBottom = '20px';
-    controls.innerHTML = '<h2>Controles</h2>';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
     const cGrid = document.createElement('div');
     cGrid.className = 'ql-mapping-grid';
 
     const fGroup = document.createElement('div');
     fGroup.className = 'ql-field';
-    fGroup.innerHTML = '<label>Agrupar por</label>';
+    fGroup.innerHTML = '<label>' + t('venn.groupBy') + '</label>';
     const selGroup = document.createElement('select');
     groupOptions.forEach((h) => {
       const n = new Set(meta.rows.map((r) => String(r[h] ?? '').trim()).filter(Boolean)).size;
       const o = document.createElement('option');
-      o.value = h; o.textContent = h + ' (' + n + ' grupos)';
+      o.value = h; o.textContent = t('venn.groupOption', { name: h, n });
       if (h === groupCol) o.selected = true;
       selGroup.appendChild(o);
     });
     selGroup.addEventListener('change', () => { groupCol = selGroup.value; openMask = null; paint(); });
     fGroup.appendChild(selGroup);
-    fGroup.insertAdjacentHTML('beforeend', '<p class="ql-field-help">La variable de los metadatos que define los conjuntos. 2 grupos → Venn de 2 círculos; a partir de 5, UpSet.</p>');
+    fGroup.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('venn.groupHelp') + '</p>');
     cGrid.appendChild(fGroup);
 
     const fCount = document.createElement('div');
     fCount.className = 'ql-field';
-    fCount.innerHTML = '<label>Presente si el conteo supera</label>' +
+    fCount.innerHTML = '<label>' + t('venn.countLabel') + '</label>' +
       '<input type="number" min="0" step="1" value="' + minCount + '" id="vnCount" />' +
-      '<p class="ql-field-help">Un taxón está en una muestra si su conteo es mayor que este número. 0 = con que aparezca una vez.</p>';
+      '<p class="ql-field-help">' + t('venn.countHelp') + '</p>';
     cGrid.appendChild(fCount);
 
     const fSamp = document.createElement('div');
     fSamp.className = 'ql-field';
-    fSamp.innerHTML = '<label>…en al menos estas muestras del grupo</label>' +
+    fSamp.innerHTML = '<label>' + t('venn.sampLabel') + '</label>' +
       '<input type="number" min="1" step="1" value="' + minSamples + '" id="vnSamp" />' +
-      '<p class="ql-field-help">Cuántas muestras del grupo lo tienen que tener. 1 = con una basta; súbelo para exigir consistencia (p. ej. 2 de 3 réplicas).</p>';
+      '<p class="ql-field-help">' + t('venn.sampHelp') + '</p>';
     cGrid.appendChild(fSamp);
 
     if (groups.length >= 3 && groups.length <= 4) {
       const fView = document.createElement('div');
       fView.className = 'ql-field';
-      fView.innerHTML = '<label>Vista</label>';
+      fView.innerHTML = '<label>' + t('venn.viewLabel') + '</label>';
       const selView = document.createElement('select');
-      [['auto', 'Venn (automático)'], ['upset', 'UpSet (barras)']].forEach(([v, lbl]) => {
+      [['auto', t('venn.viewAuto')], ['upset', t('venn.viewUpset')]].forEach(([v, lbl]) => {
         const o = document.createElement('option'); o.value = v; o.textContent = lbl;
         if ((viewMode === 'venn' ? 'auto' : viewMode) === v) o.selected = true;
         selView.appendChild(o);
@@ -275,10 +274,10 @@ export function render(container) {
     stats.className = 'ql-stats';
     stats.style.marginTop = '16px';
     stats.innerHTML =
-      '<div class="ql-stat"><div class="ql-stat-label">Grupos</div><div class="ql-stat-value" style="font-size:20px;">' + groups.length + '</div></div>' +
-      '<div class="ql-stat"><div class="ql-stat-label">Taxones (total)</div><div class="ql-stat-value" style="font-size:20px;">' + totalPresent.size + '</div></div>' +
-      '<div class="ql-stat"><div class="ql-stat-label">Núcleo (en todos)</div><div class="ql-stat-value" style="font-size:20px;">' + ((byMask.get(coreMask) || []).length) + '</div></div>' +
-      '<div class="ql-stat"><div class="ql-stat-label">Exclusivos (algún grupo)</div><div class="ql-stat-value" style="font-size:20px;">' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('venn.statGroups') + '</div><div class="ql-stat-value" style="font-size:20px;">' + groups.length + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('venn.statTotal') + '</div><div class="ql-stat-value" style="font-size:20px;">' + totalPresent.size + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('venn.statCore') + '</div><div class="ql-stat-value" style="font-size:20px;">' + ((byMask.get(coreMask) || []).length) + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('venn.statExclusive') + '</div><div class="ql-stat-value" style="font-size:20px;">' +
         groups.reduce((a, _, gi) => a + ((byMask.get(1 << gi) || []).length), 0) + '</div></div>';
     controls.appendChild(stats);
 
@@ -286,7 +285,7 @@ export function render(container) {
       const w = document.createElement('p');
       w.className = 'ql-field-help';
       w.style.color = 'var(--warning)';
-      w.textContent = (matrix.samples.length - matched) + ' de ' + matrix.samples.length + ' muestras de la tabla no encajan con ningún grupo de los metadatos (¿IDs distintos?).';
+      w.textContent = t('venn.unmatched', { n: matrix.samples.length - matched, total: matrix.samples.length });
       controls.appendChild(w);
     }
     container.appendChild(controls);
@@ -297,10 +296,8 @@ export function render(container) {
     // ---- gráfico (ancho completo) ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + (useUpset ? 'Intersecciones (UpSet)' : 'Diagrama de Venn') + '</h2>' +
-      '<p class="ql-panel-note">' + (useUpset
-        ? 'Cada barra = nº de taxones presentes exactamente en esa combinación de grupos. La matriz de puntos de abajo dice qué grupos entran en cada barra.'
-        : 'El número de cada región = nº de taxones presentes exactamente en esos grupos. Haz clic en una región para ver la lista.') + '</p>';
+    chartPanel.innerHTML = '<h2>' + (useUpset ? t('venn.chartUpset') : t('venn.chartVenn')) + '</h2>' +
+      '<p class="ql-panel-note">' + (useUpset ? t('venn.chartNoteUpset') : t('venn.chartNoteVenn')) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     if (!useUpset) { chartWrap.style.maxWidth = '620px'; chartWrap.style.margin = '0 auto'; }
@@ -308,7 +305,7 @@ export function render(container) {
     container.appendChild(chartPanel);
 
     if (groups.length < 2) {
-      chartWrap.innerHTML = '<p class="ql-field-help">Hacen falta al menos 2 grupos con muestras para comparar. Prueba con otra variable en "Agrupar por".</p>';
+      chartWrap.innerHTML = '<p class="ql-field-help">' + t('venn.need2') + '</p>';
     } else if (useUpset) {
       drawUpset(chartWrap, groups, byMask, presence, (mask) => { openMask = mask; renderTable(); });
     } else {
@@ -319,7 +316,7 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>Taxones por región</h2><p class="ql-panel-note">Cada fila es una combinación de grupos. Haz clic para ver la lista de taxones de esa región (o pulsa una región del gráfico).</p>';
+    tableCard.innerHTML = '<h2>' + t('venn.tableTitle') + '</h2><p class="ql-panel-note">' + t('venn.tableNote') + '</p>';
     const tableHost = document.createElement('div');
     tableCard.appendChild(tableHost);
     container.appendChild(tableCard);
@@ -336,11 +333,11 @@ export function render(container) {
       scroll.className = 'ql-table-scroll';
       const tbl = document.createElement('table');
       tbl.className = 'ql-table';
-      tbl.innerHTML = '<thead><tr><th>Grupos</th><th>Tipo</th><th>Nº taxones</th></tr></thead>';
+      tbl.innerHTML = '<thead><tr><th>' + t('venn.colGroups') + '</th><th>' + t('venn.colType') + '</th><th>' + t('venn.colCount') + '</th></tr></thead>';
       const tbody = document.createElement('tbody');
       entries.forEach(([mask, taxa]) => {
         const inGroups = groups.filter((_, gi) => (mask >> gi) & 1);
-        const type = inGroups.length === 1 ? 'exclusivo' : inGroups.length === groups.length ? 'núcleo (todos)' : 'compartido (' + inGroups.length + ')';
+        const type = inGroups.length === 1 ? t('venn.typeExclusive') : inGroups.length === groups.length ? t('venn.typeCore') : t('venn.typeShared', { n: inGroups.length });
         const tr = document.createElement('tr');
         tr.style.cursor = 'pointer';
         if (String(mask) === String(openMask)) tr.style.background = 'color-mix(in srgb, var(--accent) 12%, transparent)';
@@ -396,7 +393,7 @@ function buildMatrix(tc, taxonCol, transposed) {
 function drawVenn(host, groups, byMask, onRegion) {
   const layout = VENN_LAYOUTS[groups.length];
   host.innerHTML = '';
-  const svg = svgEl('svg', { class: 'ql-svg', viewBox: layout.vb.join(' '), role: 'img', 'aria-label': 'Diagrama de Venn de taxones por grupo' });
+  const svg = svgEl('svg', { class: 'ql-svg', viewBox: layout.vb.join(' '), role: 'img', 'aria-label': t('a11y.chartVenn') });
 
   layout.shapes.forEach((sh) => {
     const col = 'var(' + CAT_VARS[sh.ci % CAT_VARS.length] + ')';
@@ -450,7 +447,7 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
   const matrixY0 = topH + 28;
   const W = matrixX0 + combos.length * colW + 16;
   const H = matrixY0 + groups.length * rowH + 14;
-  const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Gráfico UpSet de intersecciones' });
+  const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t('a11y.chartUpset') });
   svg.style.width = Math.max(W, 680) + 'px';
   svg.style.maxWidth = 'none';
 
@@ -500,7 +497,7 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
   if (hidden > 0) {
     const note = document.createElement('p');
     note.className = 'ql-field-help';
-    note.textContent = 'Se muestran las ' + MAX_COMBOS + ' intersecciones mayores; hay ' + hidden + ' más (todas en la tabla de abajo).';
+    note.textContent = t('venn.hiddenNote', { max: MAX_COMBOS, hidden });
     host.appendChild(note);
   }
 }

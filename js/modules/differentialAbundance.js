@@ -1,4 +1,5 @@
 import { state, subscribe, setSlot } from '../state.js';
+import { t } from '../lib/i18n.js';
 import { loadExampleDifferentialAbundance, loadRealDifferentialAbundance, mountExampleButtons } from '../lib/exampleData.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -118,9 +119,9 @@ export function render(container) {
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">Comparación entre condiciones</p>' +
-      '<h1 class="ql-page-title">Abundancia diferencial</h1>' +
-      '<p class="ql-page-sub">Volcano plot a partir de una tabla tipo DESeq2/ANCOM-BC (taxón, log2FoldChange, padj), con generador de script de R.</p>';
+      '<p class="ql-eyebrow">' + t('differential.eyebrow') + '</p>' +
+      '<h1 class="ql-page-title">' + t('differential.title') + '</h1>' +
+      '<p class="ql-page-sub">' + t('differential.subtitle') + '</p>';
     container.appendChild(header);
 
     if (!state.differentialAbundance) {
@@ -128,15 +129,15 @@ export function render(container) {
       card.className = 'ql-card ql-panel';
       card.innerHTML =
         '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 20h18"/><circle cx="12" cy="9" r="3"/><circle cx="6" cy="14" r="1.4"/><circle cx="18" cy="16" r="1.6"/></svg>' +
-        '<h3>Todavía no hay una tabla de abundancia diferencial</h3>' +
-        '<p>Sube un CSV con columnas de taxón, log2FoldChange y padj (salida de DESeq2, ANCOM-BC, ALDEx2…).</p>' +
+        '<h3>' + t('differential.emptyTitle') + '</h3>' +
+        '<p>' + t('differential.emptyDesc') + '</p>' +
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
-        '<a href="#/cargar" class="ql-btn">Ir a cargar datos</a></div></div>';
+        '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
       container.appendChild(card);
       mountExampleButtons(card.querySelector('.ql-empty'), {
         real: () => loadRealDifferentialAbundance(),
         synthetic: loadExampleDifferentialAbundance,
-        realLabel: 'Cargar ejemplo real (DESeq2 Grupo D vs Control)',
+        realLabel: t('differential.exampleLabel'),
       });
       return;
     }
@@ -148,17 +149,17 @@ export function render(container) {
     const mapCard = document.createElement('section');
     mapCard.className = 'ql-card ql-panel';
     mapCard.style.marginBottom = '20px';
-    mapCard.innerHTML = '<h2>Columnas</h2><p class="ql-panel-note">Confirma o corrige qué columna es cada cosa.</p>';
+    mapCard.innerHTML = '<h2>' + t('differential.columnsTitle') + '</h2><p class="ql-panel-note">' + t('differential.columnsNote') + '</p>';
     const mapGrid = document.createElement('div');
     mapGrid.className = 'ql-mapping-grid';
     ['taxon', 'lfc', 'padj'].forEach((key) => {
       const f = document.createElement('div');
       f.className = 'ql-field';
-      f.innerHTML = '<label>' + ({ taxon: 'Taxón', lfc: 'log2FoldChange', padj: 'padj / q-value' }[key]) + '</label>';
+      f.innerHTML = '<label>' + ({ taxon: t('differential.colTaxon'), lfc: t('differential.colLfc'), padj: t('differential.colPadj') }[key]) + '</label>';
       const sel = document.createElement('select');
       da.headers.forEach((h, i) => {
         const opt = document.createElement('option');
-        opt.value = String(i); opt.textContent = h || ('columna ' + (i + 1));
+        opt.value = String(i); opt.textContent = h || t('ui.columnN', { n: i + 1 });
         if (mapping[key] === i) opt.selected = true;
         sel.appendChild(opt);
       });
@@ -179,10 +180,10 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>Volcano plot</h2><p class="ql-panel-note">log2FoldChange frente a −log10(padj)</p>';
+    chartPanel.innerHTML = '<h2>' + t('differential.chartTitle') + '</h2><p class="ql-panel-note">' + t('differential.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
-    const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Volcano plot' });
+    const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t('a11y.chartVolcano') });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg);
@@ -196,7 +197,7 @@ export function render(container) {
 
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
-    controls.innerHTML = '<h2>Controles</h2>';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
     const stats = document.createElement('div');
     stats.className = 'ql-stats';
@@ -205,33 +206,33 @@ export function render(container) {
 
     const lfcField = document.createElement('div');
     lfcField.className = 'ql-field';
-    lfcField.innerHTML = '<label>Umbral |log2FC|</label><div class="ql-inputrow">' +
+    lfcField.innerHTML = '<label>' + t('differential.thrLfc') + '</label><div class="ql-inputrow">' +
       '<input type="range" min="0" max="4" step="0.1" value="' + thresholds.lfc + '" id="lfcRange" />' +
       '<input type="number" class="ql-num-small tabular" min="0" max="10" step="0.1" value="' + thresholds.lfc + '" id="lfcInput" /></div>';
     controls.appendChild(lfcField);
 
     const padjField = document.createElement('div');
     padjField.className = 'ql-field';
-    padjField.innerHTML = '<label>Umbral padj</label><div class="ql-inputrow">' +
+    padjField.innerHTML = '<label>' + t('differential.thrPadj') + '</label><div class="ql-inputrow">' +
       '<input type="range" min="0.001" max="0.2" step="0.001" value="' + thresholds.padj + '" id="padjRange" />' +
       '<input type="number" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + thresholds.padj + '" id="padjInput" /></div>';
     controls.appendChild(padjField);
 
     const labelField = document.createElement('div');
     labelField.className = 'ql-field';
-    labelField.innerHTML = '<label>Etiquetar los N más significativos</label><input type="number" min="0" max="25" step="1" value="' + thresholds.labelN + '" id="labelNInput" />';
+    labelField.innerHTML = '<label>' + t('differential.labelN') + '</label><input type="number" min="0" max="25" step="1" value="' + thresholds.labelN + '" id="labelNInput" />';
     controls.appendChild(labelField);
 
     const searchField = document.createElement('div');
     searchField.className = 'ql-field';
-    searchField.innerHTML = '<label>Buscar taxón</label><input type="text" id="searchInput" placeholder="p. ej. Akkermansia" value="' + escapeHtml(search) + '" />';
+    searchField.innerHTML = '<label>' + t('differential.searchLabel') + '</label><input type="text" id="searchInput" placeholder="' + t('differential.searchPlaceholder') + '" value="' + escapeHtml(search) + '" />';
     controls.appendChild(searchField);
 
     const rBtn = document.createElement('button');
     rBtn.type = 'button';
     rBtn.className = 'ql-btn ql-btn-primary';
     rBtn.style.width = '100%';
-    rBtn.textContent = showRScript ? 'Ocultar script de R' : 'Generar script de R';
+    rBtn.textContent = showRScript ? t('differential.hideRscript') : t('differential.genRscript');
     controls.appendChild(rBtn);
 
     grid.appendChild(controls);
@@ -241,7 +242,7 @@ export function render(container) {
       const rCard = document.createElement('section');
       rCard.className = 'ql-card ql-panel';
       rCard.style.marginTop = '20px';
-      rCard.innerHTML = '<h2>Script de R</h2><p class="ql-panel-note">Genera el mismo volcano plot y la misma lista de significativos con tus umbrales actuales. Ajusta la ruta del archivo si hace falta.</p>';
+      rCard.innerHTML = '<h2>' + t('differential.rTitle') + '</h2><p class="ql-panel-note">' + t('differential.rNote') + '</p>';
       const code = document.createElement('pre');
       code.className = 'ql-code';
       const script = buildRScript(taxonKey, lfcKey, padjKey, thresholds.lfc.toFixed(2), thresholds.padj, (state.files.find(f => f.id === da.sourceFileId) || {}).name);
@@ -251,14 +252,14 @@ export function render(container) {
       copyBtn.className = 'ql-btn';
       copyBtn.style.marginTop = '10px';
       copyBtn.type = 'button';
-      copyBtn.textContent = 'Copiar al portapapeles';
+      copyBtn.textContent = t('differential.copyClipboard');
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(script);
-          copyBtn.textContent = 'Copiado ✓';
-          setTimeout(() => { copyBtn.textContent = 'Copiar al portapapeles'; }, 1800);
+          copyBtn.textContent = t('differential.copied');
+          setTimeout(() => { copyBtn.textContent = t('differential.copyClipboard'); }, 1800);
         } catch (e) {
-          copyBtn.textContent = 'Selecciona el texto y copia con Ctrl/Cmd+C';
+          copyBtn.textContent = t('differential.copyManual');
         }
       });
       rCard.appendChild(copyBtn);
@@ -269,17 +270,17 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>Tabla de resultados</h2><p class="ql-panel-note">' + data.length + ' taxones' + (skipped ? ' · ' + skipped + ' fila(s) omitidas por datos incompletos' : '') + '</p>';
+    tableCard.innerHTML = '<h2>' + t('differential.tableTitle') + '</h2><p class="ql-panel-note">' + t('differential.rowsCount', { n: data.length }) + (skipped ? ' · ' + t('differential.rowsSkipped', { n: skipped }) : '') + '</p>';
     const scrollDiv = document.createElement('div');
     scrollDiv.className = 'ql-table-scroll';
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     tbl.innerHTML = '<thead><tr>' +
-      '<th><button type="button" data-sort="taxon">Taxón</button></th>' +
+      '<th><button type="button" data-sort="taxon">' + t('differential.colTaxon') + '</button></th>' +
       '<th><button type="button" data-sort="lfc">log2FC</button></th>' +
       '<th><button type="button" data-sort="padj">padj</button></th>' +
       '<th><button type="button" data-sort="neglog">−log10(padj)</button></th>' +
-      '<th><button type="button" data-sort="status">Estado</button></th></tr></thead>';
+      '<th><button type="button" data-sort="status">' + t('differential.colStatus') + '</button></th></tr></thead>';
     const tbody = document.createElement('tbody');
     tbl.appendChild(tbody);
     scrollDiv.appendChild(tbl);
@@ -291,18 +292,18 @@ export function render(container) {
       const up = data.filter((d) => d.status === 'up').length;
       const down = data.filter((d) => d.status === 'down').length;
       stats.innerHTML =
-        '<div class="ql-stat"><div class="ql-stat-label">Taxones</div><div class="ql-stat-value">' + data.length + '</div></div>' +
-        '<div class="ql-stat"><div class="ql-stat-label">Enriquecidos</div><div class="ql-stat-value" style="color:var(--enriched)">' + up + '</div></div>' +
-        '<div class="ql-stat"><div class="ql-stat-label">Reducidos</div><div class="ql-stat-value" style="color:var(--depleted)">' + down + '</div></div>';
+        '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statTaxa') + '</div><div class="ql-stat-value">' + data.length + '</div></div>' +
+        '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statUp') + '</div><div class="ql-stat-value" style="color:var(--enriched)">' + up + '</div></div>' +
+        '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statDown') + '</div><div class="ql-stat-value" style="color:var(--depleted)">' + down + '</div></div>';
     }
     function renderLegend() {
       const up = data.filter((d) => d.status === 'up').length;
       const down = data.filter((d) => d.status === 'down').length;
       const ns = data.length - up - down;
       legend.innerHTML =
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--enriched)"></span>Enriquecido (' + up + ')</span>' +
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--depleted)"></span>Reducido (' + down + ')</span>' +
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--neutral)"></span>No significativo (' + ns + ')</span>';
+        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--enriched)"></span>' + t('differential.legendUp') + ' (' + up + ')</span>' +
+        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--depleted)"></span>' + t('differential.legendDown') + ' (' + down + ')</span>' +
+        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--neutral)"></span>' + t('differential.legendNs') + ' (' + ns + ')</span>';
     }
     function colorFor(status) { return status === 'up' ? 'var(--enriched)' : status === 'down' ? 'var(--depleted)' : 'var(--neutral)'; }
 
@@ -414,14 +415,14 @@ export function render(container) {
       });
       tbody.innerHTML = '';
       if (sorted.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:24px;">Sin filas — revisa el mapeo de columnas.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:24px;">' + t('differential.noRows') + '</td></tr>';
         return;
       }
       const frag = document.createDocumentFragment();
       sorted.forEach((d) => {
         const tr = document.createElement('tr');
         const pillClass = d.status === 'up' ? 'ql-pill-up' : d.status === 'down' ? 'ql-pill-down' : 'ql-pill-ns';
-        const pillText = d.status === 'up' ? 'Enriquecido' : d.status === 'down' ? 'Reducido' : 'N.S.';
+        const pillText = d.status === 'up' ? t('differential.pillUp') : d.status === 'down' ? t('differential.pillDown') : t('differential.pillNs');
         const padjText = d.capped ? '&lt; 1e-10' : d.padj.toExponential(2);
         tr.innerHTML = '<td>' + escapeHtml(d.taxon) + '</td>' +
           '<td class="ql-num tabular">' + d.lfc.toFixed(2) + '</td>' +
