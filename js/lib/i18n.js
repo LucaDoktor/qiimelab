@@ -266,6 +266,7 @@ const DICTS = {
       upgmaLocal: 'Clustering UPGMA calculado localmente.',
       tableTitle: 'Matriz de distancias', tableNote: 'Mismo orden que el mapa de calor.',
       colSample: 'Muestra', ttDistance: 'distancia',
+      axisSamples: 'Muestras', figTitle: 'Distancias entre muestras',
     },
     differential: {
       eyebrow: 'Comparación entre condiciones', title: 'Abundancia diferencial',
@@ -563,6 +564,7 @@ const DICTS = {
       upgmaLocal: 'UPGMA clustering computed locally.',
       tableTitle: 'Distance matrix', tableNote: 'Same order as the heatmap.',
       colSample: 'Sample', ttDistance: 'distance',
+      axisSamples: 'Samples', figTitle: 'Between-sample distances',
     },
     differential: {
       eyebrow: 'Comparison between conditions', title: 'Differential abundance',

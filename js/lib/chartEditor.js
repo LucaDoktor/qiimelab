@@ -447,7 +447,7 @@ export function attachChartEditor(cfg) {
     const dst = dstRoot.querySelectorAll('*');
     const props = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap',
       'stroke-linejoin', 'stroke-opacity', 'opacity', 'font-family', 'font-size', 'font-weight',
-      'font-style', 'text-anchor', 'dominant-baseline', 'letter-spacing'];
+      'font-style', 'text-anchor', 'dominant-baseline', 'letter-spacing', 'stop-color', 'stop-opacity'];
     const copy = (a, b) => {
       const cs = getComputedStyle(a);
       let decl = '';

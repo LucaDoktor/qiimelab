@@ -1,7 +1,8 @@
 import { state, subscribe } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { upgma, leafOrder } from '../lib/stats.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -34,8 +35,10 @@ function drawDendrogram(node, svg, xOf, yScale) {
 
 export function render(container) {
   let metric = null;
+  let editor = null;
 
   function paint() {
+    if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
     header.className = 'ql-page-header';
@@ -71,7 +74,7 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + escapeHtml(metric) + '</h2><p class="ql-panel-note">' + t('beta.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('beta.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartHeatmapBeta') });
@@ -105,13 +108,6 @@ export function render(container) {
       '<div class="ql-stat"><div class="ql-stat-label">' + t('beta.statSamples') + '</div><div class="ql-stat-value" style="font-size:20px;">' + data.sampleIds.length + '</div></div></div>';
     controls.appendChild(statsBox);
 
-    const legendBox = document.createElement('div');
-    legendBox.style.marginTop = '18px';
-    legendBox.innerHTML = '<div class="ql-field-help" style="margin-bottom:6px;">' + t('beta.legendTitle') + '</div>' +
-      '<div style="height:12px;border-radius:4px;background:linear-gradient(90deg, var(--surface), var(--depleted));border:1px solid var(--border);"></div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted);margin-top:4px;"><span>' + t('beta.legendSimilar') + '</span><span>' + t('beta.legendDistinct') + '</span></div>';
-    controls.appendChild(legendBox);
-
     const privacy = document.createElement('p');
     privacy.className = 'ql-privacy';
     privacy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z"/></svg>' + t('beta.upgmaLocal');
@@ -136,14 +132,21 @@ export function render(container) {
     // ---- layout ----
     const n = order.length;
     const cellSize = Math.max(10, Math.min(28, 640 / n));
-    const marginL = 120, marginR = 20, marginT = 90, marginB = 20;
+    const marginL = 120, marginR = 20, marginT = 108, marginB = 64;
     const gridSize = cellSize * n;
-    const W = marginL + gridSize + marginR;
+    const W = Math.max(marginL + gridSize + marginR, 420);
     const H = marginT + gridSize + marginB;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     svg.style.width = W + 'px';
     svg.style.maxWidth = 'none';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const defs = svgEl('defs', {});
+    const grad = svgEl('linearGradient', { id: 'ql-beta-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
+    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': 'var(--surface)' }));
+    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': 'var(--depleted)' }));
+    defs.appendChild(grad);
+    svg.appendChild(defs);
 
     function xOf(label) { return marginL + order.indexOf(label) * cellSize + cellSize / 2; }
     const dendroTop = 10, dendroBottom = marginT - 6;
@@ -189,6 +192,36 @@ export function render(container) {
       svg.appendChild(t);
     });
 
+    // título de eje Y
+    const yTitle = svgEl('text', {
+      x: 15, y: marginT + gridSize / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+      transform: 'rotate(-90 15 ' + (marginT + gridSize / 2) + ')', 'data-ce': 'ytitle',
+    });
+    yTitle.textContent = t('beta.axisSamples');
+    svg.appendChild(yTitle);
+
+    // escala de color (leyenda) dentro del SVG
+    const legG = svgEl('g', { 'data-ce': 'legend' });
+    const barW = Math.min(160, gridSize * 0.6);
+    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-beta-scale)', stroke: 'var(--border)' }));
+    const l0 = svgEl('text', { x: 0, y: 26, class: 'ql-tick-label' });
+    l0.textContent = t('beta.legendSimilar');
+    const l1 = svgEl('text', { x: barW, y: 26, class: 'ql-tick-label', 'text-anchor': 'end' });
+    l1.textContent = t('beta.legendDistinct');
+    legG.appendChild(l0); legG.appendChild(l1);
+    legG.setAttribute('transform', 'translate(' + marginL + ',' + (marginT + gridSize + 22) + ')');
+    svg.appendChild(legG);
+
+    editor = attachChartEditor({
+      key: 'betaDiversity', svg, mount: chartPanel, filename: t('beta.title') + '-' + metric, lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: metric, x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
+
     // tabla
     const scrollDiv = document.createElement('div');
     scrollDiv.className = 'ql-table-scroll scroll-x';
@@ -214,5 +247,6 @@ export function render(container) {
   }
 
   paint();
-  return subscribe(paint);
+  const stop = subscribe(paint);
+  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
 }
