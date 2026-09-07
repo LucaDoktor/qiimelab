@@ -27,18 +27,18 @@
 .ql-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   padding: 0 8px;
 }
-.ql-brand-mark {
-  width: 26px; height: 26px; border-radius: 7px;
-  background: linear-gradient(135deg, var(--depleted), var(--enriched));
-  flex: none;
+svg.ql-brand-mark {
+  width: 27px; height: 27px; flex: none; display: block;
 }
 .ql-brand-name {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 17px;
+  font-size: 17.5px;
+  letter-spacing: -0.015em;
+  color: var(--ink);
 }
 
 .ql-nav { display: flex; flex-direction: column; gap: 2px; }
@@ -51,6 +51,7 @@
   padding: 14px 12px 6px;
 }
 .ql-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -65,10 +66,17 @@
   background: none;
   text-align: left;
   width: 100%;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.ql-nav-item:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--ink); }
-.ql-nav-item.is-active { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
-.ql-nav-item .ql-nav-icon { flex: none; width: 16px; height: 16px; }
+.ql-nav-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--ink); }
+.ql-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ql-nav-item.is-active { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-weight: 600; }
+.ql-nav-item.is-active::before {
+  content: ""; position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 17px; border-radius: 2px; background: var(--accent);
+}
+.ql-nav-item .ql-nav-icon { flex: none; width: 16px; height: 16px; display: inline-flex; }
+.ql-nav-item .ql-nav-icon svg { width: 100%; height: 100%; }
 .ql-nav-item .ql-nav-soon {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -113,18 +121,21 @@
   font-size: 13.5px;
   font-weight: 600;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--ink);
   padding: 9px 14px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color .12s ease, transform .06s ease;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease), transform .06s ease;
 }
-.ql-btn:hover { border-color: var(--accent); }
+.ql-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 .ql-btn:active { transform: translateY(1px); }
+.ql-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ql-btn.ql-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.ql-btn.ql-btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); }
 .ql-btn.ql-btn-ghost { border-color: transparent; background: transparent; }
+.ql-btn.ql-btn-ghost:hover { background: var(--accent-soft); border-color: transparent; }
 .ql-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .ql-badge {
@@ -150,13 +161,16 @@
   align-items: center;
   gap: 14px;
   cursor: pointer;
-  transition: border-color .15s ease, background-color .15s ease;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
 }
-.ql-dropzone:hover, .ql-dropzone.is-drag {
+.ql-dropzone:hover, .ql-dropzone.is-drag, .ql-dropzone:focus-visible {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: var(--accent-soft);
+  outline: none;
 }
-.ql-dropzone svg { flex: none; color: var(--ink-muted); }
+.ql-dropzone:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
+.ql-dropzone:hover svg, .ql-dropzone.is-drag svg { color: var(--accent); }
+.ql-dropzone svg { flex: none; color: var(--ink-muted); transition: color var(--dur) var(--ease); }
 .ql-dz-text { font-size: 13.5px; color: var(--ink-2); }
 .ql-dz-text b { color: var(--ink); font-weight: 600; }
 .ql-dz-sub { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
@@ -253,7 +267,7 @@ table.ql-table thead th {
   background: var(--surface);
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong);
   z-index: 1;
 }
 table.ql-table thead th button {
@@ -268,10 +282,12 @@ table.ql-table thead th button {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-table.ql-table thead th button:hover { color: var(--ink); }
-table.ql-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); }
+table.ql-table thead th button:hover { color: var(--accent); }
+table.ql-table thead th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+table.ql-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); transition: background-color var(--dur) var(--ease); }
+table.ql-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--page) 55%, transparent); }
 table.ql-table tbody tr:last-child td { border-bottom: none; }
-table.ql-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+table.ql-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 table.ql-table td.ql-num { font-family: var(--font-mono); }
 
 .ql-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; display: inline-block; }
@@ -286,7 +302,10 @@ table.ql-table td.ql-num { font-family: var(--font-mono); }
   font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-muted);
   padding: 9px 4px; margin-right: 18px;
   border-bottom: 2px solid transparent;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
+.ql-tab:hover { color: var(--ink-2); }
+.ql-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ql-tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
 
 /* ---------- bloque de código (script R) ---------- */
@@ -308,4 +327,16 @@ table.ql-table td.ql-num { font-family: var(--font-mono); }
 
 .ql-note { font-size: 12px; color: var(--ink-muted); margin: 14px 0 0; }
 .ql-privacy { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); margin-top: 16px; }
-.ql-privacy svg { flex: none; color: var(--depleted); }
+.ql-privacy svg { flex: none; color: var(--accent); }
+
+/* ---------- file-row / list interactions ---------- */
+.ql-file-row { transition: border-color var(--dur) var(--ease); }
+.ql-file-row:hover { border-color: var(--border-strong); }
+.ql-file-row button { border-radius: 4px; transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+.ql-file-row button:hover { background: color-mix(in srgb, var(--critical) 12%, transparent); }
+.ql-file-row button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- <details> disclosure (tablas alternativas de los gráficos) ---------- */
+details > summary { transition: color var(--dur) var(--ease); }
+details > summary:hover { color: var(--accent) !important; }
+details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }

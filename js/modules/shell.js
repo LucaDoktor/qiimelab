@@ -4,16 +4,29 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang, setLang, LANGS } from '../lib/i18n.js';
 
+// Sistema de iconos propio: 24×24, trazo 1.7, extremos redondeados, sin
+// relleno salvo los puntos de datos. Cada glifo abstrae su módulo.
+const ic = (body) => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
 const ICONS = {
-  home: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>',
-  upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
-  bars: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
-  alpha: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="9" width="4" height="11"/><rect x="10" y="4" width="4" height="16"/><rect x="16" y="12" width="4" height="8"/></svg>',
-  beta: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="17" r="2.4"/><circle cx="17" cy="17" r="2.4"/><circle cx="12" cy="7" r="2.4"/><path d="m9 15.5 1.7-6M15 15.5l-1.7-6"/></svg>',
-  volcano: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 20h18"/><circle cx="12" cy="9" r="3"/><circle cx="6" cy="14" r="1.4"/><circle cx="18" cy="16" r="1.6"/><circle cx="9.5" cy="6" r="1"/></svg>',
-  venn: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/></svg>',
-  qc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17V7m4 10v-4m4 4V5m4 12v-7m4 7V9"/><path d="M2 20h20"/></svg>',
+  home: ic('<path d="M4 11.5 12 5l8 6.5"/><path d="M6 10.5V19a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-8.5"/>'),
+  upload: ic('<path d="M12 15V4m0 0-3.5 3.5M12 4l3.5 3.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>'),
+  bars: ic('<rect x="7.5" y="4" width="9" height="16" rx="1.5"/><path d="M7.5 10h9M7.5 14.5h9"/>'),
+  alpha: ic('<path d="M12 4v3.5M12 16.5V20"/><rect x="7.5" y="7.5" width="9" height="9" rx="1.2"/><path d="M7.5 12h9"/><path d="M9.5 4h5M9.5 20h5"/>'),
+  beta: ic('<rect x="4" y="4" width="16" height="16" rx="1.6"/><path d="M4 9.33h16M4 14.66h16M9.33 4v16M14.66 4v16"/>'),
+  volcano: ic('<path d="M4 20h16"/><path d="M12 20V5" stroke-dasharray="2.4 2.6"/><circle cx="7" cy="10" r="1.35" fill="currentColor" stroke="none"/><circle cx="9.3" cy="14.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12.6" cy="16.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="15.4" cy="12.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.3" cy="8" r="1.35" fill="currentColor" stroke="none"/>'),
+  venn: ic('<circle cx="9.5" cy="12" r="6"/><circle cx="14.5" cy="12" r="6"/>'),
+  qc: ic('<path d="M4 20h16"/><path d="M6.5 20V9M11 20V7.5M15.5 20V10.5M20 20V15"/>'),
 };
+
+// Logomark: dendrograma (agrupamiento) reducido a 3 hojas y 2 nodos, sobre
+// baldosa redondeada con el color de marca.
+const BRAND_MARK =
+  '<svg class="ql-brand-mark" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<rect width="32" height="32" rx="8" fill="var(--accent)"/>' +
+  '<g stroke="var(--accent-ink)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M8 25V17H15V25"/><path d="M11.5 17V11H23V25"/></g>' +
+  '<g fill="var(--accent-ink)"><circle cx="8" cy="25" r="1.9"/><circle cx="15" cy="25" r="1.9"/><circle cx="23" cy="25" r="1.9"/></g>' +
+  '</svg>';
 
 // id = fragmento de ruta (#/<id>); navKey = clave de traducción del rótulo.
 export const ROUTES = [
@@ -44,7 +57,7 @@ export function renderShell(container, currentRoute) {
 
   const brand = document.createElement('div');
   brand.className = 'ql-brand';
-  brand.innerHTML = '<span class="ql-brand-mark" aria-hidden="true"></span><span class="ql-brand-name">QiimeLab</span>';
+  brand.innerHTML = BRAND_MARK + '<span class="ql-brand-name">QiimeLab</span>';
   container.appendChild(brand);
 
   const nav = document.createElement('div');
