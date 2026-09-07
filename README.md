@@ -46,6 +46,17 @@ Cada módulo tiene un **estado vacío con botón de ejemplo** (real y sintético
 deja **corregir a mano el mapeo de columnas** y ofrece una **tabla** como
 alternativa a cada gráfico.
 
+## Personalizar y exportar las figuras
+
+Cada gráfico (barplot, diversidad alfa/beta, volcano, Venn/UpSet) tiene un
+botón **«Personalizar»**: activa un modo de edición para **arrastrar** los
+textos de la figura (título, títulos de eje, leyenda) y cambiarles **color,
+fuente, negrita/cursiva y tamaño**. Los cambios se guardan en el navegador
+por módulo y se pueden **restablecer**. El botón **«Descargar SVG»** exporta
+la figura tal cual se ve, lista para un informe o un póster. También hay una
+hoja de estilos de impresión: al imprimir sale solo la figura y las tablas,
+sin la interfaz.
+
 ## Qué archivos acepta
 
 - **`.qza` / `.qzv` directamente** — se desempaquetan en el navegador
@@ -99,6 +110,7 @@ diccionario se publican; solo el resultado ya anonimizado.
 ```
 qiimelab/
 ├── index.html
+├── favicon.svg               # logotipo (dendrograma sobre baldosa de marca)
 ├── .nojekyll                 # desactiva el procesado Jekyll de GitHub Pages
 ├── datos-ejemplo/            # recorte real anonimizado + su README
 ├── css/                      # tokens.css (paleta), base.css, components.css
@@ -113,6 +125,7 @@ qiimelab/
     │   ├── route.js             # "resultado de ingest → slot del estado"
     │   ├── stats.js             # Kruskal-Wallis, chi², UPGMA
     │   ├── i18n.js              # traducciones (es/en/it/de/zh) + t()
+    │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG
     │   └── exampleData.js       # cargadores de ejemplo (sintéticos y reales)
     ├── workers/
     │   └── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
