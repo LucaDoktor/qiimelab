@@ -1,6 +1,7 @@
 import { state, subscribe } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -46,8 +47,10 @@ export function render(container) {
   let level = null;
   let sortByGroup = true;
   let groupCol = null;
+  let editor = null;
 
   function paint() {
+    if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
     header.className = 'ql-page-header';
@@ -82,7 +85,7 @@ export function render(container) {
     // ---- panel principal: gráfico ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + t('barplots.chartTitle') + '</h2><p class="ql-panel-note">' + t('barplots.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('barplots.chartNote') + '</p>';
 
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
@@ -92,13 +95,6 @@ export function render(container) {
     chartWrap.appendChild(svg);
     chartWrap.appendChild(tooltip);
     chartPanel.appendChild(chartWrap);
-
-    const legend = document.createElement('div');
-    legend.className = 'ql-legend';
-    legend.style.marginTop = '14px';
-    legend.style.paddingTop = '14px';
-    legend.style.borderTop = '1px solid var(--border)';
-    chartPanel.appendChild(legend);
 
     grid.appendChild(chartPanel);
 
@@ -219,17 +215,15 @@ export function render(container) {
       : t('barplots.othersN', { n: otherTaxa.length });
     series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
 
-    // legend
-    legend.innerHTML = series.map((s) =>
-      '<span class="ql-legend-item"><span class="ql-legend-swatch ql-sq" style="background:var(' + s.colorVar + ')"></span>' + escapeHtml(s.label) + '</span>'
-    ).join('');
-
     // chart
-    const marginL = 46, marginR = 12, marginT = 12, marginB = 70;
+    const legCols = series.length > 5 ? 2 : 1;
+    const legRows = Math.ceil(series.length / legCols);
+    const marginL = 56, marginR = 12, marginT = 42;
+    const marginB = 66 + legRows * 15; // hueco para etiquetas rotadas + leyenda
     const slotW = Math.max(18, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
     const barW = Math.min(24, slotW * 0.7);
     const innerH = 380;
-    const W = marginL + marginR + slotW * sampleOrder.length;
+    const W = Math.max(marginL + marginR + slotW * sampleOrder.length, 420);
     const H = marginT + innerH + marginB;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     svg.style.width = W + 'px'; // ancho real en px: si no caben todas las muestras, el contenedor hace scroll horizontal en vez de aplastar las barras
@@ -288,9 +282,43 @@ export function render(container) {
       svg.appendChild(t);
     });
 
-    const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: H - 4, class: 'ql-axis-label', 'text-anchor': 'middle' });
+    const xLabelBase = marginT + innerH + 44; // bajo las etiquetas de muestra rotadas
+    const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
     xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
     svg.appendChild(xTitle);
+
+    const yTitle = svgEl('text', {
+      x: 15, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+      transform: 'rotate(-90 15 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
+    });
+    yTitle.textContent = t('barplots.axisPct');
+    svg.appendChild(yTitle);
+
+    // leyenda dentro del SVG (editable + exportable), 1-2 columnas
+    const legG = svgEl('g', { 'data-ce': 'legend' });
+    const colW = Math.min(240, (W - marginL - marginR) / legCols);
+    series.forEach((s, i) => {
+      const col = Math.floor(i / legRows), rw = i % legRows;
+      const xx = col * colW, yy = rw * 15;
+      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + s.colorVar + ')' }));
+      const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+      lt.textContent = s.label;
+      legG.appendChild(lt);
+    });
+    legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 18) + ')');
+    svg.appendChild(legG);
+
+    if (editor) editor.destroy();
+    editor = attachChartEditor({
+      key: 'taxaBarplot', svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('barplots.chartFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
 
     // tabla
     const scrollDiv = document.createElement('div');
@@ -340,5 +368,6 @@ export function render(container) {
   }
 
   paint();
-  return subscribe(paint);
+  const stop = subscribe(paint);
+  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
 }

@@ -237,6 +237,7 @@ const DICTS = {
       othersN: 'Otros ({n} taxones)', othersNplus: 'Otros ({n} taxones + resto ya agregado del archivo)',
       unclassified: 'Sin clasificar',
       colSample: 'Muestra', axisSamples: 'Muestras', axisSamplesBy: 'Muestras, agrupadas por {col}',
+      axisPct: 'Abundancia relativa (%)', chartFigTitle: 'Composición taxonómica por muestra',
     },
     alpha: {
       eyebrow: 'Diversidad dentro de cada muestra', title: 'Diversidad alfa',
@@ -533,6 +534,7 @@ const DICTS = {
       othersN: 'Other ({n} taxa)', othersNplus: 'Other ({n} taxa + rest already aggregated in the file)',
       unclassified: 'Unclassified',
       colSample: 'Sample', axisSamples: 'Samples', axisSamplesBy: 'Samples, grouped by {col}',
+      axisPct: 'Relative abundance (%)', chartFigTitle: 'Taxonomic composition per sample',
     },
     alpha: {
       eyebrow: 'Diversity within each sample', title: 'Alpha diversity',
