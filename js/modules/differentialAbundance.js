@@ -1,10 +1,11 @@
 import { state, subscribe, setSlot } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { loadExampleDifferentialAbundance, loadRealDifferentialAbundance, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const MARGIN = { top: 26, right: 28, bottom: 54, left: 58 };
-const W = 900, H = 520;
+const MARGIN = { top: 48, right: 28, bottom: 86, left: 58 };
+const W = 900, H = 560;
 
 function svgEl(tag, attrs) {
   const e = document.createElementNS(SVG_NS, tag);
@@ -90,6 +91,7 @@ export function render(container) {
   let sort = { key: 'padj', dir: 'asc' };
   let mapping = null;
   let showRScript = false;
+  let editor = null;
 
   function computeDerived() {
     const da = state.differentialAbundance;
@@ -115,6 +117,7 @@ export function render(container) {
   }
 
   function paint() {
+    if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
     header.className = 'ql-page-header';
@@ -180,7 +183,7 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + t('differential.chartTitle') + '</h2><p class="ql-panel-note">' + t('differential.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('differential.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
     const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t('a11y.chartVolcano') });
@@ -189,10 +192,6 @@ export function render(container) {
     chartWrap.appendChild(svg);
     chartWrap.appendChild(tooltip);
     chartPanel.appendChild(chartWrap);
-    const legend = document.createElement('div');
-    legend.className = 'ql-legend';
-    legend.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border);';
-    chartPanel.appendChild(legend);
     grid.appendChild(chartPanel);
 
     const controls = document.createElement('aside');
@@ -296,16 +295,35 @@ export function render(container) {
         '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statUp') + '</div><div class="ql-stat-value" style="color:var(--enriched)">' + up + '</div></div>' +
         '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statDown') + '</div><div class="ql-stat-value" style="color:var(--depleted)">' + down + '</div></div>';
     }
-    function renderLegend() {
+    function colorFor(status) { return status === 'up' ? 'var(--enriched)' : status === 'down' ? 'var(--depleted)' : 'var(--neutral)'; }
+
+    // leyenda dentro del SVG, fila horizontal bajo el eje X (para que el editor
+    // la mueva y la exportación la incluya)
+    function drawSvgLegend(parent, cx, y) {
       const up = data.filter((d) => d.status === 'up').length;
       const down = data.filter((d) => d.status === 'down').length;
       const ns = data.length - up - down;
-      legend.innerHTML =
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--enriched)"></span>' + t('differential.legendUp') + ' (' + up + ')</span>' +
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--depleted)"></span>' + t('differential.legendDown') + ' (' + down + ')</span>' +
-        '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--neutral)"></span>' + t('differential.legendNs') + ' (' + ns + ')</span>';
+      const items = [
+        ['var(--enriched)', t('differential.legendUp') + ' (' + up + ')'],
+        ['var(--depleted)', t('differential.legendDown') + ' (' + down + ')'],
+        ['var(--neutral)', t('differential.legendNs') + ' (' + ns + ')'],
+      ];
+      const g = svgEl('g', { 'data-ce': 'legend' });
+      const GAP = 26, SW = 11, TXT = 6.2;
+      let x = 0;
+      const widths = items.map(([, label]) => SW + 6 + label.length * TXT);
+      const total = widths.reduce((a, b) => a + b, 0) + GAP * (items.length - 1);
+      x = -total / 2;
+      items.forEach(([col, label], i) => {
+        g.appendChild(svgEl('rect', { x, y: -SW + 1, width: SW, height: SW, rx: 2, fill: col }));
+        const tx = svgEl('text', { x: x + SW + 6, y: 0, class: 'ql-tick-label' });
+        tx.textContent = label;
+        g.appendChild(tx);
+        x += widths[i] + GAP;
+      });
+      g.setAttribute('transform', 'translate(' + cx + ',' + y + ')');
+      parent.appendChild(g);
     }
-    function colorFor(status) { return status === 'up' ? 'var(--enriched)' : status === 'down' ? 'var(--depleted)' : 'var(--neutral)'; }
 
     function renderChart() {
       while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -352,12 +370,14 @@ export function render(container) {
         g.appendChild(svgEl('line', { x1: MARGIN.left, x2: MARGIN.left + innerW, y1: yp, y2: yp, class: 'ql-threshold-line' }));
       }
 
-      const xTitle = svgEl('text', { x: MARGIN.left + innerW / 2, y: H - 10, class: 'ql-axis-label', 'text-anchor': 'middle' });
+      const xTitle = svgEl('text', { x: MARGIN.left + innerW / 2, y: H - 12, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
       xTitle.textContent = 'log2FoldChange';
       g.appendChild(xTitle);
-      const yTitle = svgEl('text', { x: 16, y: MARGIN.top + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 16 ' + (MARGIN.top + innerH / 2) + ')' });
+      const yTitle = svgEl('text', { x: 16, y: MARGIN.top + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 16 ' + (MARGIN.top + innerH / 2) + ')', 'data-ce': 'ytitle' });
       yTitle.textContent = '−log10(padj)';
       g.appendChild(yTitle);
+
+      drawSvgLegend(g, MARGIN.left + innerW / 2, H - 40);
 
       const searchTerm = search.trim().toLowerCase();
       const hasSearch = searchTerm.length > 0;
@@ -434,7 +454,22 @@ export function render(container) {
       tbody.appendChild(frag);
     }
 
-    renderStats(); renderLegend(); renderChart(); renderTable();
+    renderStats(); renderChart(); renderTable();
+
+    editor = attachChartEditor({
+      key: 'differentialAbundance',
+      svg,
+      mount: chartPanel,
+      filename: t('differential.title'),
+      lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('differential.chartTitle'), x: W / 2, y: 26, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
 
     // eventos
     const lfcRange = controls.querySelector('#lfcRange'), lfcInput = controls.querySelector('#lfcInput');
@@ -449,7 +484,7 @@ export function render(container) {
     syncPair(lfcRange, lfcInput, 'lfc');
     syncPair(padjRange, padjInput, 'padj');
     labelNInput.addEventListener('input', () => { thresholds = { ...thresholds, labelN: parseInt(labelNInput.value, 10) || 0 }; refresh(); });
-    searchInput.addEventListener('input', () => { search = searchInput.value; renderChart(); });
+    searchInput.addEventListener('input', () => { search = searchInput.value; renderChart(); if (editor) editor.sync(); });
     rBtn.addEventListener('click', () => { showRScript = !showRScript; paint(); });
     tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -464,10 +499,12 @@ export function render(container) {
       const recomputed = computeDerived();
       data.length = 0;
       recomputed.data.forEach((d) => data.push(d));
-      renderStats(); renderLegend(); renderChart(); renderTable();
+      renderStats(); renderChart(); renderTable();
+      if (editor) editor.sync();
     }
   }
 
   paint();
-  return subscribe(paint);
+  const stop = subscribe(paint);
+  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
 }
