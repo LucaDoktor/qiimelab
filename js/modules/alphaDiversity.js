@@ -1,7 +1,8 @@
 import { state, subscribe } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { kruskalWallis, quartiles, formatP } from '../lib/stats.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -28,8 +29,10 @@ function mulberry32(a) {
 export function render(container) {
   let metric = null;
   let groupCol = null;
+  let editor = null;
 
   function paint() {
+    if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
     header.className = 'ql-page-header';
@@ -68,7 +71,7 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<h2>' + escapeHtml(metric || '') + '</h2><p class="ql-panel-note">' + t('alpha.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('alpha.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBoxplotAlpha') });
@@ -169,21 +172,14 @@ export function render(container) {
         '<p class="ql-field-help">' + t('alpha.kwHelp') + '</p>'
         : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
 
-    const legend = document.createElement('div');
-    legend.className = 'ql-legend';
-    legend.style.marginTop = '14px';
-    legend.style.paddingTop = '14px';
-    legend.style.borderTop = '1px solid var(--border)';
-    legend.innerHTML = groupNames.map((g, i) =>
-      '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(' + CAT_VARS[i % CAT_VARS.length] + ')"></span>' + escapeHtml(String(g)) + ' (n=' + groupData[g].length + ')</span>'
-    ).join('');
-    chartPanel.appendChild(legend);
-
     // ---- dibujar boxplot ----
-    const marginL = 50, marginR = 20, marginT = 20, marginB = 44;
+    const legCols = groupNames.length > 5 ? 2 : 1;
+    const legRows = Math.ceil(groupNames.length / legCols);
+    const marginL = 52, marginR = 20, marginT = 44;
+    const marginB = 58 + legRows * 15;
     const innerH = 360;
     const slotW = 140;
-    const W = marginL + marginR + slotW * groupNames.length;
+    const W = Math.max(marginL + marginR + slotW * groupNames.length, 420);
     const H = marginT + innerH + marginB;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
@@ -255,10 +251,40 @@ export function render(container) {
 
     const yTitle = svgEl('text', {
       x: 14, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
-      transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')',
+      transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
     });
     yTitle.textContent = metric;
     svg.appendChild(yTitle);
+
+    const xLabelBase = marginT + innerH + 44;
+    const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+    xTitle.textContent = groupCol || '';
+    svg.appendChild(xTitle);
+
+    // leyenda dentro del SVG (editable + exportable)
+    const legG = svgEl('g', { 'data-ce': 'legend' });
+    const colW = Math.min(260, (W - marginL - marginR) / legCols);
+    groupNames.forEach((g, i) => {
+      const col = Math.floor(i / legRows), rw = i % legRows;
+      const xx = col * colW, yy = rw * 15;
+      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + CAT_VARS[i % CAT_VARS.length] + ')' }));
+      const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+      lt.textContent = String(g) + ' (n=' + groupData[g].length + ')';
+      legG.appendChild(lt);
+    });
+    legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 16) + ')');
+    svg.appendChild(legG);
+
+    editor = attachChartEditor({
+      key: 'alphaDiversity', svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('alpha.title'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
 
     // tabla
     const scrollDiv = document.createElement('div');
@@ -280,5 +306,6 @@ export function render(container) {
   }
 
   paint();
-  return subscribe(paint);
+  const stop = subscribe(paint);
+  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
 }
