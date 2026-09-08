@@ -62,3 +62,5 @@ qiime metadata tabulate \
   --o-visualization "${RES_DIR}/03_dada2/dada2_stats.qzv"
 
 echo "Hecho: revisa dada2_stats.qzv — necesitas retener suficientes lecturas por muestra"
+echo "  · los .qzv se ven en https://view.qiime2.org o subiéndolos a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

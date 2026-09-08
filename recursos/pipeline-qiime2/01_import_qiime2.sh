@@ -45,4 +45,6 @@ qiime demux summarize \
   --i-data "${RES_DIR}/demux_seqs.qza" \
   --o-visualization "${RES_DIR}/demux_seqs.qzv"
 
-echo "Hecho: ${RES_DIR}/demux_seqs.qza (+ .qzv para inspeccionar en https://view.qiime2.org)"
+echo "Hecho: ${RES_DIR}/demux_seqs.qza"
+echo "  · el .qzv se ve en https://view.qiime2.org o subiéndolo a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

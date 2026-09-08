@@ -30,5 +30,7 @@ qiime feature-table tabulate-seqs \
   --i-data "${RES_DIR}/03_dada2/rep_seqs.qza" \
   --o-visualization "${RES_DIR}/03_dada2/rep_seqs_summary.qzv"
 
-echo "Hecho: abre rep_seqs_summary.qzv en https://view.qiime2.org y mira la"
-echo "tabla de estadísticas de longitud para decidir tu clasificador."
+echo "Hecho: abre rep_seqs_summary.qzv y mira la tabla de estadísticas de"
+echo "longitud para decidir tu clasificador."
+echo "  · el .qzv se ve en https://view.qiime2.org o subiéndolo a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

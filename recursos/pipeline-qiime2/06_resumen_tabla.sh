@@ -31,3 +31,5 @@ qiime feature-table summarize \
   --m-sample-metadata-file "${METADATOS}"
 
 echo "Hecho: abre table_summary.qzv y anota la profundidad mínima aceptable."
+echo "  · los .qzv se ven en https://view.qiime2.org o subiéndolos a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

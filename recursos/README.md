@@ -6,8 +6,14 @@ son un procedimiento soportado paso a paso**. Léelas y ajústalas a tus datos
 antes de ejecutar nada.
 
 Todas las rutas están como `<<CAMBIA_ESTO_POR_TU_CARPETA>>`, el número de hilos
-como `NUM_HILOS=4`, y los nombres de archivo (metadatos, clasificador) son
-genéricos.
+como `NUM_HILOS=4`, y cualquier valor que dependa del dataset (primers,
+truncados, umbrales de filtrado, profundidad de rarefacción, columna de grupo,
+métricas…) es una variable comentada al principio del script con `# EJEMPLO`.
+
+Los artefactos `.qzv` que generan estos scripts se pueden ver en
+[view.qiime2.org](https://view.qiime2.org) **o subiéndolos directamente a
+QiimeLab** ([lucadoktor.github.io/qiimelab](https://lucadoktor.github.io/qiimelab/))
+para visualizarlos sin salir del navegador.
 
 ## `pipeline-qiime2/`
 

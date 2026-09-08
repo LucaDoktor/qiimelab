@@ -34,4 +34,6 @@ for metric in "${METRICAS[@]}"; do
     --o-visualization "${BETA_DIR}/pcoa/${metric}_emperor.qzv"
 done
 
-echo "Hecho: abre ${BETA_DIR}/pcoa/bray_curtis_emperor.qzv en https://view.qiime2.org"
+echo "Hecho: PCoA + Emperor en ${BETA_DIR}/pcoa/"
+echo "  · los .qzv (Emperor) se ven en https://view.qiime2.org o subiéndolos a"
+echo "    QiimeLab: https://lucadoktor.github.io/qiimelab/"

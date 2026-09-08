@@ -108,3 +108,5 @@ for m in "${METRICAS_BETA[@]}" "${METRICAS_UNIFRAC[@]}"; do
 done
 
 echo "Hecho: resultados en ${RES_DIR}/08_diversidad/"
+echo "  · los .qzv se ven en https://view.qiime2.org o subiéndolos a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

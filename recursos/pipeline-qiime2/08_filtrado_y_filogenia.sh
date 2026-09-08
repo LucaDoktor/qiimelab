@@ -81,3 +81,5 @@ qiime phylogeny align-to-tree-mafft-fasttree \
   --o-rooted-tree "${RES_DIR}/07_filogenia/rooted_tree.qza"
 
 echo "Hecho: revisa table_final_filtered_summary.qzv para elegir la rarefacción."
+echo "  · los .qzv se ven en https://view.qiime2.org o subiéndolos a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"

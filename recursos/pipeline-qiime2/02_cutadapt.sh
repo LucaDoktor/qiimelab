@@ -49,3 +49,5 @@ qiime demux summarize \
   --o-visualization "${RES_DIR}/demux_trimmed.qzv"
 
 echo "Hecho: ${RES_DIR}/demux_trimmed.qza"
+echo "  · los .qzv se ven en https://view.qiime2.org o subiéndolos a QiimeLab:"
+echo "    https://lucadoktor.github.io/qiimelab/"
