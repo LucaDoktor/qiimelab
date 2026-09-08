@@ -408,42 +408,54 @@ function buildMatrix(tc, taxonCol, transposed) {
 }
 
 // ---- Venn (2/3/4 conjuntos) ----
+// Estética tipo ggvenn / ggVennDiagram: relleno semitransparente del color de
+// cada conjunto, borde muy fino del mismo color, número de la intersección
+// grande y centrado, nombre del conjunto fuera del círculo y teñido.
 function drawVenn(host, groups, byMask, onRegion) {
   const layout = VENN_LAYOUTS[groups.length];
   host.innerHTML = '';
   const vb = [layout.vb[0], layout.vb[1] - 34, layout.vb[2], layout.vb[3] + 34];
   const svg = svgEl('svg', { class: 'ql-svg', viewBox: vb.join(' '), role: 'img', 'aria-label': t('a11y.chartVenn') });
 
+  // menos alfa cuantos más círculos, para que el núcleo (donde se solapan todos)
+  // no se emborrone: 2-3 conjuntos 0.3, 4 conjuntos 0.22
+  const fillAlpha = groups.length >= 4 ? 0.22 : 0.3;
   layout.shapes.forEach((sh) => {
     const col = 'var(' + CAT_VARS[sh.ci % CAT_VARS.length] + ')';
-    const common = { fill: col, 'fill-opacity': 0.14, stroke: col, 'stroke-width': 2 };
+    // los rellenos se solapan por transparencia (source-over) → el núcleo se ve
+    // más denso, como en ggvenn; borde fino y suave para delimitar sin "dureza".
+    const common = { fill: col, 'fill-opacity': fillAlpha, stroke: col, 'stroke-opacity': 0.55, 'stroke-width': 1 };
     if (sh.type === 'circle') svg.appendChild(svgEl('circle', { cx: sh.cx, cy: sh.cy, r: sh.r, ...common }));
     else svg.appendChild(svgEl('ellipse', { cx: sh.cx, cy: sh.cy, rx: sh.rx, ry: sh.ry, transform: 'rotate(' + sh.rot + ' ' + sh.cx + ' ' + sh.cy + ')', ...common }));
   });
 
-  // nombres de grupo — texto en --ink (legible); el color de identidad lo
-  // aporta el círculo/elipse, no hace falta teñir la etiqueta.
+  // nombre de cada conjunto, fuera del círculo y con su propio color
   groups.forEach((g, gi) => {
     const at = layout.nameAt[gi];
     if (!at) return;
-    const tx = svgEl('text', { x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle', 'font-weight': 700, 'data-ce': 'grp' + gi });
-    tx.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
-    // pequeño disco del color del conjunto, justo encima del nombre
-    const dot = svgEl('circle', { cx: at[0], cy: at[1] - 14, r: 4, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')' });
-    svg.appendChild(dot);
+    const tx = svgEl('text', {
+      x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle',
+      'font-weight': 700, 'font-size': 14, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')',
+      'data-ce': 'grp' + gi,
+    });
+    tx.textContent = g.length > 18 ? g.slice(0, 17) + '…' : g;
     svg.appendChild(tx);
   });
 
-  // etiquetas de región (recorremos TODAS las máscaras posibles del layout)
+  // número de cada región, grande y centrado (recorre TODAS las máscaras del layout)
   Object.keys(layout.labels).forEach((maskStr) => {
     const mask = parseInt(maskStr, 10);
     const [x, y] = layout.labels[mask];
     const n = (byMask.get(mask) || []).length;
     const g = svgEl('g', { class: 'vn-region', 'data-mask': mask, style: 'cursor:pointer;' });
-    const hit = svgEl('circle', { cx: x, cy: y, r: 20, fill: 'transparent' });
-    const t = svgEl('text', { x, y: y + 6, 'text-anchor': 'middle', 'font-family': 'var(--font-display)', 'font-size': 19, 'font-weight': 600, fill: n ? 'var(--ink)' : 'var(--ink-muted)' });
+    g.appendChild(svgEl('circle', { cx: x, cy: y, r: 20, fill: 'transparent' }));
+    const t = svgEl('text', {
+      x, y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      'font-family': 'var(--font-display)', 'font-size': n ? 23 : 17, 'font-weight': 600,
+      fill: n ? 'var(--ink)' : 'var(--ink-muted)',
+    });
     t.textContent = n;
-    g.appendChild(hit); g.appendChild(t);
+    g.appendChild(t);
     g.addEventListener('click', () => onRegion(mask));
     svg.appendChild(g);
   });
@@ -495,12 +507,14 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
     svg.appendChild(g);
   });
 
-  // barras horizontales (tamaño de cada grupo) + etiquetas
+  // barras horizontales (tamaño de cada grupo) + etiquetas teñidas con el color
+  // del conjunto, para leerlas igual que en el Venn
   groups.forEach((g, gi) => {
     const y = matrixY0 + gi * rowH;
     const w = (setSizes[gi] / maxSet) * barMaxW;
-    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')', rx: 2 }));
-    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', 'data-ce': 'set' + gi });
+    const col = 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')';
+    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: col, 'fill-opacity': 0.85, rx: 2 }));
+    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', fill: col, 'font-weight': 600, 'data-ce': 'set' + gi });
     lbl.textContent = (g.length > 20 ? g.slice(0, 19) + '…' : g) + ' · ' + setSizes[gi];
     svg.appendChild(lbl);
   });

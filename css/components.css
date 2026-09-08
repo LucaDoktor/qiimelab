@@ -525,6 +525,11 @@ svg.ql-brand-mark {
 .ql-stat-label { font-size: 11px; color: var(--ink-muted); margin-bottom: 4px; }
 .ql-stat-value { font-family: var(--font-display); font-weight: 600; font-size: 22px; }
 
+/* ---------- Venn / UpSet: región seleccionable ---------- */
+.vn-region text { transition: fill var(--dur) var(--ease); }
+.vn-region:hover text { fill: var(--accent); }
+.vn-region.is-active text { fill: var(--accent); font-weight: 700; }
+
 /* ---------- explicación llana de índices (diversidad alfa / beta) ---------- */
 .ql-se { color: var(--ink-muted); font-size: 0.86em; }
 .ql-metric-explain {
