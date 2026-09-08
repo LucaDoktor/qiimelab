@@ -106,6 +106,14 @@ export function render(container) {
       controls.appendChild(f);
     }
 
+    // explicación de una frase de la métrica elegida (mismo patrón en beta)
+    if (curMetric && curMetric.explain) {
+      const ex = document.createElement('p');
+      ex.className = 'ql-metric-explain';
+      ex.innerHTML = '<strong>' + escapeHtml(curMetric.label) + '.</strong> ' + escapeHtml(curMetric.explain);
+      controls.appendChild(ex);
+    }
+
     if (groupOptions.length > 0) {
       const f = document.createElement('div');
       f.className = 'ql-field';

@@ -527,6 +527,17 @@ svg.ql-brand-mark {
 
 /* ---------- explicación llana de índices (diversidad alfa / beta) ---------- */
 .ql-se { color: var(--ink-muted); font-size: 0.86em; }
+.ql-metric-explain {
+  margin: 2px 0 16px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ql-metric-explain strong { color: var(--ink); font-weight: 600; }
 .ql-metric-defs {
   margin: 14px 0 0;
   display: grid;

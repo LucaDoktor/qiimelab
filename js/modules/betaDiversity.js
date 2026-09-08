@@ -29,6 +29,29 @@ function drawDendrogram(node, svg, xOf, yScale) {
   return { x: (L.x + R.x) / 2, y };
 }
 
+// explicación llana de una métrica de distancia, por su nombre
+const BETA_EXPLAIN = [
+  [/bray.?curtis/i, 'beta.exBray'],
+  [/jaccard/i, 'beta.exJaccard'],
+  [/unweighted.*unifrac/i, 'beta.exUwUnifrac'],
+  [/weighted.*unifrac/i, 'beta.exWUnifrac'],
+  [/unifrac/i, 'beta.exUnifrac'],
+  [/aitchison/i, 'beta.exAitchison'],
+];
+function explainBetaMetric(name) {
+  const n = String(name || '').trim();
+  for (const [re, key] of BETA_EXPLAIN) if (re.test(n)) return t(key);
+  return null;
+}
+function metricExplainEl(name) {
+  const txt = explainBetaMetric(name);
+  if (!txt) return null;
+  const p = document.createElement('p');
+  p.className = 'ql-metric-explain';
+  p.innerHTML = '<strong>' + escapeHtml(String(name)) + '.</strong> ' + escapeHtml(txt);
+  return p;
+}
+
 // muestra → grupo, tolerante a sufijos (A-1 ↔ A-1-16S-…)
 function groupResolver(meta, groupCol) {
   const map = {};
@@ -138,6 +161,9 @@ export function render(container) {
       f.appendChild(sel);
       controls.appendChild(f);
     }
+    const betaEx = metricExplainEl(metric);
+    if (betaEx) controls.appendChild(betaEx);
+
     const fOrder = document.createElement('div');
     fOrder.className = 'ql-field';
     fOrder.innerHTML = '<label>' + t('beta.orderLabel') + '</label>';
@@ -332,6 +358,8 @@ export function render(container) {
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
     controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+    const pcoaEx = metricExplainEl(ord.metricName);
+    if (pcoaEx) controls.appendChild(pcoaEx);
     const mkPCsel = (label, cur, cb) => {
       const f = document.createElement('div'); f.className = 'ql-field';
       f.innerHTML = '<label>' + label + '</label>';
