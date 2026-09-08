@@ -15,6 +15,7 @@ import { formatP } from '../lib/stats.js';
 import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { loadRealFunctionalWithMeta, mountExampleButtons, exampleDownloadBlock } from '../lib/exampleData.js';
+import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -208,19 +209,46 @@ export function render(container) {
     grid.appendChild(controls);
     container.appendChild(grid);
 
-    // KOs del módulo
+    // KOs del módulo — con la anotación de tu lista + enlace a la ficha en KEGG
     const koCard = document.createElement('section');
     koCard.className = 'ql-card ql-panel';
     koCard.style.marginTop = '20px';
-    koCard.innerHTML = '<h2>' + t('functional.koListTitle', { module: escapeHtml(moduleName) }) + '</h2>';
-    const koWrap = document.createElement('p');
-    koWrap.className = 'ql-field-help';
-    koWrap.style.fontFamily = 'var(--font-mono)';
+    koCard.innerHTML = '<h2>' + t('functional.koListTitle', { module: escapeHtml(moduleName) }) + '</h2>' +
+      '<p class="ql-panel-note">' + t('functional.koListNote') + '</p>';
     const present = new Set(kosInTable[moduleName]);
-    koWrap.innerHTML = moduleKOs[moduleName]
-      .map((k) => present.has(k) ? escapeHtml(k) : '<span style="opacity:.45;">' + escapeHtml(k) + '</span>')
-      .join(' · ');
-    koCard.appendChild(koWrap);
+    let anyUnannotated = false;
+    const koScroll = document.createElement('div');
+    koScroll.className = 'ql-table-scroll';
+    const koTbl = document.createElement('table');
+    koTbl.className = 'ql-table';
+    koTbl.innerHTML = '<thead><tr><th>KO</th><th>' + t('functional.colGene') + '</th><th>EC</th><th>' +
+      t('functional.colRole') + '</th><th>' + t('functional.colInTable') + '</th><th></th></tr></thead>';
+    const koBody = document.createElement('tbody');
+    moduleKOs[moduleName].forEach((k) => {
+      const inTable = present.has(k);
+      const ann = annotateKO(k);
+      const geneEnz = ann && ann.annotated ? [ann.gene, ann.enzyme].filter(Boolean).join(' · ') : '';
+      if (!(ann && ann.annotated)) anyUnannotated = true;
+      const tr = document.createElement('tr');
+      if (!inTable) tr.style.opacity = '.5';
+      tr.innerHTML =
+        '<td><span class="mono">' + escapeHtml(k) + '</span></td>' +
+        '<td>' + (geneEnz ? escapeHtml(geneEnz) : '<span class="ql-cell-muted">' + t('functional.koUnannotated') + '</span>') + '</td>' +
+        '<td class="ql-cell-muted">' + (ann && ann.ec ? escapeHtml(ann.ec) : '—') + '</td>' +
+        '<td class="ql-cell-muted">' + (ann && ann.role ? escapeHtml(ann.role) : '—') + '</td>' +
+        '<td class="ql-num">' + (inTable ? '✓' : '–') + '</td>' +
+        '<td><a class="ql-kegg-link" href="' + escapeHtml(keggEntryUrl(k)) + '" target="_blank" rel="noopener" title="' + t('functional.keggTitle') + '">KEGG&nbsp;↗</a></td>';
+      koBody.appendChild(tr);
+    });
+    koTbl.appendChild(koBody);
+    koScroll.appendChild(koTbl);
+    koCard.appendChild(koScroll);
+    if (anyUnannotated) {
+      const un = document.createElement('p');
+      un.className = 'ql-field-help';
+      un.textContent = t('functional.koUnannotatedNote');
+      koCard.appendChild(un);
+    }
     container.appendChild(koCard);
 
     // tabla
