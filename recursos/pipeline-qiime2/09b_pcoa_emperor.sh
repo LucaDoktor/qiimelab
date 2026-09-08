@@ -16,12 +16,15 @@ set -e
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
 METADATOS="${RUTA_BASE}/sample-metadata.tsv"
+# Matrices de distancia (por nombre de archivo, sin .qza) sobre las que hacer
+# el PCoA. Deben existir en resultados/08_diversidad/beta/ (paso 09).
+METRICAS=(bray_curtis jaccard)
 # -------------------------------------------------------------------------
 BETA_DIR="${RUTA_BASE}/resultados/08_diversidad"
 
 mkdir -p "${BETA_DIR}/pcoa"
 
-for metric in bray_curtis jaccard; do
+for metric in "${METRICAS[@]}"; do
   qiime diversity pcoa \
     --i-distance-matrix "${BETA_DIR}/beta/${metric}.qza" \
     --o-pcoa "${BETA_DIR}/pcoa/${metric}_pcoa.qza"

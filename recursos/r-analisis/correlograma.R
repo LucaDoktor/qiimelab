@@ -21,7 +21,19 @@
 
 suppressPackageStartupMessages({ library(corrplot) })
 
-familia <- "Times New Roman"   # cambia por "sans" si no tienes esa fuente
+# --- AJUSTA ESTO -------------------------------------------------------------
+familia <- "Times New Roman"   # familia tipográfica; "sans" si no la tienes
+
+# Umbral de p-valor a partir del cual una correlación se marca con asterisco.
+# 0.05 es la convención habitual; usa 0.01 si quieres ser más estricto.
+NIVEL_SIGNIFICANCIA <- 0.05
+
+# Tamaño del PNG de salida. 2200x2200 a 300 dpi ≈ 7.3 pulgadas, suficiente para
+# ~10-15 variables. Súbelo si tienes más y las etiquetas se amontonan.
+ANCHO_PX <- 2200
+ALTO_PX  <- 2200
+RES_DPI  <- 300
+# --------------------------------------------------------------------------
 
 # Matriz de p-valores de la correlación de Pearson (todas las parejas)
 mat_pvalores <- function(M) {
@@ -36,6 +48,8 @@ mat_pvalores <- function(M) {
 
 # Genera el PNG y devuelve list(r = ..., p = ...)
 guardar_correlograma <- function(M, ruta_png, titulo) {
+  # "pairwise.complete.obs": cada correlación usa todas las parejas de datos
+  # completos (así un NA en una variable no tira toda una fila).
   R <- cor(M, use = "pairwise.complete.obs")
   P <- mat_pvalores(M)
 
@@ -44,11 +58,11 @@ guardar_correlograma <- function(M, ruta_png, titulo) {
                                "#FFFFFF",
                                "#D1E5F0", "#92C5DE", "#4393C3", "#2166AC"))(200)
 
-  png(ruta_png, width = 2200, height = 2200, res = 300)
+  png(ruta_png, width = ANCHO_PX, height = ALTO_PX, res = RES_DPI)
   par(family = familia)
 
   # triángulo superior: elipses + asteriscos de significancia
-  corrplot(R, p.mat = P, sig.level = 0.05, method = "ellipse", type = "upper",
+  corrplot(R, p.mat = P, sig.level = NIVEL_SIGNIFICANCIA, method = "ellipse", type = "upper",
            col = col_rb, tl.col = "black", tl.pos = "lt", tl.cex = 1.0,
            insig = "label_sig", pch.col = "grey15", pch.cex = 1.6,
            mar = c(0, 0, 2, 0))

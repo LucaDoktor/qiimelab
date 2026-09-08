@@ -9,9 +9,6 @@
 #           y artefactos de PCR baja el ruido y estabiliza los modelos
 #           estadísticos posteriores; 3) UniFrac necesita una filogenia.
 #
-# Los umbrales min-frequency / min-samples son conservadores por defecto;
-# ajústalos a la profundidad y el diseño de tu estudio.
-#
 # Plantilla educativa adaptada de un pipeline real. NO es un procedimiento
 # soportado paso a paso: léela y ajústala a tus datos antes de ejecutarla.
 # =============================================================================
@@ -20,9 +17,20 @@ set -e
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
 NUM_HILOS=4                                  # ajusta según tu máquina
-MIN_FREQ=10                                  # frecuencia total mínima de un ASV
-MIN_SAMPLES=2                                # nº mínimo de muestras con ese ASV
 METADATOS="${RUTA_BASE}/sample-metadata.tsv"
+
+# Taxones a excluir de la tabla. Para 16S se quitan cloroplastos, mitocondrias
+# (ADN de plantas/hospedador) y eucariotas. OJO: para ITS (hongos) NO pongas
+# "eukaryota" aquí — borrarías toda tu diana. Ajústalo a tu marcador.
+TAXONES_EXCLUIR="mitochondria,chloroplast,eukaryota"   # EJEMPLO — válido para 16S
+
+# Filtro de ASVs raros. Un ASV se conserva si aparece >= MIN_FREQ veces EN TOTAL
+# y en >= MIN_SAMPLES muestras. Sirve para quitar singletons y errores de PCR
+# que DADA2 no pilló, sin sacrificar taxones reales. 10 / 2 es conservador y
+# suele quitar mucho ASV sin apenas perder lecturas; súbelo si tienes ruido,
+# bájalo (p. ej. 1 / 1 = sin filtro) si tu comunidad es de baja diversidad.
+MIN_FREQ=10       # EJEMPLO — frecuencia total mínima de un ASV
+MIN_SAMPLES=2     # EJEMPLO — nº mínimo de muestras en las que debe aparecer
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
@@ -33,17 +41,17 @@ exec 2>&1
 
 echo "Filtrado y filogenia: $(date)"
 
-echo "-> Filtrando mitocondrias, cloroplastos y eucariotas..."
+echo "-> Excluyendo taxones: ${TAXONES_EXCLUIR} ..."
 qiime taxa filter-table \
   --i-table "${RES_DIR}/03_dada2/table.qza" \
   --i-taxonomy "${RES_DIR}/05_taxonomia/taxonomy.qza" \
-  --p-exclude mitochondria,chloroplast,eukaryota \
+  --p-exclude "${TAXONES_EXCLUIR}" \
   --o-filtered-table "${RES_DIR}/06_filtrado/table_taxa_filtered.qza"
 
 qiime taxa filter-seqs \
   --i-sequences "${RES_DIR}/03_dada2/rep_seqs.qza" \
   --i-taxonomy "${RES_DIR}/05_taxonomia/taxonomy.qza" \
-  --p-exclude mitochondria,chloroplast,eukaryota \
+  --p-exclude "${TAXONES_EXCLUIR}" \
   --o-filtered-sequences "${RES_DIR}/06_filtrado/rep_seqs_taxa_filtered.qza"
 
 echo "-> Filtrando ASVs raros (freq < ${MIN_FREQ}, presentes en < ${MIN_SAMPLES} muestras)..."

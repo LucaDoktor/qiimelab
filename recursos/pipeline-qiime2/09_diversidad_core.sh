@@ -21,11 +21,28 @@ set -o pipefail
 
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"          # carpeta raíz de tu análisis
-PROFUNDIDAD_RAREFACCION="<<CAMBIA_ESTO>>"           # p. ej. 10000 (mira tu table_summary.qzv)
 METADATOS="${RUTA_BASE}/sample-metadata.tsv"
+
+# Lecturas a las que se submuestrea cada muestra (rarefacción). Elígela en
+# table_summary.qzv (paso 06/08): lo más alta posible SIN descartar muestras
+# que te interesen, y donde la curva de rarefacción (alpha_rarefaction.qzv) ya
+# esté plana. Es el único parámetro sin valor por defecto: tienes que ponerlo.
+PROFUNDIDAD_RAREFACCION="<<CAMBIA_ESTO>>"           # EJEMPLO — p. ej. 10000
+
+# Métricas a calcular. Estas son el conjunto estándar de core-metrics.
+# Alfa: shannon (estructura/equitatividad), observed_features (riqueza).
+# Beta no filogenética: braycurtis (cuantitativa), jaccard (presencia/ausencia).
+# Beta filogenética (UniFrac): necesita el árbol del paso 08.
+METRICAS_ALFA=(shannon observed_features)
+METRICAS_BETA=(bray_curtis jaccard)                     # no filogenéticas
+METRICAS_UNIFRAC=(unweighted_unifrac weighted_unifrac)  # filogenéticas
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
+
+# El id de métrica de QIIME 2 no lleva guion bajo ("braycurtis"); el resto
+# coincide con el nombre de archivo que usamos.
+metric_id() { case "$1" in bray_curtis) echo braycurtis ;; *) echo "$1" ;; esac; }
 
 # UniFrac puede dar problemas de multihilo en algunos equipos; forzar 1 hilo
 # es lo más seguro y solo cuesta algo de tiempo.
@@ -54,48 +71,40 @@ qiime diversity alpha-rarefaction \
   --o-visualization "${RES_DIR}/08_diversidad/alpha_rarefaction.qzv"
 
 echo "-> 3. Diversidad alfa (Shannon = equitatividad, Observed = riqueza)..."
-qiime diversity alpha \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --p-metric shannon \
-  --o-alpha-diversity "${RES_DIR}/08_diversidad/alpha/shannon.qza"
-qiime diversity alpha \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --p-metric observed_features \
-  --o-alpha-diversity "${RES_DIR}/08_diversidad/alpha/observed_features.qza"
+for m in "${METRICAS_ALFA[@]}"; do
+  qiime diversity alpha \
+    --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
+    --p-metric "${m}" \
+    --o-alpha-diversity "${RES_DIR}/08_diversidad/alpha/${m}.qza"
+done
 
-echo "-> 4. Diversidad beta no filogenética (Bray-Curtis, Jaccard)..."
-qiime diversity beta \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --p-metric braycurtis \
-  --o-distance-matrix "${RES_DIR}/08_diversidad/beta/bray_curtis.qza"
-qiime diversity beta \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --p-metric jaccard \
-  --o-distance-matrix "${RES_DIR}/08_diversidad/beta/jaccard.qza"
+echo "-> 4. Diversidad beta no filogenética..."
+for m in "${METRICAS_BETA[@]}"; do
+  qiime diversity beta \
+    --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
+    --p-metric "$(metric_id "${m}")" \
+    --o-distance-matrix "${RES_DIR}/08_diversidad/beta/${m}.qza"
+done
 
 echo "-> 5. Diversidad beta filogenética (UniFrac, 1 hilo)..."
-qiime diversity beta-phylogenetic \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --i-phylogeny "${RES_DIR}/07_filogenia/rooted_tree.qza" \
-  --p-metric unweighted_unifrac \
-  --p-threads 1 \
-  --o-distance-matrix "${RES_DIR}/08_diversidad/beta/unweighted_unifrac.qza"
-qiime diversity beta-phylogenetic \
-  --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
-  --i-phylogeny "${RES_DIR}/07_filogenia/rooted_tree.qza" \
-  --p-metric weighted_unifrac \
-  --p-threads 1 \
-  --o-distance-matrix "${RES_DIR}/08_diversidad/beta/weighted_unifrac.qza"
+for m in "${METRICAS_UNIFRAC[@]}"; do
+  qiime diversity beta-phylogenetic \
+    --i-table "${RES_DIR}/08_diversidad/rarefied_table.qza" \
+    --i-phylogeny "${RES_DIR}/07_filogenia/rooted_tree.qza" \
+    --p-metric "${m}" \
+    --p-threads 1 \
+    --o-distance-matrix "${RES_DIR}/08_diversidad/beta/${m}.qza"
+done
 
 echo "-> 6. PCoA + gráficos Emperor..."
-for metric in bray_curtis jaccard unweighted_unifrac weighted_unifrac; do
+for m in "${METRICAS_BETA[@]}" "${METRICAS_UNIFRAC[@]}"; do
   qiime diversity pcoa \
-    --i-distance-matrix "${RES_DIR}/08_diversidad/beta/${metric}.qza" \
-    --o-pcoa "${RES_DIR}/08_diversidad/pcoa/${metric}_pcoa.qza"
+    --i-distance-matrix "${RES_DIR}/08_diversidad/beta/${m}.qza" \
+    --o-pcoa "${RES_DIR}/08_diversidad/pcoa/${m}_pcoa.qza"
   qiime emperor plot \
-    --i-pcoa "${RES_DIR}/08_diversidad/pcoa/${metric}_pcoa.qza" \
+    --i-pcoa "${RES_DIR}/08_diversidad/pcoa/${m}_pcoa.qza" \
     --m-metadata-file "${METADATOS}" \
-    --o-visualization "${RES_DIR}/08_diversidad/pcoa/${metric}_emperor.qzv"
+    --o-visualization "${RES_DIR}/08_diversidad/pcoa/${m}_emperor.qzv"
 done
 
 echo "Hecho: resultados en ${RES_DIR}/08_diversidad/"

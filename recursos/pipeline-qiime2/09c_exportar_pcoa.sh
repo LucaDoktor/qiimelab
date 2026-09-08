@@ -16,13 +16,16 @@ set -e
 
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
+# PCoA a exportar (por nombre de archivo, sin _pcoa.qza). Deben existir en
+# resultados/08_diversidad/pcoa/ (paso 09 o 09b).
+METRICAS=(bray_curtis jaccard)
 # -------------------------------------------------------------------------
 PCOA_DIR="${RUTA_BASE}/resultados/08_diversidad/pcoa"
 OUT_DIR="${RUTA_BASE}/resultados/08_diversidad/pcoa_exportado"
 
 mkdir -p "${OUT_DIR}"
 
-for metric in bray_curtis jaccard; do
+for metric in "${METRICAS[@]}"; do
   echo "-> Exportando ${metric}..."
   qiime tools export \
     --input-path "${PCOA_DIR}/${metric}_pcoa.qza" \

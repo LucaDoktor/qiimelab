@@ -15,6 +15,15 @@ set -e
 
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
+
+# Tipo de datos: paired-end (2 archivos por muestra, R1 + R2) o single-end.
+TIPO_DATOS="SampleData[PairedEndSequencesWithQuality]"   # o SampleData[SequencesWithQuality] para single-end
+
+# Formato de entrada. "Casava 1.8" = archivos ya demultiplexados con nombres
+# <muestra>_S##_L###_R1_001.fastq.gz. Si tus nombres NO siguen ese patrón, usa
+# en su lugar un manifiesto: PairedEndFastqManifestPhred33V2 (o …Phred64… si
+# tus FASTQ son antiguos) y pon en --input-path un TSV con las rutas.
+FORMATO="CasavaOneEightSingleLanePerSampleDirFmt"
 # -------------------------------------------------------------------------
 DATA_DIR="${RUTA_BASE}/fastq"                # aquí van tus .fastq.gz
 RES_DIR="${RUTA_BASE}/resultados"
@@ -27,9 +36,9 @@ exec 2>&1
 echo "Importación a QIIME 2: $(date)"
 
 qiime tools import \
-  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --type "${TIPO_DATOS}" \
   --input-path "${DATA_DIR}" \
-  --input-format CasavaOneEightSingleLanePerSampleDirFmt \
+  --input-format "${FORMATO}" \
   --output-path "${RES_DIR}/demux_seqs.qza"
 
 qiime demux summarize \

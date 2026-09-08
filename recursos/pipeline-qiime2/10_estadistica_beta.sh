@@ -15,13 +15,24 @@ set -e
 
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
-COLUMNA_GRUPO="grupo"                        # columna de tus metadatos a contrastar
-PERMUTACIONES=999
 METADATOS="${RUTA_BASE}/sample-metadata.tsv"
+
+# Columna de tus metadatos con el factor cuyo efecto quieres contrastar
+# (tratamiento, sitio, tiempo…). Tiene que existir en el TSV de metadatos.
+COLUMNA_GRUPO="grupo"       # EJEMPLO — cámbialo por el nombre real de tu columna
+
+# Matriz de distancia sobre la que hacer el test (nombre de archivo, sin .qza).
+# bray_curtis capta cambios de abundancia; jaccard, de presencia/ausencia;
+# *_unifrac tienen además en cuenta el parentesco filogenético.
+METRICA="bray_curtis"      # EJEMPLO
+
+# Nº de permutaciones del test. 999 da p-valores con 3 decimales y es el
+# estándar para explorar; sube a 9999 para la cifra final de un paper.
+PERMUTACIONES=999
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
-DIST="${RES_DIR}/08_diversidad/beta/bray_curtis.qza"
+DIST="${RES_DIR}/08_diversidad/beta/${METRICA}.qza"
 
 mkdir -p "${RES_DIR}/09_estadistica" "${LOG_DIR}"
 exec > >(tee -i "${LOG_DIR}/10_estadistica_beta.log")
@@ -36,7 +47,7 @@ qiime diversity beta-group-significance \
   --m-metadata-column "${COLUMNA_GRUPO}" \
   --p-method permanova \
   --p-permutations "${PERMUTACIONES}" \
-  --o-visualization "${RES_DIR}/09_estadistica/permanova_bray_curtis.qzv"
+  --o-visualization "${RES_DIR}/09_estadistica/permanova_${METRICA}.qzv"
 
 echo "-> PERMDISP (${COLUMNA_GRUPO})..."
 qiime diversity beta-group-significance \
@@ -45,6 +56,6 @@ qiime diversity beta-group-significance \
   --m-metadata-column "${COLUMNA_GRUPO}" \
   --p-method permdisp \
   --p-permutations "${PERMUTACIONES}" \
-  --o-visualization "${RES_DIR}/09_estadistica/permdisp_bray_curtis.qzv"
+  --o-visualization "${RES_DIR}/09_estadistica/permdisp_${METRICA}.qzv"
 
 echo "Hecho: resultados en ${RES_DIR}/09_estadistica/"

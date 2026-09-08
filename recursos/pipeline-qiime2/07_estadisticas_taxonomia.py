@@ -22,9 +22,17 @@ import pandas as pd
 
 # --- AJUSTA ESTO ---------------------------------------------------------
 RUTA_TAXONOMIA = "<<CAMBIA_ESTO_POR_TU_CARPETA>>/resultados/05_taxonomia/taxonomy.tsv"
+
+# Cuántos filos mostrar en el ranking del final. Solo afecta a la impresión.
+TOP_FILOS = 5
+
+# Etiquetas que NO cuentan como una asignación real (basura de las bases de
+# datos SILVA/UNITE). Un ASV con "g__uncultured" se considera SIN género.
+ETIQUETAS_BASURA = ("uncultured", "unidentified", "metagenome")
 # ---------------------------------------------------------------------
 
-# skiprows=[1] salta la fila "#q2:types" de QIIME 2
+# skiprows=[1] salta la fila "#q2:types" de QIIME 2 (si tu archivo no la tiene,
+# quita el argumento skiprows)
 df = pd.read_csv(RUTA_TAXONOMIA, sep='\t', skiprows=[1])
 total_asvs = len(df)
 
@@ -41,11 +49,8 @@ def assigned_to_level(taxon, prefix):
     """True si el ASV tiene una etiqueta REAL en ese nivel (no basura)."""
     for n in [x.strip() for x in taxon.split(';')]:
         if n.startswith(prefix):
-            nombre = n.replace(prefix, '')
-            if (len(nombre) > 0
-                    and 'uncultured' not in nombre.lower()
-                    and 'unidentified' not in nombre.lower()
-                    and 'metagenome' not in nombre.lower()):
+            nombre = n.replace(prefix, '').lower()
+            if nombre and not any(b in nombre for b in ETIQUETAS_BASURA):
                 return True
     return False
 
@@ -60,7 +65,7 @@ print(f"ASVs con Familia identificada: {fam} ({fam / total_asvs * 100:.1f}%)")
 print(f"ASVs con Género identificado:  {gen} ({gen / total_asvs * 100:.1f}%)")
 print(f"ASVs con Especie identificada: {esp} ({esp / total_asvs * 100:.1f}%)\n")
 
-print("--- Top 5 Filos por número de ASVs ---")
+print(f"--- Top {TOP_FILOS} Filos por número de ASVs ---")
 
 
 def get_phylum(x):
@@ -71,5 +76,5 @@ def get_phylum(x):
     return 'Sin asignar'
 
 
-print(df['Taxon'].apply(get_phylum).value_counts().head(5).to_string())
+print(df['Taxon'].apply(get_phylum).value_counts().head(TOP_FILOS).to_string())
 print("=" * 50)

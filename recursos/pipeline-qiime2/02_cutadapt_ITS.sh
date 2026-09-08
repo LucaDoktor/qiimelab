@@ -10,9 +10,6 @@
 #   además del primer al inicio (--p-front) se recorta su reverso-complementario
 #   al final (--p-adapter).
 #
-# Los primers de ejemplo son ITS1f / ITS2. Cámbialos por los de TU librería y
-# recalcula sus reverso-complementarios.
-#
 # Plantilla educativa adaptada de un pipeline real. NO es un procedimiento
 # soportado paso a paso: léela y ajústala a tus datos antes de ejecutarla.
 # =============================================================================
@@ -21,10 +18,18 @@ set -e
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis ITS
 NUM_HILOS=4                                  # ajusta según tu máquina
-PRIMER_F="CTTGGTCATTTAGAGGAAGTAA"            # ITS1f (forward)
-PRIMER_R="GCTGCGTTCTTCATCGATGC"             # ITS2  (reverse)
-PRIMER_F_RC="TTACTTCCTCTAAATGACCAAG"         # reverso-complementario de ITS1f
-PRIMER_R_RC="GCATCGATGAAGAACGCAGC"          # reverso-complementario de ITS2
+
+# Primers de tu librería y sus reverso-complementarios (para el read-through).
+# Puedes calcular el RC con: echo "PRIMER" | rev | tr ACGTacgt TGCAtgca
+PRIMER_F="CTTGGTCATTTAGAGGAAGTAA"     # EJEMPLO — ITS1f (forward)
+PRIMER_R="GCTGCGTTCTTCATCGATGC"       # EJEMPLO — ITS2  (reverse)
+PRIMER_F_RC="TTACTTCCTCTAAATGACCAAG"  # EJEMPLO — reverso-complementario de ITS1f
+PRIMER_R_RC="GCATCGATGAAGAACGCAGC"    # EJEMPLO — reverso-complementario de ITS2
+
+# Longitud mínima (pb) que debe quedar tras recortar; lo más corto se descarta.
+# 50 elimina dímeros de primer y ruido sin tocar ITS reales (el ITS más corto
+# ronda las 140-200 pb). No lo bajes de ~20.
+LONGITUD_MINIMA=50
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
@@ -41,7 +46,7 @@ qiime cutadapt trim-paired \
   --p-adapter-r "${PRIMER_F_RC}" \
   --p-match-adapter-wildcards \
   --p-discard-untrimmed \
-  --p-minimum-length 50 \
+  --p-minimum-length "${LONGITUD_MINIMA}" \
   --p-cores "${NUM_HILOS}" \
   --o-trimmed-sequences "${RES_DIR}/02_cutadapt/demux_trimmed.qza" \
   --verbose > "${LOG_DIR}/02_cutadapt_ITS.log" 2>&1
@@ -53,8 +58,8 @@ qiime cutadapt trim-paired \
 # --p-match-adapter-wildcards : interpreta bases IUPAC (N, R, Y...) de los primers.
 # --p-discard-untrimmed : si no encuentra el primer principal, descarta la lectura
 #     (evita que entre ruido ambiental a DADA2).
-# --p-minimum-length 50 : descarta lo que quede < 50 pb tras recortar (dímeros de
-#     primer, ruido); si no, DADA2 puede fallar.
+# --p-minimum-length : descarta lo que quede demasiado corto tras recortar
+#     (dímeros de primer, ruido); si no, DADA2 puede fallar. Ver LONGITUD_MINIMA.
 # --------------------------------------------------------------------------
 
 qiime demux summarize \

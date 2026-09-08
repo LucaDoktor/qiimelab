@@ -29,8 +29,14 @@ RUTA_BASE = "<<CAMBIA_ESTO_POR_TU_CARPETA>>"
 INPUT_DIR = os.path.join(RUTA_BASE, "resultados", "10_datos_exportados", "taxonomia_csv")
 OUTPUT_DIR = os.path.join(RUTA_BASE, "resultados", "11_tablas_taxonomia_limpias")
 METADATOS = os.path.join(RUTA_BASE, "sample-metadata.tsv")
-COLUMNA_GRUPO = "grupo"   # columna de tus metadatos que define los grupos
-TOP_N = 14                # taxones a mostrar antes de agrupar el resto en "Others"
+# Columna de tus metadatos con el factor de agrupación (tratamiento, sitio…).
+# La versión "03_..._tratamientos" promedia la abundancia dentro de cada grupo.
+COLUMNA_GRUPO = "grupo"    # EJEMPLO — cámbialo por el nombre real de tu columna
+
+# Nº de taxones más abundantes que se muestran por separado; el resto se suma
+# en "Others". 14 va bien para una figura de género legible (más colores se
+# vuelven indistinguibles); baja a 8-10 para filo, sube para especie.
+TOP_N = 14                # EJEMPLO
 # ---------------------------------------------------------------------
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)

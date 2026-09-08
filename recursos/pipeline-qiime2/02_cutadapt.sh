@@ -8,9 +8,6 @@
 # Para qué: los primers no son diversidad biológica real; si no se quitan, DADA2
 #           los toma como secuencia y mete ruido en la inferencia de ASVs.
 #
-# Ajusta FORWARD_PRIMER / REVERSE_PRIMER a los primers de TU librería.
-# Los de ejemplo son 341F / 805R (16S V3-V4), en notación IUPAC.
-#
 # Plantilla educativa adaptada de un pipeline real. NO es un procedimiento
 # soportado paso a paso: léela y ajústala a tus datos antes de ejecutarla.
 # =============================================================================
@@ -19,8 +16,12 @@ set -e
 # --- AJUSTA ESTO -----------------------------------------------------------
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis
 NUM_HILOS=4                                  # ajusta según tu máquina
-FORWARD_PRIMER="CCTACGGGNGGCWGCAG"           # 341F (16S V3-V4)
-REVERSE_PRIMER="GACTACHVGGGTATCTAATCC"       # 805R (16S V3-V4)
+
+# Secuencia de los primers de amplificación, tal como los diseñó tu laboratorio,
+# en notación IUPAC (N, W, H, V… = bases ambiguas). Cutadapt los busca y recorta.
+# Si no los quitas, DADA2 los toma como variación biológica e infla el ruido.
+FORWARD_PRIMER="CCTACGGGNGGCWGCAG"       # EJEMPLO — 341F (16S V3-V4). Cámbialo por tu primer forward
+REVERSE_PRIMER="GACTACHVGGGTATCTAATCC"   # EJEMPLO — 805R (16S V3-V4). Cámbialo por tu primer reverse
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
@@ -39,6 +40,9 @@ qiime cutadapt trim-paired \
   --p-match-read-wildcards \
   --p-cores "${NUM_HILOS}" \
   --o-trimmed-sequences "${RES_DIR}/demux_trimmed.qza"
+# --p-match-*-wildcards : hace que las bases ambiguas (N, W…) del primer casen
+#     con cualquier base de la lectura. Deja siempre activados si tus primers
+#     tienen letras IUPAC (casi todos los de 16S/ITS las tienen).
 
 qiime demux summarize \
   --i-data "${RES_DIR}/demux_trimmed.qza" \

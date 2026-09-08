@@ -18,6 +18,16 @@ set -e
 RUTA_BASE="<<CAMBIA_ESTO_POR_TU_CARPETA>>"   # carpeta raíz de tu análisis ITS
 NUM_HILOS=4                                  # ajusta según tu máquina
 METADATOS="${RUTA_BASE}/sample-metadata.tsv"
+
+# Truncado dinámico: corta la lectura en la primera base con calidad Phred
+# <= TRUNC_Q. En ITS NO se trunca a longitud fija (--p-trunc-len 0), así que
+# este es el filtro de calidad de cola principal. 2 es el valor recomendado.
+TRUNC_Q=2
+
+# Errores esperados máximos por lectura (suma de probabilidades de error).
+# 2 es el valor DADA2 por defecto; súbelo a 3-5 si retienes muy pocas lecturas.
+MAX_EE_F=2
+MAX_EE_R=2
 # -------------------------------------------------------------------------
 RES_DIR="${RUTA_BASE}/resultados"
 LOG_DIR="${RUTA_BASE}/logs"
@@ -30,9 +40,9 @@ qiime dada2 denoise-paired \
   --i-demultiplexed-seqs "${RES_DIR}/02_cutadapt/demux_trimmed.qza" \
   --p-trunc-len-f 0 \
   --p-trunc-len-r 0 \
-  --p-trunc-q 2 \
-  --p-max-ee-f 2 \
-  --p-max-ee-r 2 \
+  --p-trunc-q "${TRUNC_Q}" \
+  --p-max-ee-f "${MAX_EE_F}" \
+  --p-max-ee-r "${MAX_EE_R}" \
   --p-n-threads "${NUM_HILOS}" \
   --o-table "${RES_DIR}/03_dada2/table.qza" \
   --o-representative-sequences "${RES_DIR}/03_dada2/rep_seqs.qza" \
@@ -41,10 +51,8 @@ qiime dada2 denoise-paired \
 # --- Qué hace cada parámetro -------------------------------------------------
 # --p-trunc-len-f 0 / -r 0 : recomendación oficial de DADA2 para ITS. Desactiva
 #     el truncado a longitud fija para no mutilar taxones con ITS largo.
-# --p-trunc-q 2 : truncado dinámico de rescate: corta la lectura en la primera
-#     base con calidad Phred <= 2 (ruido puro), conservando el inicio bueno.
-# --p-max-ee-f / -r 2 : "errores esperados" máximos por lectura; si la suma de
-#     probabilidades de error supera 2, la lectura se descarta antes del modelo.
+# --p-trunc-q       : truncado dinámico de rescate (ver TRUNC_Q).
+# --p-max-ee-f / -r : "errores esperados" máximos por lectura (ver MAX_EE_*).
 # --------------------------------------------------------------------------
 
 qiime metadata tabulate \
