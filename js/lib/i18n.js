@@ -238,6 +238,9 @@ const DICTS = {
       unclassified: 'Sin clasificar',
       colSample: 'Muestra', axisSamples: 'Muestras', axisSamplesBy: 'Muestras, agrupadas por {col}',
       axisPct: 'Abundancia relativa (%)', chartFigTitle: 'Composición taxonómica por muestra',
+      topNLabel: 'Taxones individuales',
+      topNHelp: 'Cuántos taxones (los más abundantes en promedio) se muestran con su propio color; el resto se suma en «Otros». Entre 3 y 20.',
+      colorsRepeat: 'Con más de 7 taxones los colores se repiten — identifica cada uno por la leyenda o el tooltip.',
     },
     alpha: {
       eyebrow: 'Diversidad dentro de cada muestra', title: 'Diversidad alfa',
@@ -536,6 +539,9 @@ const DICTS = {
       unclassified: 'Unclassified',
       colSample: 'Sample', axisSamples: 'Samples', axisSamplesBy: 'Samples, grouped by {col}',
       axisPct: 'Relative abundance (%)', chartFigTitle: 'Taxonomic composition per sample',
+      topNLabel: 'Individual taxa',
+      topNHelp: 'How many taxa (most abundant on average) are shown with their own colour; the rest is summed into “Other”. Between 3 and 20.',
+      colorsRepeat: 'With more than 7 taxa the colours repeat — identify each one from the legend or the tooltip.',
     },
     alpha: {
       eyebrow: 'Diversity within each sample', title: 'Alpha diversity',

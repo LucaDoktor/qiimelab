@@ -6,7 +6,7 @@ import { attachChartEditor } from '../lib/chartEditor.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 const OTHER_VAR = '--cat-8';
-const TOP_N = 7;
+const TOP_N_DEFAULT = 7, TOP_N_MIN = 3, TOP_N_MAX = 20;
 
 function shortTaxonName(fullTax) {
   const parts = fullTax.split(';').map((p) => p.trim()).filter(Boolean);
@@ -47,6 +47,7 @@ export function render(container) {
   let level = null;
   let sortByGroup = true;
   let groupCol = null;
+  let topN = TOP_N_DEFAULT;
   let editor = null;
 
   function paint() {
@@ -57,7 +58,7 @@ export function render(container) {
     header.innerHTML =
       '<p class="ql-eyebrow">' + t('barplots.eyebrow') + '</p>' +
       '<h1 class="ql-page-title">' + t('barplots.title') + '</h1>' +
-      '<p class="ql-page-sub">' + t('barplots.subtitle', { n: TOP_N }) + '</p>';
+      '<p class="ql-page-sub">' + t('barplots.subtitle', { n: topN }) + '</p>';
     container.appendChild(header);
 
     if (!state.taxaBarplot) {
@@ -117,6 +118,15 @@ export function render(container) {
     levelField.appendChild(levelSelect);
     controls.appendChild(levelField);
 
+    const topField = document.createElement('div');
+    topField.className = 'ql-field';
+    topField.innerHTML = '<label for="qlTopN">' + t('barplots.topNLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="qlTopNr" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" />' +
+      '<input type="number" id="qlTopN" class="ql-num-small tabular" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" /></div>' +
+      '<p class="ql-field-help">' + t('barplots.topNHelp') + '</p>';
+    controls.appendChild(topField);
+
     if (groupOptions.length > 0) {
       const groupField = document.createElement('div');
       groupField.className = 'ql-field';
@@ -157,6 +167,17 @@ export function render(container) {
     container.appendChild(grid);
 
     levelSelect.addEventListener('change', () => { level = levelSelect.value; paint(); });
+    {
+      const nInput = topField.querySelector('#qlTopN');
+      const rInput = topField.querySelector('#qlTopNr');
+      const apply = (v) => {
+        const nv = Math.max(TOP_N_MIN, Math.min(TOP_N_MAX, parseInt(v, 10) || TOP_N_DEFAULT));
+        if (nv !== topN) { topN = nv; paint(); }
+      };
+      nInput.addEventListener('change', () => apply(nInput.value));
+      rInput.addEventListener('change', () => apply(rInput.value));
+      rInput.addEventListener('input', () => { nInput.value = rInput.value; });
+    }
 
     // ---- tabla ----
     const tableCard = document.createElement('section');
@@ -189,8 +210,8 @@ export function render(container) {
       return { header: h, mean: vals.reduce((a, b) => a + b, 0) / (vals.length || 1) };
     }).sort((a, b) => b.mean - a.mean);
 
-    const topTaxa = means.slice(0, TOP_N).map((m) => m.header);
-    const otherTaxa = means.slice(TOP_N).map((m) => m.header);
+    const topTaxa = means.slice(0, topN).map((m) => m.header);
+    const otherTaxa = means.slice(topN).map((m) => m.header);
 
     let sampleOrder = table.rows.map((r) => r[sampleKey]);
     let groupBySample = {};
@@ -209,17 +230,21 @@ export function render(container) {
     const rowsBySample = {};
     table.rows.forEach((r) => { rowsBySample[r[sampleKey]] = r; });
 
-    const series = topTaxa.map((h, i) => ({ key: h, label: shortTaxonName(h), colorVar: CAT_VARS[i] }));
+    // Hasta 7 taxones = un color de la paleta categórica cada uno. A partir de
+    // ahí los colores se repiten (como en el barplot de QIIME2): la identidad
+    // la lleva la leyenda + el tooltip + la tabla, no el color solo.
+    const series = topTaxa.map((h, i) => ({ key: h, label: shortTaxonName(h), colorVar: CAT_VARS[i % CAT_VARS.length] }));
     const otherLabel = preAggOtherHeaders.length
       ? t('barplots.othersNplus', { n: otherTaxa.length })
       : t('barplots.othersN', { n: otherTaxa.length });
     series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
+    const colorsRepeat = topTaxa.length > CAT_VARS.length;
 
     // chart
-    const legCols = series.length > 5 ? 2 : 1;
+    const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
     const legRows = Math.ceil(series.length / legCols);
     const marginL = 56, marginR = 12, marginT = 42;
-    const marginB = 66 + legRows * 15; // hueco para etiquetas rotadas + leyenda
+    const marginB = 66 + legRows * 15 + (colorsRepeat ? 16 : 0); // etiquetas rotadas + leyenda (+ nota)
     const slotW = Math.max(18, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
     const barW = Math.min(24, slotW * 0.7);
     const innerH = 380;
@@ -294,9 +319,9 @@ export function render(container) {
     yTitle.textContent = t('barplots.axisPct');
     svg.appendChild(yTitle);
 
-    // leyenda dentro del SVG (editable + exportable), 1-2 columnas
+    // leyenda dentro del SVG (editable + exportable), 1-3 columnas
     const legG = svgEl('g', { 'data-ce': 'legend' });
-    const colW = Math.min(240, (W - marginL - marginR) / legCols);
+    const colW = Math.min(260, Math.max(150, (W - marginL - marginR) / legCols));
     series.forEach((s, i) => {
       const col = Math.floor(i / legRows), rw = i % legRows;
       const xx = col * colW, yy = rw * 15;
@@ -305,6 +330,12 @@ export function render(container) {
       lt.textContent = s.label;
       legG.appendChild(lt);
     });
+    if (colorsRepeat) {
+      const nt = svgEl('text', { x: 0, y: legRows * 15 + 4, class: 'ql-tick-label' });
+      nt.setAttribute('fill', 'var(--ink-muted)');
+      nt.textContent = t('barplots.colorsRepeat');
+      legG.appendChild(nt);
+    }
     legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 18) + ')');
     svg.appendChild(legG);
 
