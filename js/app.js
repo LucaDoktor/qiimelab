@@ -2,10 +2,12 @@
 // son módulos ES nativos que el navegador carga directamente.
 
 import { renderShell, subscribeShell } from './modules/shell.js';
+import { renderFooter } from './modules/footer.js';
 import { onLangChange, t } from './lib/i18n.js';
 
 const sidebar = document.getElementById('sidebar');
 const view = document.getElementById('app-view');
+const footer = document.getElementById('app-footer');
 
 const moduleLoaders = {
   '': () => import('./modules/home.js'),
@@ -34,6 +36,7 @@ async function renderRoute() {
 
   routeId = currentRouteId();
   renderShell(sidebar, routeId);
+  renderFooter(footer);
   view.innerHTML = '<p class="ql-panel-note">' + t('app.loading') + '</p>';
   try {
     const mod = await moduleLoaders[routeId]();

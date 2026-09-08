@@ -38,6 +38,7 @@ const DICTS = {
       nameLabel: 'Tu nombre (opcional, se guarda solo en este navegador)',
       namePlaceholder: 'Tu nombre (opcional)',
     },
+    footer: { by: 'por', source: 'Código en GitHub' },
     slots: {
       metadata: 'Metadatos', taxonomy: 'Taxonomía', taxaBarplot: 'Barplot taxonómico',
       taxaCounts: 'Conteos taxón × muestra', alpha: 'Diversidad alfa', beta: 'Diversidad beta',
@@ -367,6 +368,7 @@ const DICTS = {
       nameLabel: 'Your name (optional, stored only in this browser)',
       namePlaceholder: 'Your name (optional)',
     },
+    footer: { by: 'by', source: 'Source on GitHub' },
     slots: {
       metadata: 'Metadata', taxonomy: 'Taxonomy', taxaBarplot: 'Taxonomic barplot',
       taxaCounts: 'Taxon × sample counts', alpha: 'Alpha diversity', beta: 'Beta diversity',
@@ -696,6 +698,7 @@ const DICTS = {
       nameLabel: 'Il tuo nome (facoltativo, salvato solo in questo browser)',
       namePlaceholder: 'Il tuo nome (facoltativo)',
     },
+    footer: { by: 'di', source: 'Codice su GitHub' },
     slots: {
       metadata: 'Metadati', taxonomy: 'Tassonomia', taxaBarplot: 'Barplot tassonomico',
       taxaCounts: 'Conteggi taxon × campione', alpha: 'Diversità alfa', beta: 'Diversità beta',
@@ -788,6 +791,7 @@ const DICTS = {
       nameLabel: 'Dein Name (optional, nur in diesem Browser gespeichert)',
       namePlaceholder: 'Dein Name (optional)',
     },
+    footer: { by: 'von', source: 'Quellcode auf GitHub' },
     slots: {
       metadata: 'Metadaten', taxonomy: 'Taxonomie', taxaBarplot: 'Taxonomischer Barplot',
       taxaCounts: 'Zählungen Taxon × Probe', alpha: 'Alpha-Diversität', beta: 'Beta-Diversität',
@@ -880,6 +884,7 @@ const DICTS = {
       nameLabel: '你的名字（可选，仅保存在此浏览器中）',
       namePlaceholder: '你的名字（可选）',
     },
+    footer: { by: '作者', source: 'GitHub 源代码' },
     slots: {
       metadata: '元数据', taxonomy: '分类学', taxaBarplot: '分类学条形图',
       taxaCounts: '类群 × 样本 计数', alpha: 'Alpha 多样性', beta: 'Beta 多样性',
