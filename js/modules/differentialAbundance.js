@@ -111,6 +111,7 @@ export function render(container) {
   let search = '';
   let sort = { key: 'padj', dir: 'asc' };
   let mapping = null;
+  let mappedFileId = null; // para re-mapear si se carga otra tabla distinta
   let showRScript = false;
   let chartType = 'volcano'; // 'volcano' | 'lollipop' | 'heatmap'
   let editor = null;
@@ -195,7 +196,10 @@ export function render(container) {
     }
 
     const da = state.differentialAbundance;
-    if (!mapping) mapping = { ...da.mapping };
+    if (!mapping || mappedFileId !== da.sourceFileId) {
+      mapping = { ...da.mapping };
+      mappedFileId = da.sourceFileId;
+    }
 
     // entidad de las filas: taxón o KO (según lo detectado en la carga)
     const isKO = da.entityType === 'ko';
