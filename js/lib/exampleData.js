@@ -13,8 +13,54 @@
 import { state, registerFile, setSlot, addAlphaMetric, addBetaMetric, addTaxaBarplotLevel } from '../state.js';
 import { ingestFile } from './ingest.js';
 import { routeResultToState } from './route.js';
+import { t } from './i18n.js';
 
 const EXAMPLE_BASE = 'datos-ejemplo/';
+
+// clave → [rutas relativas dentro de datos-ejemplo/] + clave i18n del rótulo.
+// Sirve para los enlaces "descargar datos de ejemplo" de cada módulo.
+export const EXAMPLE_FILES = {
+  metadata: { paths: ['metadatos/sample-metadata.tsv'], key: 'exdl.metadata' },
+  taxonomy: { paths: ['taxonomia/taxonomy.tsv'], key: 'exdl.taxonomy' },
+  barplot: { paths: ['barplot/genero_abundancia_relativa_TOP14.csv'], key: 'exdl.barplot' },
+  counts: { paths: ['venn/genero_conteos_absolutos.csv'], key: 'exdl.counts' },
+  shannon: { paths: ['diversidad-alfa/shannon.tsv'], key: 'exdl.shannon' },
+  observed: { paths: ['diversidad-alfa/observed_features.tsv'], key: 'exdl.observed' },
+  betaqza: { paths: ['diversidad-beta/bray_curtis.qza'], key: 'exdl.betaqza' },
+  pcoa: { paths: ['pcoa/bray_curtis_ordination.txt'], key: 'exdl.pcoa' },
+  deseq2: { paths: ['abundancia-diferencial/DESeq2_D_vs_Control.csv'], key: 'exdl.deseq2' },
+  kolist: { paths: ['funcional-picrust2/KOlist.csv'], key: 'exdl.kolist' },
+  koabund: { paths: ['funcional-picrust2/KO_pred_metagenome_unstrat.tsv.gz'], key: 'exdl.koabund' },
+  fastq: { paths: ['qc/muestra_ejemplo_R1.fastq.gz', 'qc/muestra_ejemplo_R2.fastq.gz'], key: 'exdl.fastq' },
+};
+
+/** Devuelve un bloque con enlaces de descarga directa a los archivos de ejemplo. */
+export function exampleDownloadBlock(keys) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ql-exdl';
+  const head = document.createElement('p');
+  head.className = 'ql-exdl-head';
+  head.textContent = t('exdl.intro');
+  wrap.appendChild(head);
+  const list = document.createElement('div');
+  list.className = 'ql-exdl-list';
+  keys.forEach((k) => {
+    const spec = EXAMPLE_FILES[k];
+    if (!spec) return;
+    spec.paths.forEach((rel) => {
+      const a = document.createElement('a');
+      a.href = EXAMPLE_BASE + rel;
+      a.download = rel.split('/').pop();
+      a.className = 'ql-exdl-link';
+      a.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>' +
+        '<span>' + rel.split('/').pop() + '</span>';
+      a.title = t(spec.key);
+      list.appendChild(a);
+    });
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
 
 function mulberry32(a) {
   return function () {
@@ -284,7 +330,7 @@ export function loadRealSequenceQC() {
  * `synthetic` son funciones (la de `real` puede devolver una promesa). Se
  * encarga del estado "cargando…" y de enseñar errores/avisos.
  */
-export function mountExampleButtons(hostEl, { synthetic, real, realLabel, syntheticLabel } = {}) {
+export function mountExampleButtons(hostEl, { synthetic, real, realLabel, syntheticLabel, download } = {}) {
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;';
   const msg = document.createElement('p');
@@ -326,5 +372,6 @@ export function mountExampleButtons(hostEl, { synthetic, real, realLabel, synthe
 
   hostEl.appendChild(row);
   hostEl.appendChild(msg);
+  if (Array.isArray(download) && download.length) hostEl.appendChild(exampleDownloadBlock(download));
   return row;
 }

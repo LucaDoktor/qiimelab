@@ -39,6 +39,7 @@ function emptyState(container, title, desc) {
   mountExampleButtons(box, {
     real: loadRealCommunityData,
     synthetic: loadExampleCommunityData,
+    download: ['barplot', 'taxonomy', 'metadata'],
   });
   container.appendChild(box);
 }

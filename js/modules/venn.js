@@ -82,6 +82,7 @@ function emptyState(container) {
     real: loadRealCounts,
     synthetic: loadExampleCounts,
     syntheticLabel: t('venn.exSynthLabel'),
+    download: ['counts', 'metadata'],
   });
   container.appendChild(card);
 }

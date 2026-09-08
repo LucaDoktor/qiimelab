@@ -6,7 +6,7 @@
 import { state, subscribe, registerFile, addSequenceQC, removeFile } from '../state.js';
 import { t } from '../lib/i18n.js';
 import { analyzeFastq } from '../lib/fastq.js';
-import { loadRealSequenceQC } from '../lib/exampleData.js';
+import { loadRealSequenceQC, exampleDownloadBlock } from '../lib/exampleData.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -701,6 +701,7 @@ export function render(container) {
       empty.style.marginTop = '18px';
       empty.innerHTML = '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 17V7m4 10v-4m4 4V5m4 12v-7m4 7V9"/><path d="M2 20h20"/></svg>' +
         '<h3>' + t('qc.empty.title') + '</h3><p>' + t('qc.empty.note') + '</p></div>';
+      empty.querySelector('.ql-empty').appendChild(exampleDownloadBlock(['fastq']));
       container.appendChild(empty);
       return;
     }

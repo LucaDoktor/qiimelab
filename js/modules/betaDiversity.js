@@ -75,7 +75,7 @@ export function render(container) {
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
         '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
       container.appendChild(card);
-      mountExampleButtons(card.querySelector('.ql-empty'), { real: loadRealCommunityData, synthetic: loadExampleCommunityData });
+      mountExampleButtons(card.querySelector('.ql-empty'), { real: loadRealCommunityData, synthetic: loadExampleCommunityData, download: ['betaqza', 'pcoa', 'metadata'] });
       return;
     }
 
@@ -295,7 +295,7 @@ export function render(container) {
       card.innerHTML = '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="14" r="2.2"/><circle cx="15" cy="7" r="2.2"/><circle cx="18" cy="16" r="2.2"/><circle cx="9" cy="18" r="2.2"/></svg>' +
         '<h3>' + t('beta.pcoaEmptyTitle') + '</h3><p>' + t('beta.pcoaEmptyDesc') + '</p></div>';
       container.appendChild(card);
-      mountExampleButtons(card.querySelector('.ql-empty'), { real: loadRealCommunityData, realLabel: t('beta.pcoaLoadExample') });
+      mountExampleButtons(card.querySelector('.ql-empty'), { real: loadRealCommunityData, realLabel: t('beta.pcoaLoadExample'), download: ['pcoa', 'metadata'] });
       return;
     }
 

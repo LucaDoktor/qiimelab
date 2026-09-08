@@ -197,6 +197,16 @@ const DICTS = {
       colorsRepeat: 'Con más de 7 grupos los colores se repiten.',
       downloadExample: 'Descargar datos de ejemplo',
     },
+    exdl: {
+      title: 'Descargar los archivos de ejemplo',
+      intro: 'Descarga y abre estos archivos para ver las columnas y el formato exacto que necesita tu propio archivo antes de subir nada.',
+      metadata: 'Metadatos de las muestras', taxonomy: 'Taxonomía por ASV',
+      barplot: 'Abundancia relativa por género (barplot)', counts: 'Conteos absolutos taxón × muestra',
+      shannon: 'Shannon por muestra', observed: 'Riqueza (Observed Features)',
+      betaqza: 'Matriz de distancias Bray-Curtis (.qza)', pcoa: 'Coordenadas PCoA (ordination.txt)',
+      deseq2: 'Tabla de abundancia diferencial (DESeq2)', kolist: 'KOs por módulo funcional',
+      koabund: 'Abundancia de KOs por muestra (PICRUSt2)', fastq: 'Lecturas FASTQ 16S de ejemplo',
+    },
     a11y: {
       chartBoxplotAlpha: 'Boxplot de diversidad alfa por grupo',
       chartHeatmapBeta: 'Mapa de calor de distancias beta',
@@ -511,6 +521,16 @@ const DICTS = {
       missingData: 'Missing data', needAnd: ' and ', remove: 'Remove', uploadFiles: 'Upload files',
       colorsRepeat: 'With more than 7 groups the colours repeat.',
       downloadExample: 'Download example data',
+    },
+    exdl: {
+      title: 'Download the example files',
+      intro: 'Download and open these files to see the exact columns and format your own file needs before uploading anything.',
+      metadata: 'Sample metadata', taxonomy: 'Per-ASV taxonomy',
+      barplot: 'Relative abundance by genus (barplot)', counts: 'Absolute taxon × sample counts',
+      shannon: 'Shannon per sample', observed: 'Richness (Observed Features)',
+      betaqza: 'Bray-Curtis distance matrix (.qza)', pcoa: 'PCoA coordinates (ordination.txt)',
+      deseq2: 'Differential-abundance table (DESeq2)', kolist: 'KOs by functional module',
+      koabund: 'KO abundance per sample (PICRUSt2)', fastq: 'Example 16S FASTQ reads',
     },
     a11y: {
       chartBoxplotAlpha: 'Alpha diversity boxplot by group',

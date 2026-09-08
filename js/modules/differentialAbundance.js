@@ -141,6 +141,7 @@ export function render(container) {
         real: () => loadRealDifferentialAbundance(),
         synthetic: loadExampleDifferentialAbundance,
         realLabel: t('differential.exampleLabel'),
+        download: ['deseq2'],
       });
       return;
     }

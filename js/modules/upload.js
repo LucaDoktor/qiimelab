@@ -5,6 +5,7 @@ import { routeResultToState } from '../lib/route.js';
 import {
   loadExampleCommunityData, loadExampleDifferentialAbundance,
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
+  exampleDownloadBlock,
 } from '../lib/exampleData.js';
 
 export function render(container) {
@@ -89,6 +90,19 @@ export function render(container) {
     synthRow.appendChild(btnCommunity);
     synthRow.appendChild(btnDiff);
     exampleWrap.appendChild(synthRow);
+
+    const dl = document.createElement('details');
+    dl.className = 'ql-exdl-details';
+    dl.style.marginTop = '14px';
+    const sm = document.createElement('summary');
+    sm.textContent = t('exdl.title');
+    dl.appendChild(sm);
+    dl.appendChild(exampleDownloadBlock([
+      'metadata', 'taxonomy', 'barplot', 'counts', 'shannon', 'observed',
+      'betaqza', 'pcoa', 'deseq2', 'kolist', 'koabund', 'fastq',
+    ]));
+    exampleWrap.appendChild(dl);
+
     card.appendChild(exampleWrap);
 
     if (lastWarnings.length > 0) {

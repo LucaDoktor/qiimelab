@@ -57,6 +57,7 @@ export function render(container) {
       mountExampleButtons(card.querySelector('.ql-empty'), {
         real: loadRealCommunityData,
         synthetic: loadExampleCommunityData,
+        download: ['shannon', 'observed', 'metadata'],
       });
       return;
     }
