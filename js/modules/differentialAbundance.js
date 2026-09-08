@@ -389,7 +389,12 @@ export function render(container) {
         const cx = xScale(d.lfc), cy = yScale(d.neglog);
         const matches = hasSearch && d.taxon.toLowerCase().includes(searchTerm);
         const dim = hasSearch && !matches;
-        if (matches) pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 }));
+        if (matches) {
+          // anillo de selección (búsqueda): halo de superficie + aro de marca,
+          // para que se lea como "la UI te señala esto", no como un color de dato.
+          pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9.5, fill: 'none', stroke: 'var(--surface)', 'stroke-width': 4 }));
+          pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9.5, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 }));
+        }
         const c = svgEl('circle', { cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6 });
         c.addEventListener('mouseenter', () => showTooltip(d, cx, cy));
         c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));

@@ -353,7 +353,7 @@ function renderReport(container, r) {
   // aviso de submuestra
   const note = document.createElement('div');
   note.className = 'ql-card ql-panel';
-  note.style.cssText = 'margin-top:18px;border-left:3px solid var(--accent);';
+  note.style.cssText = 'margin-top:18px;border-left:3px solid var(--border-strong);';
   note.innerHTML = '<p style="margin:0;font-size:13px;">' +
     (r.subsampled
       ? t('qc.subsampleNote', { n: fmtInt(r.nReads), total: fmtInt(r.estTotalReads) })
