@@ -113,6 +113,7 @@ qiimelab/
 ├── favicon.svg               # logotipo (dendrograma sobre baldosa de marca)
 ├── .nojekyll                 # desactiva el procesado Jekyll de GitHub Pages
 ├── datos-ejemplo/            # recorte real anonimizado + su README
+├── recursos/                 # plantillas de scripts (pipeline QIIME2 + R) + su README
 ├── css/                      # tokens.css (paleta), base.css, components.css
 └── js/
     ├── app.js                 # router por hash + carga perezosa de módulos
@@ -131,8 +132,17 @@ qiimelab/
     │   └── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
     └── modules/                 # un archivo por módulo (shell, home, upload,
         │                        # taxaBarplot, alphaDiversity, betaDiversity,
-        │                        # differentialAbundance, venn, sequenceQC)
+        │                        # differentialAbundance, venn, sequenceQC, recursos)
 ```
+
+## Recursos (`recursos/`)
+
+Plantillas de scripts **educativas**, adaptadas de un pipeline de metabarcoding
+real: el flujo de QIIME 2 (16S + dos pasos de ITS) en `recursos/pipeline-qiime2/`
+y un par de helpers de R en `recursos/r-analisis/`. Rutas como
+`<<CAMBIA_ESTO_POR_TU_CARPETA>>`, nombres de archivo genéricos, sin datos.
+**No son un procedimiento soportado paso a paso.** La app las lista para
+descargar en `#/recursos`. Ver `recursos/README.md`.
 
 Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
 `moduleLoaders` de `js/app.js` y otra en `ROUTES` de `js/modules/shell.js`.
