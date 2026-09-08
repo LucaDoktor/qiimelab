@@ -2,11 +2,25 @@ import { state, subscribe, registerFile, removeFile } from '../state.js';
 import { t } from '../lib/i18n.js';
 import { ingestFile } from '../lib/ingest.js';
 import { routeResultToState } from '../lib/route.js';
+import { exportSession, importSession, describeSession, sessionFilename } from '../lib/session.js';
+import { openConfirm } from '../lib/modal.js';
 import {
   loadExampleCommunityData, loadExampleDifferentialAbundance,
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
   exampleDownloadBlock, exampleFileLinks,
 } from '../lib/exampleData.js';
+
+function downloadFile(name, text, mime) {
+  try {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  } catch (e) { return false; }
+}
 
 // Tipos de archivo que el detector (ingest.js) reconoce, con las columnas
 // mínimas y los alias de cabecera que acepta cada uno. Se usa para la ayuda
@@ -176,6 +190,59 @@ export function render(container) {
     listCard.className = 'ql-card ql-panel';
     listCard.innerHTML = '<h2>' + t('upload.filesTitle') + '</h2><p class="ql-panel-note">' +
       (state.files.length === 0 ? t('upload.filesNone') : t('upload.filesCount', { n: state.files.length })) + '</p>';
+
+    // --- guardar / cargar sesión completa ---
+    const sessionBar = document.createElement('div');
+    sessionBar.className = 'ql-session-bar';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'ql-btn';
+    saveBtn.textContent = t('session.save');
+    const anyData = state.files.length > 0
+      || ['metadata', 'taxonomy', 'taxaBarplot', 'alphaDiversity', 'betaDiversity', 'differentialAbundance', 'taxaCounts', 'functionalKO', 'functionalCategories', 'ordination'].some((k) => state[k])
+      || (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0);
+    saveBtn.disabled = !anyData;
+    saveBtn.addEventListener('click', () => {
+      const json = JSON.stringify(exportSession(), null, 2);
+      const ok = downloadFile(sessionFilename(), json, 'application/json;charset=utf-8');
+      saveBtn.textContent = ok ? t('session.saved') : t('session.save');
+      if (ok) setTimeout(() => { saveBtn.textContent = t('session.save'); }, 1800);
+    });
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button';
+    loadBtn.className = 'ql-btn';
+    loadBtn.textContent = t('session.load');
+    const sessionInput = document.createElement('input');
+    sessionInput.type = 'file';
+    sessionInput.accept = 'application/json,.json';
+    sessionInput.style.display = 'none';
+    loadBtn.addEventListener('click', () => sessionInput.click());
+    sessionInput.addEventListener('change', async () => {
+      const file = sessionInput.files && sessionInput.files[0];
+      sessionInput.value = '';
+      if (!file) return;
+      let parsed;
+      try { parsed = JSON.parse(await file.text()); }
+      catch (e) { lastWarnings = [t('session.badFile')]; paint(); return; }
+      const info = describeSession(parsed);
+      const bodyHtml = '<p>' + t('session.confirmBody', { files: info.files, slots: info.slots }) + '</p>' +
+        (info.formatMismatch ? '<p class="ql-field-help">' + t('session.confirmFormat', { fmt: escapeHtml(String(info.format)) }) + '</p>' : '');
+      const go = await openConfirm({
+        title: t('session.confirmTitle'),
+        bodyHtml,
+        confirmLabel: t('session.confirmYes'),
+        cancelLabel: t('ui.cancel'),
+        danger: true,
+      });
+      if (!go) return;
+      const res = importSession(parsed);
+      lastWarnings = res.ok ? res.warnings : res.warnings;
+      // importSession hace notify() → paint() se dispara por el subscribe
+    });
+    sessionBar.append(saveBtn, loadBtn, sessionInput);
+    listCard.appendChild(sessionBar);
+    listCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('session.hint') + '</p>');
+
     if (state.files.length > 0) {
       const list = document.createElement('div');
       list.className = 'ql-filelist';

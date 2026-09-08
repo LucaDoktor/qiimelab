@@ -260,6 +260,16 @@ const DICTS = {
       missingData: 'Faltan datos', needAnd: ' y ', remove: 'Quitar', uploadFiles: 'Subir archivos',
       colorsRepeat: 'Con más de 7 grupos los colores se repiten.',
       downloadExample: 'Descargar datos de ejemplo',
+      cancel: 'Cancelar', skipToContent: 'Saltar al contenido',
+    },
+    session: {
+      save: 'Guardar sesión', saved: 'Guardada ✓', load: 'Cargar sesión',
+      hint: 'Guarda todo lo cargado (datos, estilos de gráfico, idioma, nombre) en un archivo .json para retomarlo o compartirlo. No incluye los FASTQ crudos, solo su informe de calidad.',
+      badFile: 'No se ha podido leer el archivo como JSON de sesión.',
+      confirmTitle: 'Cargar sesión',
+      confirmBody: 'Esto reemplaza por completo la sesión actual: {files} archivo(s) y {slots} módulo(s) con datos. Lo que tengas cargado ahora se pierde.',
+      confirmFormat: 'La sesión está en formato {fmt} y esta versión usa otro; se restaurará lo que case por nombre.',
+      confirmYes: 'Reemplazar sesión',
     },
     exdl: {
       title: 'Descargar los archivos de ejemplo',
@@ -812,6 +822,16 @@ const DICTS = {
       missingData: 'Missing data', needAnd: ' and ', remove: 'Remove', uploadFiles: 'Upload files',
       colorsRepeat: 'With more than 7 groups the colours repeat.',
       downloadExample: 'Download example data',
+      cancel: 'Cancel', skipToContent: 'Skip to content',
+    },
+    session: {
+      save: 'Save session', saved: 'Saved ✓', load: 'Load session',
+      hint: 'Saves everything loaded (data, chart styles, language, name) to a .json file to resume or share. Raw FASTQ is not included, only its quality report.',
+      badFile: 'Could not read the file as a session JSON.',
+      confirmTitle: 'Load session',
+      confirmBody: 'This fully replaces the current session: {files} file(s) and {slots} module(s) with data. Whatever you have loaded now is lost.',
+      confirmFormat: 'The session is in format {fmt} and this version uses a different one; what matches by name will be restored.',
+      confirmYes: 'Replace session',
     },
     exdl: {
       title: 'Download the example files',

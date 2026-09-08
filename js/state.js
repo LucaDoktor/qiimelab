@@ -52,6 +52,31 @@ export function registerFile(name, size, note) {
   return id;
 }
 
+// --- guardar / restaurar sesión (js/lib/session.js) ---
+
+/** Slots con un único `sourceFileId` en la raíz (o metrics anidados). No
+ *  incluye `sequenceQC` (es un array). Lo usan clearAllState() y session.js. */
+export const SLOT_KEYS = [
+  'metadata', 'taxonomy', 'taxaBarplot', 'alphaDiversity', 'betaDiversity',
+  'differentialAbundance', 'taxaCounts', 'functionalKO', 'functionalCategories', 'ordination',
+];
+
+/** Vacía por completo el estado (todos los slots + archivos) SIN avisar a los
+ *  suscriptores — quien llama decide cuándo hacer notify(). */
+export function clearAllState() {
+  state.files = [];
+  SLOT_KEYS.forEach((k) => { state[k] = null; });
+  state.sequenceQC = [];
+  nextFileId = 1;
+  // sin notify() — quien llama decide cuándo avisar
+}
+
+/** Fija el contador de ids de archivo (para que los nuevos no choquen con los
+ *  restaurados de una sesión importada). */
+export function setNextFileId(n) {
+  if (Number.isFinite(n) && n >= 1) nextFileId = Math.floor(n);
+}
+
 export function removeFile(id) {
   state.files = state.files.filter((f) => f.id !== id);
   const clearIfMatches = (slot) => {
