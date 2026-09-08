@@ -3,6 +3,12 @@
 // metadatos, abundancia relativa de los taxones más abundantes (mismo
 // criterio "top N" que el barplot) y métricas de diversidad alfa.
 //
+// Dos vistas sobre el MISMO cálculo (una sola pasada de pearson/spearman):
+//   · «Matriz»: mapa de calor divergente + tabla de todas las parejas.
+//   · «Red»:    grafo de co-ocurrencia — nodos = variables, aristas = parejas
+//               que superan los umbrales |r| y p, disposición por fuerzas
+//               determinista (js/lib/forceLayout.js, semilla fija).
+//
 // Entrada: state.metadata + state.taxaBarplot|state.taxaCounts +
 //          state.alphaDiversity (cualquier combinación; mínimo 2 variables).
 // No consume datos propios: reutiliza lo que cargan los demás módulos.
@@ -11,7 +17,10 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+
+const NET_SEED = 0x9E3779B9; // semilla fija → layout de fuerzas determinista
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOP_N_DEFAULT = 7, TOP_N_MIN = 3, TOP_N_MAX = 20;
@@ -152,9 +161,13 @@ function stars(p) {
 }
 
 export function render(container) {
-  let method = 'pearson';        // 'pearson' | 'spearman'
+  let method = 'pearson';        // 'pearson' | 'spearman' — compartido por las dos vistas
   let topN = TOP_N_DEFAULT;
   let selected = null;           // Set de ids de variable; null = aún sin inicializar
+  let view = 'matrix';           // 'matrix' | 'network'
+  let rThresh = 0.3;             // |r| mínimo para dibujar una arista (solo vista red)
+  let pThresh = 0.05;            // p máximo (solo vista red)
+  let netSort = { key: 'r', dir: 'desc' };
   let editor = null;
 
   function paint() {
@@ -201,16 +214,33 @@ export function render(container) {
       [...selected].forEach((id) => { if (!availIds.includes(id)) selected.delete(id); });
     }
 
+    // ---- pestañas: Matriz | Red ----
+    const tabs = document.createElement('div');
+    tabs.className = 'ql-tabs';
+    [['matrix', t('correlogram.tabMatrix')], ['network', t('correlogram.tabNetwork')]].forEach(([v, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-tab' + (view === v ? ' is-active' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => { if (view !== v) { view = v; paint(); } });
+      tabs.appendChild(b);
+    });
+    container.appendChild(tabs);
+
     const grid = document.createElement('div');
     grid.className = 'ql-grid-2';
 
     // ---- panel del gráfico ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('correlogram.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
+      t(view === 'network' ? 'correlogram.netNote' : 'correlogram.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
-    chartWrap.className = 'ql-chartwrap scroll-x';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartCorrelogram') });
+    chartWrap.className = 'ql-chartwrap' + (view === 'matrix' ? ' scroll-x' : '');
+    const svg = svgEl('svg', {
+      class: 'ql-svg', role: 'img',
+      'aria-label': t(view === 'network' ? 'a11y.chartNetwork' : 'a11y.chartCorrelogram'),
+    });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg); chartWrap.appendChild(tooltip);
@@ -222,7 +252,7 @@ export function render(container) {
     controls.className = 'ql-card ql-panel';
     controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
-    // método
+    // método (compartido por las dos vistas)
     const mField = document.createElement('div');
     mField.className = 'ql-field';
     mField.innerHTML = '<label>' + t('correlogram.methodLabel') + '</label>';
@@ -239,6 +269,38 @@ export function render(container) {
     mField.appendChild(seg);
     mField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('correlogram.methodHelp') + '</p>');
     controls.appendChild(mField);
+
+    // umbrales de la red (solo en la vista de red)
+    if (view === 'network') {
+      const thr = document.createElement('div');
+      thr.className = 'ql-field';
+      thr.innerHTML = '<label for="clR">' + t('correlogram.rThreshLabel') + '</label>' +
+        '<div class="ql-inputrow">' +
+        '<input type="range" id="clRr" min="0" max="0.95" step="0.05" value="' + rThresh + '" />' +
+        '<input type="number" id="clR" class="ql-num-small tabular" min="0" max="1" step="0.05" value="' + rThresh + '" /></div>' +
+        '<label for="clP" style="margin-top:10px;">' + t('correlogram.pThreshLabel') + '</label>' +
+        '<div class="ql-inputrow">' +
+        '<input type="range" id="clPr" min="0.001" max="1" step="0.001" value="' + pThresh + '" />' +
+        '<input type="number" id="clP" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + pThresh + '" /></div>' +
+        '<p class="ql-field-help">' + t('correlogram.netThreshHelp') + '</p>';
+      controls.appendChild(thr);
+      const rR = thr.querySelector('#clRr'), rN = thr.querySelector('#clR');
+      const pR = thr.querySelector('#clPr'), pN = thr.querySelector('#clP');
+      const applyR = (val) => {
+        const nv = Math.max(0, Math.min(1, Number(val)));
+        if (isFinite(nv) && nv !== rThresh) { rThresh = nv; paint(); }
+      };
+      const applyP = (val) => {
+        const nv = Math.max(0.0001, Math.min(1, Number(val)));
+        if (isFinite(nv) && nv !== pThresh) { pThresh = nv; paint(); }
+      };
+      rR.addEventListener('input', () => { rN.value = rR.value; });
+      rR.addEventListener('change', () => applyR(rR.value));
+      rN.addEventListener('change', () => applyR(rN.value));
+      pR.addEventListener('input', () => { pN.value = pR.value; });
+      pR.addEventListener('change', () => applyP(pR.value));
+      pN.addEventListener('change', () => applyP(pN.value));
+    }
 
     // top-N de taxones (solo si hay taxones disponibles)
     if (available.some((v) => v.group === 'taxon')) {
@@ -303,7 +365,7 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>' + t('correlogram.tableTitle') + '</h2>';
+    tableCard.innerHTML = '<h2>' + t(view === 'network' ? 'correlogram.netTableTitle' : 'correlogram.tableTitle') + '</h2>';
     container.appendChild(tableCard);
 
     const chosen = available.filter((v) => selected.has(v.id));
@@ -312,7 +374,7 @@ export function render(container) {
       return;
     }
 
-    // ---- universo de muestras + arrays alineados ----
+    // ---- universo de muestras + arrays alineados (compartido por las dos vistas) ----
     let universe;
     if (state.metadata) {
       universe = state.metadata.rows.map((r) => String(r[state.metadata.sampleIdKey]).trim()).filter(Boolean);
@@ -326,6 +388,7 @@ export function render(container) {
       return (typeof val === 'number' && isFinite(val)) ? val : NaN;
     }));
 
+    // ---- UNA sola pasada de correlación (idéntica a la que ya rellenaba la matriz) ----
     const k = chosen.length;
     const results = Array.from({ length: k }, () => new Array(k).fill(null));
     let nMin = Infinity, nMax = 0;
@@ -343,7 +406,17 @@ export function render(container) {
     }
     const nLabel = nMin === Infinity ? '—' : (nMin === nMax ? String(nMin) : nMin + '–' + nMax);
 
-    // ---- dibujar heatmap ----
+    const ctx = { svg, chartPanel, chartWrap, tooltip, tableCard, chosen, results, k, nLabel };
+    if (view === 'network') renderNetwork(ctx);
+    else renderMatrix(ctx);
+  }
+
+  // =====================================================================
+  //  VISTA MATRIZ — mapa de calor divergente + tabla de todas las parejas
+  // =====================================================================
+  function renderMatrix(ctx) {
+    const { svg, chartPanel, chartWrap, tooltip, tableCard, chosen, results, k, nLabel } = ctx;
+
     const cell = Math.max(16, Math.min(34, 560 / k));
     const labelChars = Math.max(...chosen.map((v) => v.label.length));
     const marginL = Math.min(200, 30 + labelChars * 6.2);
@@ -486,6 +559,194 @@ export function render(container) {
     tbl.appendChild(tbody);
     scrollDiv.appendChild(tbl);
     tableCard.appendChild(scrollDiv);
+  }
+
+  // =====================================================================
+  //  VISTA RED de co-ocurrencia — layout de fuerzas determinista
+  // =====================================================================
+  function renderNetwork(ctx) {
+    const { svg, chartPanel, chartWrap, tooltip, tableCard, chosen, results, k } = ctx;
+
+    // aristas: parejas del triángulo superior que superan AMBOS umbrales
+    const edges = [];
+    for (let i = 0; i < k; i++) {
+      for (let j = i + 1; j < k; j++) {
+        const res = results[i][j];
+        if (isFinite(res.r) && Math.abs(res.r) >= rThresh && isFinite(res.p) && res.p <= pThresh) {
+          edges.push({
+            i, j, r: res.r, p: res.p, n: res.n,
+            source: chosen[i].id, target: chosen[j].id, weight: Math.abs(res.r),
+          });
+        }
+      }
+    }
+    const degree = new Array(k).fill(0);
+    edges.forEach((e) => { degree[e.i]++; degree[e.j]++; });
+
+    const W = 640, H = 480;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.style.width = '';
+    svg.style.maxWidth = '';
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const pos = forceLayout(chosen.map((v) => v.id), edges, { width: W, height: H, seed: NET_SEED, iterations: 300 });
+    const P = chosen.map((v) => pos[v.id] || { x: W / 2, y: H / 2 });
+    const edgeColor = (r) => (r >= 0 ? 'var(--corr-pos)' : 'var(--corr-neg)');
+
+    // aristas primero (debajo de los nodos)
+    const edgeLayer = svgEl('g', {});
+    svg.appendChild(edgeLayer);
+    const edgeEls = [];
+    edges.forEach((e) => {
+      const a = P[e.i], b = P[e.j];
+      const w = Math.abs(e.r);
+      const baseOpacity = (0.22 + w * 0.6).toFixed(2);
+      const ln = svgEl('line', {
+        x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+        stroke: edgeColor(e.r), 'stroke-width': (1 + w * 4.5).toFixed(2),
+        'stroke-opacity': baseOpacity, 'stroke-linecap': 'round',
+      });
+      ln.addEventListener('mouseenter', () => {
+        ln.setAttribute('stroke-opacity', '1');
+        showTip(tooltip, chartWrap, svg, W, H, (a.x + b.x) / 2, (a.y + b.y) / 2,
+          '<div class="ql-tt-name">' + escapeHtml(chosen[e.i].label) + ' × ' + escapeHtml(chosen[e.j].label) + '</div>' +
+          '<div class="ql-tt-row">r = ' + e.r.toFixed(3) + ' · p = ' + formatP(e.p) + ' · n = ' + e.n + '</div>');
+      });
+      ln.addEventListener('mouseleave', () => { ln.setAttribute('stroke-opacity', baseOpacity); tooltip.classList.remove('is-show'); });
+      edgeLayer.appendChild(ln);
+      edgeEls.push({ el: ln, e, baseOpacity });
+    });
+
+    // nodos + etiquetas
+    const nodeLayer = svgEl('g', {});
+    const labelLayer = svgEl('g', { 'data-ce': 'labels' });
+    svg.appendChild(nodeLayer); svg.appendChild(labelLayer);
+    chosen.forEach((v, i) => {
+      const p = P[i];
+      const rad = 5 + Math.min(6, degree[i] * 1.1);
+      const c = svgEl('circle', {
+        cx: p.x, cy: p.y, r: rad,
+        fill: 'var(--accent-soft)', stroke: 'var(--accent)', 'stroke-width': 1.5,
+      });
+      c.addEventListener('mouseenter', () => {
+        edgeEls.forEach(({ el, e }) => { if (e.i === i || e.j === i) el.setAttribute('stroke-opacity', '1'); });
+        showTip(tooltip, chartWrap, svg, W, H, p.x, p.y,
+          '<div class="ql-tt-name">' + escapeHtml(v.label) + '</div>' +
+          '<div class="ql-tt-row">' + t('correlogram.netNodeDegree', { n: degree[i] }) + '</div>');
+      });
+      c.addEventListener('mouseleave', () => {
+        edgeEls.forEach(({ el, baseOpacity }) => el.setAttribute('stroke-opacity', baseOpacity));
+        tooltip.classList.remove('is-show');
+      });
+      nodeLayer.appendChild(c);
+
+      const anchor = p.x > W * 0.66 ? 'end' : (p.x < W * 0.34 ? 'start' : 'middle');
+      const dx = anchor === 'end' ? -(rad + 4) : anchor === 'start' ? (rad + 4) : 0;
+      const dy = anchor === 'middle' ? -(rad + 5) : 3.5;
+      const lbl = svgEl('text', { x: p.x + dx, y: p.y + dy, 'text-anchor': anchor, class: 'ql-tick-label' });
+      lbl.textContent = v.label.length > 22 ? v.label.slice(0, 21) + '…' : v.label;
+      labelLayer.appendChild(lbl);
+    });
+
+    // leyenda: signo + grosor por |r|
+    const legG = svgEl('g', { 'data-ce': 'legend' });
+    legG.appendChild(svgEl('line', { x1: 0, y1: 0, x2: 26, y2: 0, stroke: 'var(--corr-pos)', 'stroke-width': 3.5, 'stroke-linecap': 'round' }));
+    const lt1 = svgEl('text', { x: 32, y: 3.5, class: 'ql-tick-label' }); lt1.textContent = t('correlogram.netLegendPos');
+    legG.appendChild(lt1);
+    legG.appendChild(svgEl('line', { x1: 0, y1: 16, x2: 26, y2: 16, stroke: 'var(--corr-neg)', 'stroke-width': 3.5, 'stroke-linecap': 'round' }));
+    const lt2 = svgEl('text', { x: 32, y: 19.5, class: 'ql-tick-label' }); lt2.textContent = t('correlogram.netLegendNeg');
+    legG.appendChild(lt2);
+    const lt3 = svgEl('text', { x: 0, y: 34, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
+    lt3.textContent = t('correlogram.netLegendWidth');
+    legG.appendChild(lt3);
+    legG.setAttribute('transform', 'translate(14,' + (H - 42) + ')');
+    svg.appendChild(legG);
+
+    if (edges.length === 0) {
+      const tx = svgEl('text', { x: W / 2, y: 26, 'text-anchor': 'middle', class: 'ql-axis-label', fill: 'var(--ink-muted)' });
+      tx.textContent = t('correlogram.netNoEdges');
+      svg.appendChild(tx);
+    }
+
+    editor = attachChartEditor({
+      key: 'correlogramNetwork', svg, mount: chartPanel, lang: getLang(),
+      filename: t('correlogram.title') + '-red-' + method,
+      elements: [
+        { id: 'title', create: { text: t('correlogram.netFigTitle', { method: method === 'pearson' ? t('correlogram.pearson') : t('correlogram.spearman') }), x: W / 2, y: 20, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'labels', selector: '[data-ce="labels"]', kind: 'group' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
+
+    chartPanel.insertAdjacentHTML('beforeend',
+      '<p class="ql-field-help" style="margin-top:6px;">' +
+      t('correlogram.netMeta', {
+        edges: edges.length, k,
+        r: rThresh.toFixed(2), p: formatP(pThresh),
+      }) + '</p>');
+
+    // ---- tabla de conexiones (ordenable) ----
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    const cols = [
+      ['a', t('correlogram.colPairA')], ['b', t('correlogram.colPairB')],
+      ['r', 'r'], ['p', 'p'], ['n', 'n'],
+    ];
+    let thead = '<thead><tr>';
+    cols.forEach(([key, lbl]) => {
+      const on = netSort.key === key;
+      thead += '<th aria-sort="' + (on ? (netSort.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        '<button type="button" data-sort="' + key + '">' + escapeHtml(lbl) +
+        (on ? ' <span aria-hidden="true">' + (netSort.dir === 'asc' ? '▲' : '▼') + '</span>' : '') + '</button></th>';
+    });
+    tbl.innerHTML = thead + '</tr></thead>';
+    const tb = document.createElement('tbody');
+    const rows = edges.map((e) => ({ a: chosen[e.i].label, b: chosen[e.j].label, r: e.r, p: e.p, n: e.n }));
+    const dir = netSort.dir === 'asc' ? 1 : -1;
+    rows.sort((x, y) => {
+      const xv = x[netSort.key], yv = y[netSort.key];
+      if (typeof xv === 'string') return xv.localeCompare(yv) * dir;
+      return ((xv || 0) - (yv || 0)) * dir;
+    });
+    if (rows.length === 0) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:20px;">' +
+        t('correlogram.netNoEdges') + '</td></tr>';
+    } else {
+      rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + escapeHtml(row.a) + '</td>' +
+          '<td>' + escapeHtml(row.b) + '</td>' +
+          '<td class="ql-num tabular">' + row.r.toFixed(3) + (stars(row.p) ? ' <span class="mono">' + stars(row.p) + '</span>' : '') + '</td>' +
+          '<td class="ql-num tabular">' + formatP(row.p) + '</td>' +
+          '<td class="ql-num tabular">' + row.n + '</td>';
+        tb.appendChild(tr);
+      });
+    }
+    tbl.appendChild(tb);
+    scrollDiv.appendChild(tbl);
+    tableCard.appendChild(scrollDiv);
+    tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-sort');
+        if (netSort.key === key) netSort = { key, dir: netSort.dir === 'asc' ? 'desc' : 'asc' };
+        // por defecto: nombres y p ascendente (más útil), r y n descendente
+        else netSort = { key, dir: (key === 'a' || key === 'b' || key === 'p') ? 'asc' : 'desc' };
+        paint();
+      });
+    });
+  }
+
+  // tooltip a partir de coordenadas del viewBox (compartido por nodos y aristas)
+  function showTip(tip, wrap, svgNode, W, H, cx, cy, html) {
+    const wr = wrap.getBoundingClientRect(), sr = svgNode.getBoundingClientRect();
+    tip.style.left = ((sr.left - wr.left) + cx * (sr.width / W) + (wrap.scrollLeft || 0)) + 'px';
+    tip.style.top = ((sr.top - wr.top) + cy * (sr.height / H)) + 'px';
+    tip.innerHTML = html;
+    tip.classList.add('is-show');
   }
 
   paint();

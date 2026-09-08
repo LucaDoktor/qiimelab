@@ -19,7 +19,9 @@ function svgEl(tag, attrs) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-function mulberry32(a) {
+/** PRNG determinista de 32 bits (mulberry32) — misma semilla, misma secuencia.
+ *  Compartido: jitter del boxplot, posiciones iniciales del layout de fuerzas… */
+export function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
     let t2 = Math.imul(a ^ (a >>> 15), 1 | a);
