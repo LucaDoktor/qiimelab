@@ -2,8 +2,8 @@
 
 Analiza resultados de **QIIME2** y archivos **FASTQ** enteramente en el
 navegador: barplots taxonómicos, diversidad alfa y beta, abundancia
-diferencial, diagramas de Venn/UpSet y control de calidad de secuencias
-estilo FastQC.
+diferencial, diagramas de Venn/UpSet, correlograma entre variables, índices
+funcionales de PICRUSt2 y control de calidad de secuencias estilo FastQC.
 
 **Sin backend. Sin instalación. Sin subir datos a ningún sitio** — se abre el
 archivo, se parsea con JavaScript y se dibuja al momento. Todo el cálculo
@@ -124,15 +124,19 @@ qiimelab/
     │   ├── fastq.js             # lector y analizador FASTQ en streaming
     │   ├── ingest.js            # detección de tipo de archivo
     │   ├── route.js             # "resultado de ingest → slot del estado"
-    │   ├── stats.js             # Kruskal-Wallis, chi², UPGMA
+    │   ├── stats.js             # Kruskal-Wallis, chi², beta incompleta,
+    │   │                        #   Pearson/Spearman + p-valor, UPGMA
     │   ├── i18n.js              # traducciones (es/en/it/de/zh) + t()
-    │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG
+    │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG/PNG
+    │   ├── groupBoxplot.js      # boxplot por grupo + Kruskal-Wallis (alfa y funcional)
+    │   ├── motif.js             # motivo SVG del hero (dendrograma + puntos)
     │   └── exampleData.js       # cargadores de ejemplo (sintéticos y reales)
     ├── workers/
     │   └── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
     └── modules/                 # un archivo por módulo (shell, home, upload,
         │                        # taxaBarplot, alphaDiversity, betaDiversity,
-        │                        # differentialAbundance, venn, sequenceQC, recursos)
+        │                        # differentialAbundance, venn, correlogram,
+        │                        # functional, sequenceQC, recursos)
 ```
 
 ## Recursos (`recursos/`)
@@ -155,7 +159,10 @@ Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
   Si un `.qza` no se lee, comprueba con `unzip -l` que no sea ZIP64.
 - **`js/lib/stats.js`** — el p-valor de chi-cuadrado (gamma incompleta,
   Lanczos) se verificó contra valores críticos de tabla; el UPGMA, con un caso
-  de juguete con distancias conocidas.
+  de juguete con distancias conocidas. La **beta incompleta regularizada**
+  (fracción continua de Lentz, para el p-valor de correlación) se verificó
+  contra `pbeta()` de R en casos analíticos y contra `cor.test` (Anscombe I)
+  a 1e-9; Spearman contra la fórmula exacta `1 − 6·Σd²/(n(n²−1))`.
 - **`js/lib/fastq.js`** — un solo recorrido en streaming acumula todas las
   métricas; los percentiles de calidad por posición salen de un histograma
   `[posición][Phred]`, sin guardar las lecturas. **No sustituye a
