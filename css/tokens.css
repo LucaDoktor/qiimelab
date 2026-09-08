@@ -48,6 +48,15 @@
   --depleted: #2a78d6;
   --neutral: #a6a49c;
 
+  /* DATOS · signo de correlación (+/−). Alias del par divergente ya validado
+     (CVD-safe): azul = correlación positiva, rojo = negativa, como en un
+     correlograma RdBu clásico. Aliased, no re-hex, para que el color de la
+     correlación sea semánticamente independiente de enriquecido/reducido
+     pero visualmente coherente. */
+  --corr-pos: var(--depleted);
+  --corr-neg: var(--enriched);
+  --corr-zero: color-mix(in srgb, var(--baseline) 42%, var(--surface)); /* r ≈ 0: gris neutro visible en claro y oscuro */
+
   /* DATOS · estado */
   --good: #0ca30c;
   --warning: #fab219;
@@ -101,6 +110,9 @@
     --enriched: #e66767;
     --depleted: #3987e5;
     --neutral: #6f6d67;
+    --corr-pos: var(--depleted);
+    --corr-neg: var(--enriched);
+    --corr-zero: color-mix(in srgb, var(--baseline) 42%, var(--surface));
 
     --good: #0ca30c;
     --warning: #fab219;

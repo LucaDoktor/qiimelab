@@ -77,6 +77,114 @@ export function chiSquarePValue(x, df) {
   return xx < a + 1 ? 1 - gammaP(a, xx) : gammaQcf(a, xx);
 }
 
+// ---------- función beta incompleta (para el p-valor de correlación) ----------
+// Mismo enfoque que la gamma incompleta de arriba (Numerical Recipes): fracción
+// continua de Lentz + logGamma de Lanczos. Verificado contra valores de
+// pbeta() de R y pt() de Student (ver README, "Notas de desarrollo").
+
+function betacf(a, b, x) {
+  const FPMIN = 1e-300, EPS = 1e-15;
+  const qab = a + b, qap = a + 1, qam = a - 1;
+  let c = 1;
+  let d = 1 - (qab * x) / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m < 300; m++) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    h *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < EPS) break;
+  }
+  return h;
+}
+
+/** Beta incompleta regularizada I_x(a, b). Devuelve un valor en [0, 1]. */
+export function incompleteBeta(a, b, x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const lfront =
+    logGamma(a + b) - logGamma(a) - logGamma(b) +
+    a * Math.log(x) + b * Math.log(1 - x);
+  const front = Math.exp(lfront);
+  return x < (a + 1) / (a + b + 2)
+    ? (front * betacf(a, b, x)) / a
+    : 1 - (front * betacf(b, a, 1 - x)) / b;
+}
+
+/** p-valor a dos colas de un estadístico t de Student con `df` grados de libertad. */
+export function studentTwoTailedP(tval, df) {
+  if (!(df > 0) || !isFinite(tval)) return NaN;
+  const x = df / (df + tval * tval);
+  return incompleteBeta(df / 2, 0.5, x);
+}
+
+// ---------- rangos (para Spearman y demás) ----------
+
+/** Rangos 1..n con media en los empates. `arr` = array numérico. */
+export function averageRanks(arr) {
+  const order = arr.map((v, i) => ({ v, i })).sort((p, q) => p.v - q.v);
+  const ranks = new Array(arr.length);
+  let k = 0;
+  while (k < order.length) {
+    let j = k;
+    while (j + 1 < order.length && order[j + 1].v === order[k].v) j++;
+    const r = (k + j) / 2 + 1;
+    for (let m = k; m <= j; m++) ranks[order[m].i] = r;
+    k = j + 1;
+  }
+  return ranks;
+}
+
+// ---------- correlación de Pearson / Spearman con p-valor ----------
+
+/**
+ * Correlación de Pearson entre dos arrays numéricos ALINEADOS (misma longitud,
+ * el llamador ya ha filtrado los pares con datos completos).
+ * p-valor a dos colas vía t = r·sqrt((n-2)/(1-r²)) y la beta incompleta.
+ * Devuelve { r, p, n }.
+ */
+export function pearson(x, y) {
+  const n = Math.min(x.length, y.length);
+  if (n < 2) return { r: NaN, p: NaN, n };
+  let sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { sx += x[i]; sy += y[i]; }
+  const mx = sx / n, my = sy / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - mx, dy = y[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  if (sxx === 0 || syy === 0) return { r: NaN, p: NaN, n };
+  let r = sxy / Math.sqrt(sxx * syy);
+  r = Math.max(-1, Math.min(1, r));
+  const df = n - 2;
+  let p;
+  if (df <= 0) p = NaN;
+  else if (r === 1 || r === -1) p = 0;
+  else p = studentTwoTailedP(r * Math.sqrt(df / (1 - r * r)), df);
+  return { r, p, n };
+}
+
+/**
+ * Correlación de Spearman (rho): Pearson sobre los rangos de cada variable.
+ * Mismo p-valor aproximado que Pearson sobre los rangos.
+ */
+export function spearman(x, y) {
+  const n = Math.min(x.length, y.length);
+  if (n < 2) return { r: NaN, p: NaN, n };
+  return pearson(averageRanks(x.slice(0, n)), averageRanks(y.slice(0, n)));
+}
+
 // ---------- Kruskal-Wallis ----------
 
 /**

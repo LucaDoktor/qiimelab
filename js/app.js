@@ -18,6 +18,7 @@ const moduleLoaders = {
   beta: () => import('./modules/betaDiversity.js'),
   diferencial: () => import('./modules/differentialAbundance.js'),
   venn: () => import('./modules/venn.js'),
+  correlograma: () => import('./modules/correlogram.js'),
   qc: () => import('./modules/sequenceQC.js'),
   recursos: () => import('./modules/recursos.js'),
 };

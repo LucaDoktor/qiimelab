@@ -493,6 +493,34 @@ svg.ql-brand-mark {
 .ql-num-small { width: 68px; flex: none; }
 .ql-mapping-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 
+/* control segmentado (p. ej. Pearson / Spearman) */
+.ql-segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+.ql-seg-btn {
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  border: none; background: var(--surface); color: var(--ink-2);
+  padding: 7px 14px; cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.ql-seg-btn + .ql-seg-btn { border-left: 1px solid var(--border-strong); }
+.ql-seg-btn:hover { background: var(--accent-soft); }
+.ql-seg-btn.is-on { background: var(--accent); color: var(--accent-ink); }
+.ql-seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* checklist agrupada (selector de variables) */
+.ql-checkgroup-h {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-muted);
+  margin: 12px 0 4px;
+}
+.ql-checkgroup-h:first-child { margin-top: 0; }
+.ql-checkrow {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink-2);
+  padding: 3px 0; cursor: pointer;
+}
+.ql-checkrow input[type="checkbox"] { width: auto; flex: none; accent-color: var(--accent); }
+.ql-checkrow:hover { color: var(--ink); }
+
 /* ---------- tooltip flotante para gráficos ---------- */
 .ql-chartwrap { position: relative; width: 100%; }
 .ql-tooltip {
