@@ -97,6 +97,53 @@ export function chao1(counts) {
   return sObs + (f1 * (f1 - 1)) / (2 * (f2 + 1));
 }
 
+/**
+ * Curva de rarefacción ANALÍTICA (esperanza de riqueza, Hurlbert 1971) — sin
+ * remuestreo aleatorio. Para una submuestra de `n` lecturas sin reemplazo:
+ *
+ *   S(n) = Sobs − Σ_i  C(N − Nᵢ, n) / C(N, n)     (solo taxones con Nᵢ > 0)
+ *
+ * El término es la probabilidad de NO ver el taxón i en la submuestra. Los
+ * combinatorios se hacen con logGamma para no desbordar el factorial. Es la
+ * misma fórmula que `vegan::rarefy()` / `rarecurve()`.
+ *
+ * @param {number[]} counts       conteos por taxón de UNA muestra (se redondean; ceros/negativos se ignoran)
+ * @param {number}   [nPoints=50] nº de profundidades donde evaluar (incluye 0 y N)
+ * @returns {{ N:number, sObs:number, depths:number[], richness:number[] }}
+ */
+export function rarefactionCurve(counts, nPoints = 50) {
+  const ni = [];
+  let N = 0;
+  for (let k = 0; k < counts.length; k++) {
+    const c = Math.round(counts[k]);
+    if (c > 0) { ni.push(c); N += c; }
+  }
+  const sObs = ni.length;
+  if (N === 0) return { N: 0, sObs: 0, depths: [0], richness: [0] };
+
+  // profundidades: 0, N, y ~nPoints puntos repartidos uniformemente (enteros, sin duplicados)
+  const m = Math.max(2, Math.floor(nPoints));
+  const set = new Set([0, N]);
+  for (let j = 1; j < m; j++) set.add(Math.round((j / m) * N));
+  const depths = [...set].filter((d) => d >= 0 && d <= N).sort((a, b) => a - b);
+
+  const lgN1 = logGamma(N + 1);
+  const richness = depths.map((n) => {
+    if (n <= 0) return 0;
+    if (n >= N) return sObs;
+    const lgNn1 = logGamma(N - n + 1);
+    let notSeen = 0;
+    for (let i = 0; i < ni.length; i++) {
+      const rem = N - ni[i];        // lecturas de los OTROS taxones
+      if (rem < n) continue;        // imposible no muestrear el taxón i → término 0
+      notSeen += Math.exp(logGamma(rem + 1) - logGamma(rem - n + 1) - lgN1 + lgNn1);
+    }
+    return sObs - notSeen;
+  });
+
+  return { N, sObs, depths, richness };
+}
+
 // ---------- estimadores de riqueza por INCIDENCIA (por grupo de muestras) ----------
 // Reproducen vegan::specpool() con su valor por defecto smallsample = TRUE, que
 // aplica el factor de muestra pequeña ssc = (n−1)/n. Verificados número a número

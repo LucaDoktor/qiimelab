@@ -6,7 +6,10 @@ import { t } from './i18n.js';
 import { kruskalWallis, quartiles, formatP } from './stats.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
+// paleta categórica por grupo — la misma en boxplot, curvas de rarefacción, etc.
+export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
+/** Color CSS del grupo nº `i` (cicla si hay más de 7 grupos, como el resto de la app). */
+export function groupColor(i) { return 'var(' + CAT_VARS[i % CAT_VARS.length] + ')'; }
 
 function svgEl(tag, attrs) {
   const e = document.createElementNS(SVG_NS, tag);

@@ -48,7 +48,8 @@ function alphaKind(name) {
 }
 
 // conteos por muestra a partir de state.taxaCounts → { sampleIds, vectors }
-function countVectors(tc) {
+// (lo usan collectAlphaMetrics, las curvas de rarefacción y el módulo de alfa)
+export function countVectors(tc) {
   const taxonKey = tc.taxonKey || tc.headers[0];
   const sampleIds = tc.headers.filter((h) => h !== taxonKey);
   const vectors = {};

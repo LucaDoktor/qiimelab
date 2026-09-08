@@ -169,7 +169,11 @@ Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
   errores estándar) — se verificaron número a número contra
   `vegan::diversity()`, `vegan::estimateR()` y `vegan::specpool()` (error
   relativo < 1e-12 sobre la tabla de conteos de ejemplo y un caso de juguete
-  con singletons/doubletons).
+  con singletons/doubletons). Las **curvas de rarefacción** (`rarefactionCurve`,
+  esperanza analítica de riqueza de Hurlbert 1971 con `logGamma` para los
+  combinatorios, sin remuestreo) se verificaron contra `vegan::rarefy()` en 5
+  muestras × ~60 profundidades de la tabla de conteos de ejemplo (error
+  relativo máximo 2·10⁻¹⁰).
 - **`js/lib/fastq.js`** — un solo recorrido en streaming acumula todas las
   métricas; los percentiles de calidad por posición salen de un histograma
   `[posición][Phred]`, sin guardar las lecturas. **No sustituye a
