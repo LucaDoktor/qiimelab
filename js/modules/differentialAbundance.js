@@ -1,7 +1,11 @@
 import { state, subscribe, setSlot } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { loadExampleDifferentialAbundance, loadRealDifferentialAbundance, mountExampleButtons } from '../lib/exampleData.js';
+import {
+  loadExampleDifferentialAbundance, loadExampleFunctionalDifferential,
+  loadRealDifferentialAbundance, mountExampleButtons,
+} from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { top: 48, right: 28, bottom: 86, left: 58 };
@@ -30,8 +34,10 @@ function niceStep(range, targetTicks) {
   return step * mag;
 }
 
-function buildRScript(taxonCol, lfcCol, padjCol, lfcThresh, padjThresh, sourceFileName) {
-  return `# Volcano plot de abundancia diferencial — generado por QiimeLab
+function buildRScript(taxonCol, lfcCol, padjCol, lfcThresh, padjThresh, sourceFileName, isKO) {
+  const ent = isKO ? 'ko' : 'taxon';       // solo cambia el texto, no la lógica
+  const entPl = isKO ? 'kos' : 'taxones';
+  return `# Volcano plot de abundancia diferencial${isKO ? ' funcional (KOs)' : ''} — generado por QiimeLab
 # Reproduce, en R, el mismo gráfico y los mismos umbrales que has usado aquí.
 
 library(ggplot2)
@@ -40,7 +46,7 @@ library(ggplot2)
 res <- read.csv("${sourceFileName || 'tu_tabla.csv'}", check.names = FALSE)
 
 ## Renombra si tus columnas no se llaman exactamente así:
-## res\$taxon           <- res\$${taxonCol}
+## res\$${ent}${' '.repeat(Math.max(1, 15 - ent.length))}<- res\$${taxonCol}
 ## res\$log2FoldChange  <- res\$${lfcCol}
 ## res\$padj            <- res\$${padjCol}
 
@@ -64,23 +70,23 @@ ggplot(res, aes(x = ${lfcCol}, y = -log10(${padjCol}), color = estado)) +
   geom_hline(yintercept = -log10(padj_threshold), linetype = "dashed", color = "grey50") +
   theme_minimal(base_size = 13) +
   labs(x = "log2 Fold Change", y = expression(-log[10](padj)), color = NULL,
-       title = "Abundancia diferencial")
+       title = "Abundancia diferencial${isKO ? ' funcional' : ''}")
 
-## 4. Exportar los taxones significativos
+## 4. Exportar los ${entPl} significativos
 write.csv(subset(res, estado != "No significativo"),
-          "taxones_significativos.csv", row.names = FALSE)
+          "${entPl}_significativos.csv", row.names = FALSE)
 
 ## --------------------------------------------------------------------
 ## Si en cambio partes de conteos crudos (no de una tabla ya calculada),
 ## el pipeline habitual con DESeq2 sería:
 ##
 ## library(DESeq2)
-## counts   <- read.delim("feature-table.tsv", row.names = 1, check.names = FALSE)
+## counts   <- read.delim("${isKO ? 'ko_pred_metagenome_unstrat.tsv' : 'feature-table.tsv'}", row.names = 1, check.names = FALSE)
 ## metadata <- read.delim("metadata.tsv", row.names = 1)
-## dds <- DESeqDataSetFromMatrix(counts, metadata, design = ~ <tu_variable_de_grupo>)
+## dds <- DESeqDataSetFromMatrix(round(counts), metadata, design = ~ <tu_variable_de_grupo>)
 ## dds <- DESeq(dds)
 ## res <- as.data.frame(results(dds))
-## res$taxon <- rownames(res)
+## res$${ent} <- rownames(res)
 ## (y continuar desde el paso 2 de arriba)
 `;
 }
@@ -171,17 +177,38 @@ export function render(container) {
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
         '<a href="#/cargar" class="ql-btn">' + t('ui.goLoadData') + '</a></div></div>';
       container.appendChild(card);
-      mountExampleButtons(card.querySelector('.ql-empty'), {
+      const emptyHost = card.querySelector('.ql-empty');
+      const exRow = mountExampleButtons(emptyHost, {
         real: () => loadRealDifferentialAbundance(),
         synthetic: loadExampleDifferentialAbundance,
         realLabel: t('differential.exampleLabel'),
         download: ['deseq2'],
       });
+      // ejemplo funcional (KOs) — la tabla entra en el mismo slot differentialAbundance
+      const koBtn = document.createElement('button');
+      koBtn.type = 'button';
+      koBtn.className = 'ql-btn';
+      koBtn.textContent = t('differential.exampleKO');
+      koBtn.addEventListener('click', () => { try { loadExampleFunctionalDifferential(); } catch (e) { /* noop */ } });
+      (exRow || emptyHost).appendChild(koBtn);
       return;
     }
 
     const da = state.differentialAbundance;
     if (!mapping) mapping = { ...da.mapping };
+
+    // entidad de las filas: taxón o KO (según lo detectado en la carga)
+    const isKO = da.entityType === 'ko';
+    const entName = isKO ? t('differential.entKO') : t('differential.entTaxon');       // "taxón" / "KO"
+    const entPlural = isKO ? t('differential.entKOs') : t('differential.entTaxa');     // "taxones" / "KOs"
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    const catsForAnn = isKO && state.functionalCategories ? true : false;
+    // etiqueta corta de una fila para los ejes: taxón abreviado, o "K##### · gen"
+    const entLabel = (id) => {
+      if (!isKO) return shortenTaxon(id);
+      const a = annotateKO(id);
+      return a && a.gene ? id + ' · ' + a.gene : id;
+    };
 
     // ---- mapeo de columnas ----
     const mapCard = document.createElement('section');
@@ -193,7 +220,7 @@ export function render(container) {
     ['taxon', 'lfc', 'padj'].forEach((key) => {
       const f = document.createElement('div');
       f.className = 'ql-field';
-      f.innerHTML = '<label>' + ({ taxon: t('differential.colTaxon'), lfc: t('differential.colLfc'), padj: t('differential.colPadj') }[key]) + '</label>';
+      f.innerHTML = '<label>' + ({ taxon: cap(entName), lfc: t('differential.colLfc'), padj: t('differential.colPadj') }[key]) + '</label>';
       const sel = document.createElement('select');
       da.headers.forEach((h, i) => {
         const opt = document.createElement('option');
@@ -279,7 +306,7 @@ export function render(container) {
 
     const searchField = document.createElement('div');
     searchField.className = 'ql-field';
-    searchField.innerHTML = '<label>' + t('differential.searchLabel') + '</label><input type="text" id="searchInput" placeholder="' + t('differential.searchPlaceholder') + '" value="' + escapeHtml(search) + '" />';
+    searchField.innerHTML = '<label>' + t('differential.searchLabel', { ent: entName }) + '</label><input type="text" id="searchInput" placeholder="' + t(isKO ? 'differential.searchPlaceholderKO' : 'differential.searchPlaceholder') + '" value="' + escapeHtml(search) + '" />';
     controls.appendChild(searchField);
 
     const rBtn = document.createElement('button');
@@ -299,7 +326,7 @@ export function render(container) {
       rCard.innerHTML = '<h2>' + t('differential.rTitle') + '</h2><p class="ql-panel-note">' + t('differential.rNote') + '</p>';
       const code = document.createElement('pre');
       code.className = 'ql-code';
-      const script = buildRScript(taxonKey, lfcKey, padjKey, thresholds.lfc.toFixed(2), thresholds.padj, (state.files.find(f => f.id === da.sourceFileId) || {}).name);
+      const script = buildRScript(taxonKey, lfcKey, padjKey, thresholds.lfc.toFixed(2), thresholds.padj, (state.files.find(f => f.id === da.sourceFileId) || {}).name, isKO);
       code.textContent = script;
       rCard.appendChild(code);
       const copyBtn = document.createElement('button');
@@ -324,13 +351,15 @@ export function render(container) {
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>' + t('differential.tableTitle') + '</h2><p class="ql-panel-note">' + t('differential.rowsCount', { n: data.length }) + (skipped ? ' · ' + t('differential.rowsSkipped', { n: skipped }) : '') + '</p>';
+    const koNote = isKO ? ' · ' + t(catsForAnn ? 'differential.koAnnNote' : 'differential.koNoListNote') : '';
+    tableCard.innerHTML = '<h2>' + t('differential.tableTitle') + '</h2><p class="ql-panel-note">' + t('differential.rowsCount', { n: data.length, ent: entPlural }) + (skipped ? ' · ' + t('differential.rowsSkipped', { n: skipped }) : '') + koNote + '</p>';
     const scrollDiv = document.createElement('div');
     scrollDiv.className = 'ql-table-scroll';
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     tbl.innerHTML = '<thead><tr>' +
-      '<th><button type="button" data-sort="taxon">' + t('differential.colTaxon') + '</button></th>' +
+      '<th><button type="button" data-sort="taxon">' + escapeHtml(cap(entName)) + '</button></th>' +
+      (isKO ? '<th>' + t('differential.colGene') + '</th>' : '') +
       '<th><button type="button" data-sort="lfc">log2FC</button></th>' +
       '<th><button type="button" data-sort="padj">padj</button></th>' +
       '<th><button type="button" data-sort="neglog">−log10(padj)</button></th>' +
@@ -348,7 +377,7 @@ export function render(container) {
       const up = data.filter((d) => d.status === 'up').length;
       const down = data.filter((d) => d.status === 'down').length;
       stats.innerHTML =
-        '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statTaxa') + '</div><div class="ql-stat-value">' + data.length + '</div></div>' +
+        '<div class="ql-stat"><div class="ql-stat-label">' + escapeHtml(cap(entPlural)) + '</div><div class="ql-stat-value">' + data.length + '</div></div>' +
         '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statUp') + '</div><div class="ql-stat-value" style="color:var(--enriched)">' + up + '</div></div>' +
         '<div class="ql-stat"><div class="ql-stat-label">' + t('differential.statDown') + '</div><div class="ql-stat-value" style="color:var(--depleted)">' + down + '</div></div>';
     }
@@ -414,15 +443,29 @@ export function render(container) {
       tooltip.style.left = ((svgRect.left - wrapRect.left) + cx * sX + (chartWrap.scrollLeft || 0)) + 'px';
       tooltip.style.top = ((svgRect.top - wrapRect.top) + cy * sY) + 'px';
     }
+    // anotación KO para tooltips: "amyA · Alpha-amylase · EC 3.2.1.1" o el
+    // aviso de "sin anotar". Devuelve '' si la tabla no es de KOs.
+    function koTooltipLine(koCode) {
+      if (!isKO) return '';
+      const a = annotateKO(koCode);
+      if (a && a.annotated) {
+        const bits = [a.gene, a.enzyme].filter(Boolean).join(' · ');
+        return '<div class="ql-tt-row">' + escapeHtml(bits) + (a.ec ? ' · EC ' + escapeHtml(a.ec) : '') + '</div>';
+      }
+      return '<div class="ql-tt-row" style="opacity:.75;">' + escapeHtml(t('differential.koUnannotated')) + '</div>';
+    }
+
     function showTooltip(d, cx, cy) {
       positionTooltip(cx, cy);
       const padjText = d.capped ? '< 1e-10' : d.padj.toExponential(2);
-      tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(d.taxon) + '</div><div class="ql-tt-row">log2FC ' + d.lfc.toFixed(2) + ' · padj ' + padjText + '</div>';
+      tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(d.taxon) + '</div>' + koTooltipLine(d.taxon) +
+        '<div class="ql-tt-row">log2FC ' + d.lfc.toFixed(2) + ' · padj ' + padjText + '</div>';
       tooltip.classList.add('is-show');
     }
-    function tooltipRaw(name, rowHtml, cx, cy) {
+    function tooltipRaw(name, rowHtml, cx, cy, koCode) {
       positionTooltip(cx, cy);
-      tooltip.innerHTML = '<div class="ql-tt-name">' + name + '</div><div class="ql-tt-row">' + rowHtml + '</div>';
+      tooltip.innerHTML = '<div class="ql-tt-name">' + name + '</div>' + (koCode ? koTooltipLine(koCode) : '') +
+        '<div class="ql-tt-row">' + rowHtml + '</div>';
       tooltip.classList.add('is-show');
     }
 
@@ -533,7 +576,7 @@ export function render(container) {
         const tier = i % 3;
         const dy = -10 - tier * 11;
         const tl = svgEl('text', { x: p.cx, y: p.cy + dy, class: 'ql-tick-label', 'text-anchor': 'middle' });
-        tl.textContent = shortenTaxon(p.d.taxon);
+        tl.textContent = entLabel(p.d.taxon);
         labelLayer.appendChild(tl);
         try {
           const bbox = tl.getBBox();
@@ -613,7 +656,7 @@ export function render(container) {
         dot.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
         row.appendChild(dot);
         const lbl = svgEl('text', { x: mL - 12, y: y + 4, class: 'ql-tick-label', 'text-anchor': 'end' });
-        lbl.textContent = shortenTaxon(d.taxon);
+        lbl.textContent = entLabel(d.taxon);
         row.appendChild(lbl);
         g.appendChild(row);
       });
@@ -674,7 +717,7 @@ export function render(container) {
           const v = single ? d.lfc : d.lfcExtra[ci];
           const x = mL + ci * cellW;
           const rect = svgEl('rect', { x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v, maxAbs), opacity: dim ? 0.3 : 1 });
-          rect.addEventListener('mouseenter', () => tooltipRaw(escapeHtml(d.taxon), (nCols > 1 ? escapeHtml(cl) + ' · ' : '') + 'log2FC ' + (v == null ? '—' : v.toFixed(2)), x + cellW / 2, y + rowH / 2));
+          rect.addEventListener('mouseenter', () => tooltipRaw(escapeHtml(d.taxon), (nCols > 1 ? escapeHtml(cl) + ' · ' : '') + 'log2FC ' + (v == null ? '—' : v.toFixed(2)), x + cellW / 2, y + rowH / 2, d.taxon));
           rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
           g.appendChild(rect);
           if (v != null && isFinite(v) && cellW >= 40 && rowH >= 15) {
@@ -685,7 +728,7 @@ export function render(container) {
           }
         });
         const lbl = svgEl('text', { x: mL - 10, y: y + rowH / 2 + 3, class: 'ql-tick-label', 'text-anchor': 'end', opacity: dim ? 0.35 : 1 });
-        lbl.textContent = shortenTaxon(d.taxon);
+        lbl.textContent = entLabel(d.taxon);
         g.appendChild(lbl);
       });
 
@@ -732,7 +775,7 @@ export function render(container) {
       });
       tbody.innerHTML = '';
       if (sorted.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:24px;">' + t('differential.noRows') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + (isKO ? 6 : 5) + '" style="text-align:center;color:var(--ink-muted);padding:24px;">' + t('differential.noRows') + '</td></tr>';
         return;
       }
       const frag = document.createDocumentFragment();
@@ -741,7 +784,17 @@ export function render(container) {
         const pillClass = d.status === 'up' ? 'ql-pill-up' : d.status === 'down' ? 'ql-pill-down' : 'ql-pill-ns';
         const pillText = d.status === 'up' ? t('differential.pillUp') : d.status === 'down' ? t('differential.pillDown') : t('differential.pillNs');
         const padjText = d.capped ? '&lt; 1e-10' : d.padj.toExponential(2);
-        tr.innerHTML = '<td>' + escapeHtml(d.taxon) + '</td>' +
+        let entCell;
+        if (isKO) {
+          const ann = annotateKO(d.taxon);
+          const gene = ann && ann.gene ? escapeHtml(ann.gene) : '';
+          entCell = '<td><span class="mono">' + escapeHtml(d.taxon) + '</span> ' +
+            '<a class="ql-kegg-link" href="' + escapeHtml(keggEntryUrl(d.taxon)) + '" target="_blank" rel="noopener" title="' + t('differential.keggTitle') + '">KEGG&nbsp;↗</a></td>' +
+            '<td class="ql-cell-muted">' + (gene || (ann && ann.enzyme ? escapeHtml(ann.enzyme) : '<span class="ql-cell-muted">' + t('differential.koUnannotatedShort') + '</span>')) + '</td>';
+        } else {
+          entCell = '<td>' + escapeHtml(d.taxon) + '</td>';
+        }
+        tr.innerHTML = entCell +
           '<td class="ql-num tabular">' + d.lfc.toFixed(2) + '</td>' +
           '<td class="ql-num tabular">' + padjText + '</td>' +
           '<td class="ql-num tabular">' + d.neglog.toFixed(2) + '</td>' +

@@ -10,6 +10,9 @@ import { listZipEntries, readZipText, gunzipText } from './minizip.js';
 import { parseOrdination, looksLikeOrdination } from './ordination.js';
 
 const TAXON_KEYS = ['taxon', 'taxa', 'species', 'genus', 'feature', 'featureid', 'otu', 'asv', 'name', 'organism', 'id'];
+// columna de identidad de una tabla de abundancia diferencial FUNCIONAL (por KO)
+const KO_KEYS = ['ko', 'koid', 'keggko', 'kegg', 'orthology', 'orthologyid'];
+const KO_CODE_RE = /^K\d{5}$/;
 const LFC_KEYS = ['log2foldchange', 'log2fc', 'lfc', 'logfc', 'log2foldchg', 'foldchange'];
 const PADJ_KEYS = ['padj', 'pvaladj', 'qvalue', 'qval', 'fdr', 'adjpval', 'adjustedpvalue', 'padjusted', 'pvaladjusted'];
 // cabeceras que marcan la columna "resto agregado" de una tabla de abundancia relativa
@@ -75,15 +78,21 @@ export function classifyTable(headers, rows, fileNameHint) {
   if (headers.length === 0 || rows.length === 0) return null;
   const norm = headers.map(normalizeHeader);
 
-  // --- abundancia diferencial: log2FC + padj ---
+  // --- abundancia diferencial: log2FC + padj (por taxón o por KO) ---
   const lfcIdx = findBestColumn(headers, LFC_KEYS);
   const padjIdx = findBestColumn(headers, PADJ_KEYS);
   if (lfcIdx !== -1 && padjIdx !== -1) {
-    let taxonIdx = findBestColumn(headers, TAXON_KEYS);
+    let taxonIdx = findBestColumn(headers, KO_KEYS.concat(TAXON_KEYS));
     if (taxonIdx === lfcIdx || taxonIdx === padjIdx || taxonIdx === -1) {
       taxonIdx = headers.findIndex((_, i) => i !== lfcIdx && i !== padjIdx);
     }
-    return { kind: 'differentialAbundance', headers, rows, mapping: { taxon: taxonIdx, lfc: lfcIdx, padj: padjIdx } };
+    // ¿la columna de identidad son códigos KO (K#####)? -> tabla funcional
+    const idKey = headers[taxonIdx];
+    const koLike = idKey != null
+      ? rows.filter((r) => KO_CODE_RE.test(String(r[idKey] ?? '').trim())).length
+      : 0;
+    const entityType = koLike >= Math.max(1, rows.length * 0.8) ? 'ko' : 'taxon';
+    return { kind: 'differentialAbundance', headers, rows, entityType, mapping: { taxon: taxonIdx, lfc: lfcIdx, padj: padjIdx } };
   }
 
   // --- taxonomía: Feature ID + Taxon (+ Confidence) ---

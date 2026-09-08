@@ -187,6 +187,42 @@ export function loadExampleDifferentialAbundance() {
     headers: ['taxon', 'log2FoldChange', 'padj'],
     rows,
     mapping: { taxon: 0, lfc: 1, padj: 2 },
+    entityType: 'taxon',
+  });
+  return fileId;
+}
+
+// Códigos KO de KEGG para el ejemplo funcional. Los que empiezan la lista están
+// también en datos-ejemplo/funcional-picrust2/KOlist.csv (para que, si se carga
+// también ese mapeo, la anotación gen/enzima salga); los últimos NO están, para
+// enseñar el caso "sin anotar — mira la ficha en KEGG".
+const DA_KO = [
+  'K01176', 'K00016', 'K00925', 'K00625', 'K00929', 'K00656', 'K01026', 'K01256',
+  'K03187', 'K01428', 'K00101', 'K00132', 'K00634', 'K01035', 'K00077', 'K01610',
+  'K01512', 'K00467', 'K03778', 'K13923',
+  'K02274', 'K00370', 'K01673', 'K18979', 'K00174', 'K11180', 'K02588', 'K03737',
+];
+
+/** Tabla estilo DESeq2 pero de KOs (K#####, log2FoldChange, padj) — abundancia diferencial funcional. */
+export function loadExampleFunctionalDifferential() {
+  const rnd = mulberry32(20260908);
+  const rows = DA_KO.map((ko) => {
+    const driver = (rnd() - 0.5) * 2;
+    const strong = rnd() < 0.4;
+    let lfc = driver * (strong ? 1.5 + rnd() * 2.2 : rnd() * 1.3);
+    lfc = Math.round(lfc * 100) / 100;
+    const sig = strong && Math.abs(lfc) > 1;
+    let padj = sig ? Math.pow(10, -(1.5 + rnd() * 4)) : Math.pow(10, -(rnd() * 1.2));
+    padj = Math.min(padj, 0.98);
+    return { KO: ko, log2FoldChange: lfc, padj: Number(padj.toPrecision(3)) };
+  });
+  const fileId = registerFile('ejemplo_abundancia_diferencial_KO.csv', 0, 'Tabla sintética estilo DESeq2 por KO, generada en el navegador.');
+  setSlot('differentialAbundance', {
+    sourceFileId: fileId,
+    headers: ['KO', 'log2FoldChange', 'padj'],
+    rows,
+    mapping: { taxon: 0, lfc: 1, padj: 2 },
+    entityType: 'ko',
   });
   return fileId;
 }

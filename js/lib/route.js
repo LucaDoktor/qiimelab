@@ -64,9 +64,11 @@ export function routeResultToState(fileId, result) {
       addBetaMetric(result.metricName, fileId, result.sampleIds, result.matrix);
       return 'Diversidad beta — ' + result.metricName + ' (' + result.sampleIds.length + ' muestras)';
 
-    case 'differentialAbundance':
-      setSlot('differentialAbundance', { sourceFileId: fileId, headers: result.headers, rows: result.rows, mapping: result.mapping });
-      return 'Abundancia diferencial (' + result.rows.length + ' taxones)';
+    case 'differentialAbundance': {
+      const et = result.entityType || 'taxon';
+      setSlot('differentialAbundance', { sourceFileId: fileId, headers: result.headers, rows: result.rows, mapping: result.mapping, entityType: et });
+      return 'Abundancia diferencial — ' + result.rows.length + (et === 'ko' ? ' KOs' : ' taxones');
+    }
 
     case 'taxaCounts':
       setSlot('taxaCounts', { sourceFileId: fileId, headers: result.headers, rows: result.rows, taxonKey: result.taxonKey });

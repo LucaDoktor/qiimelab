@@ -24,7 +24,7 @@ export const state = {
   taxaBarplot: null, // { sourceFileId, levels: { [n]: { headers, rows } } }
   alphaDiversity: null, // { metrics: { [name]: { sourceFileId, values: {sampleId: number} } } }
   betaDiversity: null, // { metrics: { [name]: { sourceFileId, sampleIds: [], matrix: number[][] } } }
-  differentialAbundance: null, // { sourceFileId, headers, rows, mapping: {taxon, lfc, padj} }
+  differentialAbundance: null, // { sourceFileId, headers, rows, mapping: {taxon, lfc, padj}, entityType: 'taxon'|'ko' }
   taxaCounts: null, // { sourceFileId, headers, rows, taxonKey } — conteos/abundancia crudos taxón × muestra (para Venn, PERMANOVA…)
   functionalKO: null, // { sourceFileId, headers, rows, koKey } — abundancia KO × muestra (PICRUSt2 unstrat)
   functionalCategories: null, // { sourceFileId, headers, rows, mapping: {module, ko} } — KOlist categorizada

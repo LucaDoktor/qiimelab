@@ -525,6 +525,17 @@ svg.ql-brand-mark {
 .ql-stat-label { font-size: 11px; color: var(--ink-muted); margin-bottom: 4px; }
 .ql-stat-value { font-family: var(--font-display); font-weight: 600; font-size: 22px; }
 
+/* ---------- anotación / enlaces KEGG en tablas de KOs ---------- */
+.ql-kegg-link {
+  font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  color: var(--accent); text-decoration: none;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  padding: 1px 7px; margin-left: 4px;
+}
+.ql-kegg-link:hover { background: var(--accent-soft); border-color: var(--accent); }
+.ql-kegg-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ql-cell-muted { color: var(--ink-muted); font-size: 12px; }
+
 /* ---------- Venn / UpSet: región seleccionable ---------- */
 .vn-region text { transition: fill var(--dur) var(--ease); }
 .vn-region:hover text { fill: var(--accent); }
