@@ -34,14 +34,8 @@ export const EXAMPLE_FILES = {
   fastq: { paths: ['qc/muestra_ejemplo_R1.fastq.gz', 'qc/muestra_ejemplo_R2.fastq.gz'], key: 'exdl.fastq' },
 };
 
-/** Devuelve un bloque con enlaces de descarga directa a los archivos de ejemplo. */
-export function exampleDownloadBlock(keys) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ql-exdl';
-  const head = document.createElement('p');
-  head.className = 'ql-exdl-head';
-  head.textContent = t('exdl.intro');
-  wrap.appendChild(head);
+/** Solo la lista de enlaces de descarga (sin encabezado ni borde). */
+export function exampleFileLinks(keys) {
   const list = document.createElement('div');
   list.className = 'ql-exdl-list';
   keys.forEach((k) => {
@@ -58,7 +52,18 @@ export function exampleDownloadBlock(keys) {
       list.appendChild(a);
     });
   });
-  wrap.appendChild(list);
+  return list;
+}
+
+/** Devuelve un bloque con enlaces de descarga directa a los archivos de ejemplo. */
+export function exampleDownloadBlock(keys) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ql-exdl';
+  const head = document.createElement('p');
+  head.className = 'ql-exdl-head';
+  head.textContent = t('exdl.intro');
+  wrap.appendChild(head);
+  wrap.appendChild(exampleFileLinks(keys));
   return wrap;
 }
 

@@ -5,8 +5,59 @@ import { routeResultToState } from '../lib/route.js';
 import {
   loadExampleCommunityData, loadExampleDifferentialAbundance,
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
-  exampleDownloadBlock,
+  exampleDownloadBlock, exampleFileLinks,
 } from '../lib/exampleData.js';
+
+// Tipos de archivo que el detector (ingest.js) reconoce, con las columnas
+// mínimas y los alias de cabecera que acepta cada uno. Se usa para la ayuda
+// "ver estructura esperada" del checklist. `key` = clave de i18n (slots.*,
+// fmt.det.*) y `slotKey` = hueco del estado con el que se marca "hecho".
+function fileTypes() {
+  const T = (k) => t('fmt.' + k);
+  return [
+    { key: 'metadata', slotKey: 'metadata', exdl: ['metadata'], cols: [
+      { role: T('role.sampleId'), names: ['sample-id', 'sampleid', '#SampleID', 'id', 'sample'], req: 'yes', note: T('firstColOnly') },
+      { role: T('role.variables'), desc: T('anyName'), req: 'yes' },
+    ] },
+    { key: 'taxonomy', slotKey: 'taxonomy', exdl: ['taxonomy'], cols: [
+      { role: T('role.featureId'), names: ['Feature ID', 'id'], req: 'yes' },
+      { role: T('role.lineage'), names: ['Taxon', 'Taxonomy'], req: 'yes', note: 'd__…;p__…;c__…;o__…;f__…;g__…;s__…' },
+      { role: T('role.confidence'), names: ['Confidence'], req: 'opt' },
+    ] },
+    { key: 'taxaBarplot', slotKey: 'taxaBarplot', exdl: ['barplot'], foot: T('levelHint'), cols: [
+      { role: T('role.sampleId'), desc: T('anyFirst'), req: 'yes' },
+      { role: T('role.taxonCols'), desc: T('taxonColsHint'), req: 'yes' },
+      { role: T('role.othersCol'), names: ['Others', 'Otros', 'Other', 'resto'], req: 'form' },
+    ] },
+    { key: 'taxaCounts', slotKey: 'taxaCounts', exdl: ['counts'], cols: [
+      { role: T('role.taxonLabel'), names: ['taxon', 'feature', 'OTU', 'ASV', 'id', '#OTU ID'], req: 'yes', note: T('firstColOnly') },
+      { role: T('role.sampleCols'), desc: T('anyName'), req: 'yes' },
+    ] },
+    { key: 'alpha', slotKey: 'alphaDiversity', exdl: ['shannon', 'observed'], cols: [
+      { role: T('role.sampleId'), desc: T('anyFirst'), req: 'yes' },
+      { role: T('role.metricValue'), names: ['shannon_entropy', 'observed_features', 'faith_pd', 'pielou_evenness'], req: 'yes' },
+    ] },
+    { key: 'beta', slotKey: 'betaDiversity', exdl: ['betaqza'], cols: [
+      { role: T('role.distRowId'), desc: T('anyName'), req: 'yes' },
+      { role: T('role.sampleCols'), desc: T('distCellsHint'), req: 'yes' },
+    ] },
+    { key: 'ordination', slotKey: 'ordination', exdl: ['pcoa'], freeform: T('free.ordination') },
+    { key: 'differential', slotKey: 'differentialAbundance', exdl: ['deseq2'], cols: [
+      { role: T('role.taxonLabel'), names: ['taxon', 'genus', 'feature', 'name'], req: 'yes' },
+      { role: T('role.lfc'), names: ['log2FoldChange', 'log2FC', 'lfc', 'logFC', 'foldChange'], req: 'yes' },
+      { role: T('role.padj'), names: ['padj', 'pvalAdj', 'qvalue', 'FDR', 'adjPval'], req: 'yes' },
+    ] },
+    { key: 'functionalCategories', slotKey: 'functionalCategories', exdl: ['kolist'], cols: [
+      { role: T('role.module'), names: ['Functional Module', 'module', 'moduloFuncional', 'pathway'], req: 'yes' },
+      { role: T('role.ko'), names: ['KO', 'KO ID', 'orthology', 'keggKO'], req: 'yes' },
+    ] },
+    { key: 'functionalKO', slotKey: 'functionalKO', exdl: ['koabund'], cols: [
+      { role: T('role.keggId'), names: ['K00001', 'K12345'], req: 'yes', note: T('keggIdNote') },
+      { role: T('role.sampleCols'), desc: T('anyName'), req: 'yes' },
+    ] },
+    { key: 'fastq', slotKey: 'sequenceQC', exdl: ['fastq'], freeform: T('free.fastq') },
+  ];
+}
 
 export function render(container) {
   let lastWarnings = [];
@@ -145,27 +196,93 @@ export function render(container) {
     }
     stack.appendChild(listCard);
 
-    // checklist de slots
+    // guía: "qué pasa si mi archivo no se detecta"
+    const guideCard = document.createElement('section');
+    guideCard.className = 'ql-card ql-panel';
+    guideCard.innerHTML = '<h2>' + t('fmt.guideTitle') + '</h2>' +
+      '<p class="ql-panel-note">' + t('fmt.guideIntro') + '</p>';
+    const guide = document.createElement('ul');
+    guide.className = 'ql-fmt-guide';
+    ['gRows0', 'gWrongType', 'gColumnMissing', 'gBiom', 'gArtifact', 'gGzip'].forEach((k) => {
+      const li = document.createElement('li');
+      li.innerHTML = t('fmt.' + k);
+      guide.appendChild(li);
+    });
+    guideCard.appendChild(guide);
+    const guideFoot = document.createElement('p');
+    guideFoot.className = 'ql-fmt-guide-foot';
+    guideFoot.innerHTML = t('fmt.gManual');
+    guideCard.appendChild(guideFoot);
+    stack.appendChild(guideCard);
+
+    // checklist de slots — cada tipo se despliega para ver su estructura esperada
     const slotsCard = document.createElement('section');
     slotsCard.className = 'ql-card ql-panel';
-    slotsCard.innerHTML = '<h2>' + t('upload.detectedTitle') + '</h2>';
+    slotsCard.innerHTML = '<h2>' + t('upload.detectedTitle') + '</h2>' +
+      '<p class="ql-panel-note">' + t('fmt.checklistNote') + '</p>';
     const checklist = document.createElement('div');
     checklist.className = 'ql-checklist';
-    const rows = [
-      [t('slots.metadata'), !!state.metadata],
-      [t('slots.taxonomy'), !!state.taxonomy],
-      [t('slots.taxaBarplot'), !!state.taxaBarplot],
-      [t('slots.taxaCounts'), !!state.taxaCounts],
-      [t('slots.alpha'), !!state.alphaDiversity],
-      [t('slots.beta'), !!state.betaDiversity],
-      [t('slots.differential'), !!state.differentialAbundance],
-      [t('slots.fastq'), Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0],
-    ];
-    rows.forEach(([lbl, done]) => {
-      const row = document.createElement('div');
-      row.className = 'ql-check-row' + (done ? ' is-done' : '');
-      row.innerHTML = '<span class="ql-check-dot"></span>' + lbl;
-      checklist.appendChild(row);
+    fileTypes().forEach((ft) => {
+      const done = ft.slotKey === 'sequenceQC'
+        ? (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0)
+        : !!state[ft.slotKey];
+
+      const dcard = document.createElement('details');
+      dcard.className = 'ql-fmt-card' + (done ? ' is-done' : '');
+
+      const sum = document.createElement('summary');
+      sum.className = 'ql-check-row' + (done ? ' is-done' : '');
+      sum.innerHTML = '<span class="ql-check-dot"></span>' +
+        '<span class="ql-fmt-name">' + t('slots.' + ft.key) + '</span>' +
+        '<span class="ql-fmt-see">' + t('fmt.seeStructure') + '</span>';
+      dcard.appendChild(sum);
+
+      const body = document.createElement('div');
+      body.className = 'ql-fmt-body';
+      body.innerHTML = '<p class="ql-fmt-detect"><b>' + t('fmt.howDetected') + ':</b> ' +
+        escapeHtml(t('fmt.det.' + ft.key)) + '</p>';
+
+      if (ft.freeform) {
+        const p = document.createElement('p');
+        p.className = 'ql-fmt-detect';
+        p.innerHTML = '<b>' + t('fmt.notATable') + '</b> ' + escapeHtml(ft.freeform);
+        body.appendChild(p);
+      } else {
+        const tbl = document.createElement('table');
+        tbl.className = 'ql-fmt-table';
+        tbl.innerHTML = '<thead><tr><th>' + t('fmt.thCol') + '</th><th>' +
+          t('fmt.thNames') + '</th><th>' + t('fmt.thReq') + '</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        ft.cols.forEach((c) => {
+          const chips = (c.names || []).map((n) => '<code>' + escapeHtml(n) + '</code>').join(' ');
+          const desc = c.desc ? '<span class="ql-fmt-desc">' + escapeHtml(c.desc) + '</span>' : '';
+          const note = c.note ? '<span class="ql-fmt-note">' + escapeHtml(c.note) + '</span>' : '';
+          const req = c.req === 'opt' ? t('fmt.reqOpt')
+            : c.req === 'form' ? t('fmt.reqForm') : t('fmt.reqYes');
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + escapeHtml(c.role) + '</td>' +
+            '<td>' + chips + desc + note + '</td>' +
+            '<td>' + req + '</td>';
+          tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+        body.appendChild(tbl);
+      }
+
+      if (ft.foot) {
+        const f = document.createElement('p');
+        f.className = 'ql-fmt-note';
+        f.textContent = ft.foot;
+        body.appendChild(f);
+      }
+
+      const dlLine = document.createElement('div');
+      dlLine.className = 'ql-fmt-dl';
+      dlLine.appendChild(exampleFileLinks(ft.exdl));
+      body.appendChild(dlLine);
+
+      dcard.appendChild(body);
+      checklist.appendChild(dcard);
     });
     slotsCard.appendChild(checklist);
     stack.appendChild(slotsCard);

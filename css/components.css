@@ -343,6 +343,54 @@ svg.ql-brand-mark {
 .ql-check-row.is-done .ql-check-dot { background: var(--good); }
 .ql-check-row.is-done { color: var(--ink); }
 
+/* ---------- ayuda con el formato de datos ---------- */
+.ql-fmt-guide { margin: 2px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+.ql-fmt-guide li { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.ql-fmt-guide li b { color: var(--ink); font-weight: 600; }
+.ql-fmt-guide-foot { margin: 13px 0 0; font-size: 12px; color: var(--ink-muted); line-height: 1.55; }
+
+.ql-fmt-card { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.ql-fmt-card > summary {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 9px 12px; list-style: none;
+}
+.ql-fmt-card > summary::-webkit-details-marker { display: none; }
+.ql-fmt-card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+.ql-fmt-name { flex: 1; }
+.ql-fmt-see { font-size: 11.5px; color: var(--accent); flex: none; }
+.ql-fmt-card[open] > summary .ql-fmt-see { color: var(--ink-muted); }
+.ql-fmt-card > summary:hover .ql-fmt-see { text-decoration: underline; }
+.ql-fmt-body {
+  padding: 2px 12px 13px; margin-top: 4px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 11px;
+}
+.ql-fmt-detect { margin: 11px 0 0; font-size: 12px; line-height: 1.55; color: var(--ink-2); }
+.ql-fmt-detect b { color: var(--ink); }
+.ql-fmt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ql-fmt-table th {
+  text-align: left; font-weight: 600; color: var(--ink-muted);
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0 10px 5px 0; border-bottom: 1px solid var(--border);
+}
+.ql-fmt-table th:last-child, .ql-fmt-table td:last-child { padding-right: 0; text-align: right; white-space: nowrap; }
+.ql-fmt-table td {
+  padding: 7px 10px 7px 0; border-bottom: 1px solid var(--border);
+  color: var(--ink-2); vertical-align: top; line-height: 1.5;
+}
+.ql-fmt-table tr:last-child td { border-bottom: none; }
+.ql-fmt-table td:first-child { color: var(--ink); }
+.ql-fmt-table td:last-child { color: var(--ink-muted); }
+.ql-fmt-table code {
+  font-family: var(--font-mono); font-size: 11px;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  padding: 1px 5px; border-radius: 4px;
+  display: inline-block; margin: 1px 3px 1px 0; white-space: nowrap;
+}
+.ql-fmt-desc { font-style: italic; color: var(--ink-muted); }
+.ql-fmt-note { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-muted); font-style: italic; white-space: normal; }
+.ql-fmt-dl .ql-exdl-list { justify-content: flex-start; }
+
 /* ---------- estado vacío ---------- */
 .ql-empty {
   position: relative;
