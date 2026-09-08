@@ -149,12 +149,10 @@ export function renderShell(container, currentRoute) {
   nameInput.placeholder = t('shell.namePlaceholder');
   nameInput.setAttribute('aria-label', t('shell.nameLabel'));
   nameInput.value = getProfileName();
-  // guarda al salir del campo o con Enter; el saludo de la barra se repinta solo
-  const commitName = () => {
-    const before = getProfileName();
-    const after = setProfileName(nameInput.value);
-    if (after !== before) renderShell(container, currentRoute);
-  };
+  // guarda al salir del campo o con Enter; setProfileName avisa a sus
+  // suscriptores (app.js repinta barra + vista, así el "Hola, X" del hero
+  // también se actualiza al instante)
+  const commitName = () => setProfileName(nameInput.value);
   nameInput.addEventListener('change', commitName);
   nameInput.addEventListener('blur', commitName);
   nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });

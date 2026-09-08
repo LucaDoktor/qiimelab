@@ -4,6 +4,7 @@
 import { renderShell, subscribeShell } from './modules/shell.js';
 import { renderFooter } from './modules/footer.js';
 import { onLangChange, t } from './lib/i18n.js';
+import { onProfileChange } from './lib/profile.js';
 
 const sidebar = document.getElementById('sidebar');
 const view = document.getElementById('app-view');
@@ -60,6 +61,7 @@ async function renderRoute() {
 
 subscribeShell(sidebar, () => routeId);
 window.addEventListener('hashchange', renderRoute);
-// al cambiar de idioma se repinta toda la app (barra lateral + módulo activo)
+// al cambiar de idioma o de nombre local se repinta toda la app
 onLangChange(renderRoute);
+onProfileChange(renderRoute);
 renderRoute();
