@@ -34,9 +34,11 @@
   --gridline: #e4e3dc;
   --baseline: #a9a79b;
 
-  /* MARCA (no es un color de datos) — teal profundo, WCAG AA sobre --surface y --page */
-  --accent: #0f6e6b;
-  --accent-2: #12857f;
+  /* MARCA (no es un color de datos). Teal profundo: WCAG AAA sobre --surface
+     y --page, y a ΔE(OKLab) >= 15 de las 8 categorías de datos, para que un
+     botón nunca se confunda con una serie. */
+  --accent: #12615f;
+  --accent-2: #17756f;
   --accent-ink: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
   --ring: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -90,8 +92,8 @@
     --gridline: #2c2c2b;
     --baseline: #4c4c46;
 
-    --accent: #2fb8ad;
-    --accent-2: #46c9be;
+    --accent: #57c9be;
+    --accent-2: #74d6cb;
     --accent-ink: #04211f;
     --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--surface));
     --ring: color-mix(in srgb, var(--accent) 60%, transparent);
@@ -109,7 +111,7 @@
     --cat-3: #199e70;
     --cat-4: #c98500;
     --cat-5: #d55181;
-    --cat-6: #2fbf2f;
+    --cat-6: #008300; /* = referencia dataviz (verde invariante); antes #2fbf2f caía fuera de banda en oscuro */
     --cat-7: #9085e9;
     --cat-8: #6f6d67;
   }
@@ -130,8 +132,8 @@
   --gridline: #2c2c2b;
   --baseline: #4c4c46;
 
-  --accent: #2fb8ad;
-  --accent-2: #46c9be;
+  --accent: #57c9be;
+  --accent-2: #74d6cb;
   --accent-ink: #04211f;
   --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--surface));
   --ring: color-mix(in srgb, var(--accent) 60%, transparent);
@@ -149,7 +151,7 @@
   --cat-3: #199e70;
   --cat-4: #c98500;
   --cat-5: #d55181;
-  --cat-6: #2fbf2f;
+  --cat-6: #008300; /* = referencia dataviz (verde invariante); antes #2fbf2f caía fuera de banda en oscuro */
   --cat-7: #9085e9;
   --cat-8: #6f6d67;
 }

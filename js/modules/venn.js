@@ -484,7 +484,9 @@ function drawUpset(host, groups, byMask, presence, onRegion) {
     const h = (c.n / maxCombo) * (topH - 24);
     const g = svgEl('g', { class: 'vn-region', 'data-mask': c.mask, style: 'cursor:pointer;' });
     g.appendChild(svgEl('rect', { x, y: 0, width: colW, height: H, fill: 'transparent' }));
-    g.appendChild(svgEl('rect', { x: x + 4, y: topH - h, width: colW - 8, height: Math.max(h, 1), fill: 'var(--accent)', rx: 2 }));
+    // barras de intersección: magnitud de una sola serie → neutral, no el
+    // color de marca (que nunca debe leerse como "una categoría de datos").
+    g.appendChild(svgEl('rect', { x: x + 4, y: topH - h, width: colW - 8, height: Math.max(h, 1), fill: 'var(--ink-2)', rx: 2 }));
     const t = svgEl('text', { x: x + colW / 2, y: topH - h - 6, 'text-anchor': 'middle', class: 'ql-tick-label' });
     t.textContent = c.n;
     g.appendChild(t);
