@@ -21,6 +21,7 @@ const moduleLoaders = {
   correlograma: () => import('./modules/correlogram.js'),
   funcional: () => import('./modules/functional.js'),
   qc: () => import('./modules/sequenceQC.js'),
+  informe: () => import('./modules/informe.js'),
   recursos: () => import('./modules/recursos.js'),
 };
 

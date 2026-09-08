@@ -727,6 +727,21 @@ select:focus-visible {
   box-shadow: 0 0 0 3px var(--ring);
 }
 
+/* ---------- informe combinado (#/informe y HTML autocontenido) ---------- */
+.ql-report { max-width: 880px; margin: 0 auto; }
+.ql-report-header { margin: 24px 0 4px; }
+.ql-report-header h2 { font-family: var(--font-display); font-size: 22px; color: var(--ink); }
+.ql-report-meta { font-size: 12.5px; color: var(--ink-muted); margin-top: 4px; }
+.ql-report-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
+.ql-report-section { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border); }
+.ql-report-section > h2 {
+  font-family: var(--font-display); font-size: 18px; color: var(--ink); margin-bottom: 12px;
+}
+.ql-report-fig { margin: 8px 0 16px; break-inside: avoid; page-break-inside: avoid; }
+.ql-report-fig svg { width: 100%; height: auto; max-width: 660px; display: block; margin: 0 auto; }
+.ql-report-table { margin-top: 12px; break-inside: avoid; page-break-inside: avoid; }
+.ql-report-table + .ql-report-table { margin-top: 16px; }
+
 /* ---------- impresión: solo la figura y las tablas, sin cromado ---------- */
 @media print {
   .ql-sidebar,
@@ -735,7 +750,9 @@ select:focus-visible {
   .ql-dropzone,
   .ql-privacy,
   .ql-tabs,
-  .ql-tooltip { display: none !important; }
+  .ql-tooltip,
+  .ql-report-controls,
+  .ql-report-actions { display: none !important; }
   .ql-shell { display: block; }
   .ql-main { max-width: none; padding: 0; }
   .ql-grid-2 { grid-template-columns: 1fr; }
@@ -749,6 +766,10 @@ select:focus-visible {
   a { color: inherit; text-decoration: none; }
   body { background: #fff; }
   svg.ce-editing .ce-outline, svg.ce-editing .ce-hit { display: none !important; }
+  /* un salto de página antes de cada sección del informe (salvo la primera) */
+  .ql-report-section { break-before: page; page-break-before: always; border-top: none; }
+  .ql-report-section:first-of-type { break-before: auto; page-break-before: auto; }
+  .ql-report-fig, .ql-report-table { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ---------- file-row / list interactions ---------- */

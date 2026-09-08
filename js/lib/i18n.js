@@ -28,7 +28,7 @@ const DICTS = {
     nav: {
       home: 'Resumen', upload: 'Cargar datos', barplots: 'Barplots taxonómicos',
       alpha: 'Diversidad alfa', beta: 'Diversidad beta', differential: 'Abundancia diferencial',
-      venn: 'Venn / UpSet', correlograma: 'Correlograma', funcional: 'Índices funcionales', qc: 'Control de calidad (FASTQ)', recursos: 'Recursos',
+      venn: 'Venn / UpSet', correlograma: 'Correlograma', funcional: 'Índices funcionales', qc: 'Control de calidad (FASTQ)', informe: 'Informe combinado', recursos: 'Recursos',
     },
     shell: {
       groupModules: 'Módulos', sessionData: 'Datos en esta sesión',
@@ -270,6 +270,24 @@ const DICTS = {
       betaqza: 'Matriz de distancias Bray-Curtis (.qza)', pcoa: 'Coordenadas PCoA (ordination.txt)',
       deseq2: 'Tabla de abundancia diferencial (DESeq2)', kolist: 'KOs por módulo funcional',
       koabund: 'Abundancia de KOs por muestra (PICRUSt2)', fastq: 'Lecturas FASTQ 16S de ejemplo',
+    },
+    informe: {
+      eyebrow: 'Todo junto, para compartir',
+      title: 'Informe combinado',
+      subtitle: 'Reúne en un solo documento las figuras y tablas de los módulos que tengan datos cargados. Ctrl+P → «Guardar como PDF», o descárgalo como HTML autocontenido para adjuntarlo a una memoria.',
+      pickTitle: 'Qué incluir',
+      pickNote: 'Se listan los módulos con datos cargados ahora mismo. El informe usa el mismo cálculo y el mismo dibujo que cada módulo — no recalcula nada.',
+      generate: 'Generar informe',
+      generating: 'Generando…',
+      docTitle: 'Informe de análisis — QiimeLab',
+      metaDate: 'Generado el {date}',
+      metaLang: 'idioma: {lang}',
+      emptyTitle: 'Todavía no hay nada que informar',
+      emptyDesc: 'Carga datos en algún módulo (barplots, diversidad, abundancia diferencial…) y vuelve aquí.',
+      nothing: 'Los módulos elegidos no han producido ninguna figura ni tabla.',
+      tableTrunc: 'Tabla recortada a {n} filas — tabla completa en la app.',
+      print: 'Imprimir / Guardar PDF',
+      downloadHtml: 'Descargar HTML',
     },
     recursos: {
       eyebrow: 'Plantillas de análisis',
@@ -562,7 +580,7 @@ const DICTS = {
     nav: {
       home: 'Overview', upload: 'Load data', barplots: 'Taxonomic barplots',
       alpha: 'Alpha diversity', beta: 'Beta diversity', differential: 'Differential abundance',
-      venn: 'Venn / UpSet', correlograma: 'Correlogram', funcional: 'Functional indices', qc: 'Quality control (FASTQ)', recursos: 'Resources',
+      venn: 'Venn / UpSet', correlograma: 'Correlogram', funcional: 'Functional indices', qc: 'Quality control (FASTQ)', informe: 'Combined report', recursos: 'Resources',
     },
     shell: {
       groupModules: 'Modules', sessionData: 'Data in this session',
@@ -804,6 +822,24 @@ const DICTS = {
       betaqza: 'Bray-Curtis distance matrix (.qza)', pcoa: 'PCoA coordinates (ordination.txt)',
       deseq2: 'Differential-abundance table (DESeq2)', kolist: 'KOs by functional module',
       koabund: 'KO abundance per sample (PICRUSt2)', fastq: 'Example 16S FASTQ reads',
+    },
+    informe: {
+      eyebrow: 'Everything together, to share',
+      title: 'Combined report',
+      subtitle: 'Collects the figures and tables of the modules that have data into a single document. Ctrl+P → “Save as PDF”, or download it as a self-contained HTML to attach to a thesis or report.',
+      pickTitle: 'What to include',
+      pickNote: 'The modules with data loaded right now are listed. The report uses each module’s own computation and drawing — nothing is recalculated.',
+      generate: 'Generate report',
+      generating: 'Generating…',
+      docTitle: 'Analysis report — QiimeLab',
+      metaDate: 'Generated on {date}',
+      metaLang: 'language: {lang}',
+      emptyTitle: 'Nothing to report yet',
+      emptyDesc: 'Load data into a module (barplots, diversity, differential abundance…) and come back here.',
+      nothing: 'The chosen modules produced no figure or table.',
+      tableTrunc: 'Table trimmed to {n} rows — full table in the app.',
+      print: 'Print / Save PDF',
+      downloadHtml: 'Download HTML',
     },
     recursos: {
       eyebrow: 'Analysis templates',
@@ -1096,7 +1132,7 @@ const DICTS = {
     nav: {
       home: 'Panoramica', upload: 'Carica dati', barplots: 'Barplot tassonomici',
       alpha: 'Diversità alfa', beta: 'Diversità beta', differential: 'Abbondanza differenziale',
-      venn: 'Venn / UpSet', correlograma: 'Correlogramma', funcional: 'Indici funzionali', qc: 'Controllo qualità (FASTQ)', recursos: 'Risorse',
+      venn: 'Venn / UpSet', correlograma: 'Correlogramma', funcional: 'Indici funzionali', qc: 'Controllo qualità (FASTQ)', informe: 'Report combinato', recursos: 'Risorse',
     },
     shell: {
       groupModules: 'Moduli', sessionData: 'Dati in questa sessione',
@@ -1189,7 +1225,7 @@ const DICTS = {
     nav: {
       home: 'Übersicht', upload: 'Daten laden', barplots: 'Taxonomische Barplots',
       alpha: 'Alpha-Diversität', beta: 'Beta-Diversität', differential: 'Differenzielle Abundanz',
-      venn: 'Venn / UpSet', correlograma: 'Korrelogramm', funcional: 'Funktionelle Indizes', qc: 'Qualitätskontrolle (FASTQ)', recursos: 'Ressourcen',
+      venn: 'Venn / UpSet', correlograma: 'Korrelogramm', funcional: 'Funktionelle Indizes', qc: 'Qualitätskontrolle (FASTQ)', informe: 'Kombinierter Bericht', recursos: 'Ressourcen',
     },
     shell: {
       groupModules: 'Module', sessionData: 'Daten in dieser Sitzung',
@@ -1282,7 +1318,7 @@ const DICTS = {
     nav: {
       home: '概览', upload: '加载数据', barplots: '分类学条形图',
       alpha: 'Alpha 多样性', beta: 'Beta 多样性', differential: '差异丰度',
-      venn: 'Venn / UpSet', correlograma: '相关图', funcional: '功能指数', qc: '质量控制（FASTQ）', recursos: '资源',
+      venn: 'Venn / UpSet', correlograma: '相关图', funcional: '功能指数', qc: '质量控制（FASTQ）', informe: '综合报告', recursos: '资源',
     },
     shell: {
       groupModules: '模块', sessionData: '本次会话的数据',
