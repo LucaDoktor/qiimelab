@@ -1,5 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t } from '../lib/i18n.js';
+import { domainMotif } from '../lib/motif.js';
+import { getProfileName } from '../lib/profile.js';
 
 // route = fragmento de ruta; los rótulos y descripciones salen de i18n.
 const MODULES_INFO = [
@@ -11,16 +13,24 @@ const MODULES_INFO = [
   { route: 'qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc' },
 ];
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 export function render(container) {
   function paint() {
     container.innerHTML = '';
 
+    const who = getProfileName();
     const header = document.createElement('header');
-    header.className = 'ql-page-header';
+    header.className = 'ql-hero';
     header.innerHTML =
-      '<p class="ql-eyebrow">' + t('home.eyebrow') + '</p>' +
-      '<h1 class="ql-page-title">QiimeLab</h1>' +
-      '<p class="ql-page-sub">' + t('home.subtitle') + '</p>';
+      '<div class="ql-hero-motif">' + domainMotif() + '</div>' +
+      '<div class="ql-hero-body">' +
+      '<p class="ql-eyebrow">' + (who ? t('shell.greeting', { name: escapeHtml(who) }) + ' · ' : '') + t('home.eyebrow') + '</p>' +
+      '<h1 class="ql-hero-title">QiimeLab</h1>' +
+      '<p class="ql-hero-sub">' + t('home.subtitle') + '</p>' +
+      '</div>';
     container.appendChild(header);
 
     const stack = document.createElement('div');
