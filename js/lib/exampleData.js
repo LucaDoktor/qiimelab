@@ -194,6 +194,7 @@ export function loadRealCommunityData() {
     ['diversidad-alfa/shannon.tsv', 'Ejemplo real — Shannon por muestra'],
     ['diversidad-alfa/observed_features.tsv', 'Ejemplo real — riqueza (Observed Features) por muestra'],
     ['diversidad-beta/bray_curtis.qza', 'Ejemplo real — matriz Bray-Curtis (.qza, se abre en el navegador)'],
+    ['pcoa/bray_curtis_ordination.txt', 'Ejemplo real — PCoA Bray-Curtis (ordination.txt de scikit-bio)'],
   ]);
 }
 

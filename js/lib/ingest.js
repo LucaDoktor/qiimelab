@@ -7,6 +7,7 @@
 
 import { parseTable, normalizeHeader } from './csv.js';
 import { listZipEntries, readZipText, gunzipText } from './minizip.js';
+import { parseOrdination, looksLikeOrdination } from './ordination.js';
 
 const TAXON_KEYS = ['taxon', 'taxa', 'species', 'genus', 'feature', 'featureid', 'otu', 'asv', 'name', 'organism', 'id'];
 const LFC_KEYS = ['log2foldchange', 'log2fc', 'lfc', 'logfc', 'log2foldchg', 'foldchange'];
@@ -280,7 +281,7 @@ export async function ingestFile(file) {
     const GENERIC_INNER = /^(distance-matrix|alpha-diversity|ordination|data|feature-table|taxonomy|metadata)\.[a-z0-9]+$/i;
     const outerBase = name.replace(/\.[^.]+$/, '');
     for (const entry of dataEntries) {
-      if (!/\.(tsv|csv)$/i.test(entry.name)) continue;
+      if (!/\.(tsv|csv|txt)$/i.test(entry.name)) continue;
       let text;
       try {
         text = await readZipText(buffer, entry);
@@ -290,6 +291,15 @@ export async function ingestFile(file) {
       }
       const shortName = entry.name.split('/').pop();
       const hint = GENERIC_INNER.test(shortName) ? outerBase : shortName;
+      // ordination.txt (PCoA.qza) — coordenadas ya calculadas
+      if (/\.txt$/i.test(shortName)) {
+        if (looksLikeOrdination(text)) {
+          const ord = parseOrdination(text, hint);
+          if (ord) { results.push({ kind: 'ordination', ...ord }); }
+          else warnings.push('"' + shortName + '" (dentro de ' + name + '): ordination.txt ilegible.');
+        }
+        continue;
+      }
       const { headers, rows } = parseTable(text);
       const classified = classifyTable(headers, rows, hint);
       if (classified) results.push(classified);
@@ -321,6 +331,13 @@ export async function ingestFile(file) {
 
   if (lower.endsWith('.tsv') || lower.endsWith('.csv') || lower.endsWith('.txt')) {
     const text = await file.text();
+    // skbio "Ordination Results" (PCoA/PCA): coordenadas ya calculadas
+    if (looksLikeOrdination(text)) {
+      const ord = parseOrdination(text, name);
+      if (ord) { results.push({ kind: 'ordination', ...ord }); return { results, warnings }; }
+      warnings.push('"' + name + '": parece un ordination.txt pero no se han podido leer las coordenadas.');
+      return { results, warnings };
+    }
     const { headers, rows } = parseTable(text);
     const classified = classifyTable(headers, rows, name);
     if (classified) results.push(classified);
