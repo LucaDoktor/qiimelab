@@ -37,7 +37,15 @@ async function renderRoute() {
   routeId = currentRouteId();
   renderShell(sidebar, routeId);
   renderFooter(footer);
-  view.innerHTML = '<p class="ql-panel-note">' + t('app.loading') + '</p>';
+  view.innerHTML =
+    '<div class="ql-skel" role="status" aria-live="polite">' +
+    '<span class="ql-skel-sr">' + t('app.loading') + '</span>' +
+    '<div class="ql-skel-line ql-skel-eyebrow"></div>' +
+    '<div class="ql-skel-line ql-skel-title"></div>' +
+    '<div class="ql-skel-line ql-skel-sub"></div>' +
+    '<div class="ql-skel-card"></div>' +
+    '<div class="ql-skel-card ql-skel-card-sm"></div>' +
+    '</div>';
   try {
     const mod = await moduleLoaders[routeId]();
     if (routeId !== currentRouteId()) return; // el usuario ya navegó a otro sitio mientras cargaba

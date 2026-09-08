@@ -154,17 +154,26 @@ svg.ql-brand-mark {
 .ql-footer-link:hover { color: var(--accent); border-bottom-color: currentColor; }
 .ql-footer-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-.ql-page-header { margin-bottom: 24px; }
+.ql-page-header { margin-bottom: 26px; }
 .ql-eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-muted);
-  margin: 0 0 8px;
+  margin: 0 0 9px;
 }
-.ql-page-title { font-size: clamp(24px, 3vw, 30px); margin-bottom: 8px; }
-.ql-page-sub { color: var(--ink-2); max-width: 68ch; font-size: 14.5px; }
+.ql-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 18px; height: 2px;
+  margin-right: 9px;
+  vertical-align: 0.22em;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.ql-page-title { font-size: clamp(25px, 3.3vw, 33px); margin-bottom: 8px; letter-spacing: -0.02em; }
+.ql-page-sub { color: var(--ink-2); max-width: 68ch; font-size: 14.5px; line-height: 1.6; }
 
 /* ---------- hero de la portada ---------- */
 .ql-hero {
@@ -336,10 +345,27 @@ svg.ql-brand-mark {
 
 /* ---------- estado vacío ---------- */
 .ql-empty {
+  position: relative;
   text-align: center;
-  padding: 44px 24px 40px;
+  padding: 48px 24px 42px;
   color: var(--ink-muted);
 }
+/* textura de fondo: retícula de puntos tipo ordenación, muy tenue y
+   desvanecida hacia el centro para no estorbar al texto. */
+.ql-empty::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(circle at 1px 1px,
+    color-mix(in srgb, var(--ink-muted) 30%, transparent) 1.4px, transparent 0);
+  background-size: 24px 24px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 62% at 50% 46%, transparent 38%, #000 100%);
+  mask-image: radial-gradient(ellipse 60% 62% at 50% 46%, transparent 38%, #000 100%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.ql-empty > * { position: relative; z-index: 1; }
 .ql-empty svg {
   color: var(--accent);
   margin-bottom: 16px;
@@ -559,6 +585,28 @@ select:focus-visible {
 details > summary { transition: color var(--dur) var(--ease); }
 details > summary:hover { color: var(--accent) !important; }
 details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* ---------- esqueleto de carga ---------- */
+.ql-skel { max-width: 760px; }
+.ql-skel-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ql-skel-line, .ql-skel-card {
+  background: linear-gradient(100deg,
+    var(--page) 30%,
+    color-mix(in srgb, var(--ink-muted) 14%, var(--page)) 50%,
+    var(--page) 70%);
+  background-size: 220% 100%;
+  border-radius: var(--radius-sm);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ql-skel-line, .ql-skel-card { animation: ql-shimmer 1.4s linear infinite; }
+}
+.ql-skel-line { height: 13px; margin-bottom: 12px; }
+.ql-skel-eyebrow { width: 180px; height: 10px; }
+.ql-skel-title { width: 62%; height: 26px; margin-bottom: 14px; border-radius: var(--radius-md); }
+.ql-skel-sub { width: 84%; margin-bottom: 26px; }
+.ql-skel-card { height: 140px; border-radius: var(--radius-lg); margin-bottom: 18px; }
+.ql-skel-card-sm { height: 88px; }
+@keyframes ql-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
 /* ---------- micro-interacciones ---------- */
 /* Consistentes en toda la app: hover/focus con un desplazamiento mínimo y
