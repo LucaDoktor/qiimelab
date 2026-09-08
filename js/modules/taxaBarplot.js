@@ -235,17 +235,30 @@ export function render(container) {
     // ahí los colores se repiten (como en el barplot de QIIME2): la identidad
     // la lleva la leyenda + el tooltip + la tabla, no el color solo.
     const series = topTaxa.map((h, i) => ({ key: h, label: shortTaxonName(h), colorVar: CAT_VARS[i % CAT_VARS.length] }));
-    const otherLabel = preAggOtherHeaders.length
-      ? t('barplots.othersNplus', { n: otherTaxa.length })
-      : t('barplots.othersN', { n: otherTaxa.length });
-    series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
+    // "Otros" solo si de verdad agrupa algo (taxones fuera del top o una
+    // columna "Other" ya venía en el archivo). Si el top abarca todos los
+    // taxones no se pinta una serie gris de 0 %.
+    const hasOther = otherTaxa.length > 0 || preAggOtherHeaders.length > 0;
+    if (hasOther) {
+      const otherLabel = preAggOtherHeaders.length
+        ? t('barplots.othersNplus', { n: otherTaxa.length })
+        : t('barplots.othersN', { n: otherTaxa.length });
+      series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
+    }
     const colorsRepeat = topTaxa.length > CAT_VARS.length;
 
     // chart
     const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
     const legRows = Math.ceil(series.length / legCols);
     const marginL = 56, marginR = 12, marginT = 42;
-    const marginB = 66 + legRows * 15 + (colorsRepeat ? 16 : 0); // etiquetas rotadas + leyenda (+ nota)
+    // Las etiquetas de muestra van rotadas -55°: cuánto bajan depende de su
+    // longitud. Reservamos hueco real para que el título del eje X no se
+    // solape con ellas (bug de maquetado que se veía con IDs largos).
+    const showEvery = sampleOrder.length > 24 ? Math.ceil(sampleOrder.length / 24) : 1;
+    const maxLabelChars = sampleOrder.reduce((m, s, si) => (si % showEvery === 0 ? Math.max(m, String(s).length) : m), 0);
+    const labelDrop = 14 + Math.min(104, Math.round(maxLabelChars * 6.4 * 0.82)); // 0.82 ≈ sin(55°)
+    const xTitleGap = labelDrop + 14;
+    const marginB = xTitleGap + 20 + legRows * 15 + (colorsRepeat ? 20 : 4);
     const slotW = Math.max(18, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
     const barW = Math.min(24, slotW * 0.7);
     const innerH = 380;
@@ -296,7 +309,6 @@ export function render(container) {
     });
 
     // etiquetas eje X (rotadas si hay muchas muestras)
-    const showEvery = sampleOrder.length > 24 ? Math.ceil(sampleOrder.length / 24) : 1;
     sampleOrder.forEach((sampleId, si) => {
       if (si % showEvery !== 0) return;
       const cx = marginL + si * slotW + slotW / 2;
@@ -308,7 +320,7 @@ export function render(container) {
       svg.appendChild(t);
     });
 
-    const xLabelBase = marginT + innerH + 44; // bajo las etiquetas de muestra rotadas
+    const xLabelBase = marginT + innerH + xTitleGap; // bajo las etiquetas de muestra rotadas
     const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
     xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
     svg.appendChild(xTitle);

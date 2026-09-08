@@ -28,13 +28,13 @@ const FONTS = [
 ];
 
 const I18N = {
-  es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG',
+  es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG',
         hint: 'Arrastra los textos para recolocarlos. Haz clic en uno para cambiar su estilo.',
-        lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala.',
+        lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala en SVG o PNG.',
         text: 'Texto', color: 'Color', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar' },
-  en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG',
+  en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels to reposition them. Click one to change its style.',
-        lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it.',
+        lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
         text: 'Text', color: 'Colour', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
@@ -156,6 +156,10 @@ export function attachChartEditor(cfg) {
     const bDl = mkBtn(CE_ICONS.download, T.download, downloadSvg);
     bDl.className = 'ql-btn';
     toolbar.appendChild(bDl);
+
+    const bPng = mkBtn(CE_ICONS.download, T.downloadPng, downloadPng);
+    bPng.className = 'ql-btn';
+    toolbar.appendChild(bPng);
 
     if (Object.keys(store).length) {
       const bReset = mkBtn(CE_ICONS.reset, T.reset, resetAll);
@@ -523,6 +527,39 @@ export function attachChartEditor(cfg) {
     return str;
   }
 
+  function downloadPng() {
+    const str = serialize();
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    const w = Math.round(vb && vb.width ? vb.width : svg.getBoundingClientRect().width);
+    const h = Math.round(vb && vb.height ? vb.height : svg.getBoundingClientRect().height);
+    const scale = 2; // suficiente para pegar en informes / diapositivas
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        const ctx = canvas.getContext('2d');
+        const surf = getComputedStyle(document.body).getPropertyValue('--surface').trim() || '#ffffff';
+        ctx.fillStyle = surf;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename.replace(/[^a-z0-9_-]+/gi, '-') + '.png';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        }, 'image/png');
+      } catch (e) { /* sandbox sin descargas / canvas tainted */ }
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  }
+
   function toHex(color) {
     if (!color) return '#000000';
     if (/^#[0-9a-f]{6}$/i.test(color)) return color;
@@ -540,6 +577,7 @@ export function attachChartEditor(cfg) {
     sync,
     serialize,
     download: downloadSvg,
+    downloadPng,
     isDirty: () => Object.keys(store).length > 0,
     destroy() {
       clearTimeout(debTimer);

@@ -174,9 +174,10 @@ export function render(container) {
         : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
 
     // ---- dibujar boxplot ----
+    const kwSig = kw && isFinite(kw.p) && kw.p < 0.05;
     const legCols = groupNames.length > 5 ? 2 : 1;
     const legRows = Math.ceil(groupNames.length / legCols);
-    const marginL = 52, marginR = 20, marginT = 44;
+    const marginL = 52, marginR = 20, marginT = kwSig ? 68 : 44;
     const marginB = 58 + legRows * 15;
     const innerH = 360;
     const slotW = 140;
@@ -250,6 +251,26 @@ export function render(container) {
       svg.appendChild(labelT);
     });
 
+    // Anotación de significación (propuesta propia): si el test global de
+    // Kruskal-Wallis sale significativo, un corchete arriba con los
+    // asteriscos y la p. No sustituye al panel de estadística, lo refleja
+    // en la propia figura para que se lea sin salir del gráfico.
+    if (kwSig && groupNames.length >= 2) {
+      const stars = kw.p < 0.001 ? '∗∗∗' : kw.p < 0.01 ? '∗∗' : '∗';
+      const bx1 = marginL + slotW / 2;
+      const bx2 = marginL + slotW * (groupNames.length - 1) + slotW / 2;
+      const by = marginT - 16;
+      const gSig = svgEl('g', { 'data-ce': 'sig' });
+      gSig.appendChild(svgEl('path', {
+        d: 'M' + bx1 + ' ' + (by + 6) + ' V' + by + ' H' + bx2 + ' V' + (by + 6),
+        fill: 'none', class: 'ql-baseline-line',
+      }));
+      const sigT = svgEl('text', { x: (bx1 + bx2) / 2, y: by - 5, class: 'ql-axis-label', 'text-anchor': 'middle' });
+      sigT.textContent = t('alpha.kwBracket', { stars, p: formatP(kw.p) });
+      gSig.appendChild(sigT);
+      svg.appendChild(gSig);
+    }
+
     const yTitle = svgEl('text', {
       x: 14, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
       transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
@@ -282,6 +303,7 @@ export function render(container) {
         { id: 'title', create: { text: t('alpha.title'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'sig', selector: '[data-ce="sig"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
       onReset: () => paint(),
