@@ -163,6 +163,13 @@ Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
   (fracción continua de Lentz, para el p-valor de correlación) se verificó
   contra `pbeta()` de R en casos analíticos y contra `cor.test` (Anscombe I)
   a 1e-9; Spearman contra la fórmula exacta `1 − 6·Σd²/(n(n²−1))`.
+  Los **índices de diversidad alfa** — Shannon, Simpson (1−D), Pielou (J'),
+  Chao1 corregido por sesgo por muestra, y los estimadores de riqueza por
+  incidencia por grupo (Chao2, jackknife 1º/2º orden, bootstrap, con sus
+  errores estándar) — se verificaron número a número contra
+  `vegan::diversity()`, `vegan::estimateR()` y `vegan::specpool()` (error
+  relativo < 1e-12 sobre la tabla de conteos de ejemplo y un caso de juguete
+  con singletons/doubletons).
 - **`js/lib/fastq.js`** — un solo recorrido en streaming acumula todas las
   métricas; los percentiles de calidad por posición salen de un histograma
   `[posición][Phred]`, sin guardar las lecturas. **No sustituye a

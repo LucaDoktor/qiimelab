@@ -236,12 +236,13 @@ async function ingestMany(specs) {
 // El ejemplo real es un recorte ANONIMIZADO de un estudio de microbioma 16S
 // con varios grupos de tratamiento (A–N) y validación. Ver datos-ejemplo/README.md.
 
-/** Metadatos + taxonomía + barplot (género) + alfa (Shannon, Observed) + beta (Bray-Curtis). */
+/** Metadatos + taxonomía + barplot (género) + conteos (género) + alfa (Shannon, Observed) + beta (Bray-Curtis). */
 export function loadRealCommunityData() {
   return ingestMany([
     ['metadatos/sample-metadata.tsv', 'Ejemplo real — metadatos (42 muestras, 14 grupos)'],
     ['taxonomia/taxonomy.tsv', 'Ejemplo real — taxonomía SILVA (recorte de 2.500 ASVs, hasta género)'],
     ['barplot/genero_abundancia_relativa_TOP14.csv', 'Ejemplo real — abundancia relativa por género (TOP14 + Others)'],
+    ['venn/genero_conteos_absolutos.csv', 'Ejemplo real — conteos absolutos por género (para Simpson, Chao1 y los estimadores por grupo)'],
     ['diversidad-alfa/shannon.tsv', 'Ejemplo real — Shannon por muestra'],
     ['diversidad-alfa/observed_features.tsv', 'Ejemplo real — riqueza (Observed Features) por muestra'],
     ['diversidad-beta/bray_curtis.qza', 'Ejemplo real — matriz Bray-Curtis (.qza, se abre en el navegador)'],

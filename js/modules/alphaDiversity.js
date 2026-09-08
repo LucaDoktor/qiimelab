@@ -2,6 +2,9 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP } from '../lib/stats.js';
 import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
+import {
+  collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS,
+} from '../lib/alphaMetrics.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 
@@ -15,6 +18,10 @@ function svgEl(tag, attrs) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function fmt(v, d) {
+  return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
 }
 
 export function render(container) {
@@ -33,11 +40,14 @@ export function render(container) {
       '<p class="ql-page-sub">' + t('alpha.subtitle') + '</p>';
     container.appendChild(header);
 
-    if (!state.alphaDiversity || !state.metadata) {
+    const allMetrics = collectAlphaMetrics();
+    const haveData = allMetrics.length > 0;
+
+    if (!haveData || !state.metadata) {
       const card = document.createElement('div');
       card.className = 'ql-card ql-panel';
       const missing = [];
-      if (!state.alphaDiversity) missing.push(t('alpha.needMetric'));
+      if (!haveData) missing.push(t('alpha.needMetric'));
       if (!state.metadata) missing.push(t('alpha.needMeta'));
       card.innerHTML =
         '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="9" width="4" height="11"/><rect x="10" y="4" width="4" height="16"/><rect x="16" y="12" width="4" height="8"/></svg>' +
@@ -48,13 +58,14 @@ export function render(container) {
       mountExampleButtons(card.querySelector('.ql-empty'), {
         real: loadRealCommunityData,
         synthetic: loadExampleCommunityData,
-        download: ['shannon', 'observed', 'metadata'],
+        download: ['shannon', 'observed', 'counts', 'metadata'],
       });
       return;
     }
 
-    const metrics = Object.keys(state.alphaDiversity.metrics);
-    if (!metric || !metrics.includes(metric)) metric = metrics[0];
+    const metricNames = allMetrics.map((m) => m.name);
+    if (!metric || !metricNames.includes(metric)) metric = metricNames[0];
+    const curMetric = allMetrics.find((m) => m.name === metric);
     const groupOptions = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
     if (!groupCol || !groupOptions.includes(groupCol)) groupCol = groupOptions[0] || null;
 
@@ -78,15 +89,16 @@ export function render(container) {
     controls.className = 'ql-card ql-panel';
     controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
-    if (metrics.length > 1) {
+    if (allMetrics.length > 1) {
       const f = document.createElement('div');
       f.className = 'ql-field';
       f.innerHTML = '<label>' + t('alpha.metricLabel') + '</label>';
       const sel = document.createElement('select');
-      metrics.forEach((m) => {
+      allMetrics.forEach((m) => {
         const opt = document.createElement('option');
-        opt.value = m; opt.textContent = m;
-        if (m === metric) opt.selected = true;
+        opt.value = m.name;
+        opt.textContent = m.label + (m.computed ? ' · ' + t('alpha.computedTag') : '');
+        if (m.name === metric) opt.selected = true;
         sel.appendChild(opt);
       });
       sel.addEventListener('change', () => { metric = sel.value; paint(); });
@@ -110,6 +122,14 @@ export function render(container) {
       controls.appendChild(f);
     }
 
+    // aviso si se mezclan métricas de archivo (posible nivel ASV) con calculadas
+    if (allMetrics.some((m) => m.computed) && allMetrics.some((m) => !m.computed)) {
+      const mix = document.createElement('p');
+      mix.className = 'ql-field-help';
+      mix.textContent = t('alpha.computedNote');
+      controls.appendChild(mix);
+    }
+
     const statsBox = document.createElement('div');
     statsBox.style.marginTop = '18px';
     controls.appendChild(statsBox);
@@ -117,7 +137,7 @@ export function render(container) {
     grid.appendChild(controls);
     container.appendChild(grid);
 
-    // tabla
+    // tabla por muestra
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
@@ -127,31 +147,43 @@ export function render(container) {
     if (!groupCol) return;
 
     // ---- construir grupos ----
-    const values = state.alphaDiversity.metrics[metric].values;
+    const values = curMetric.values;
     const metaByKey = {};
     state.metadata.rows.forEach((r) => { metaByKey[r[state.metadata.sampleIdKey]] = r; });
+    // resolutor tolerante a sufijos (A-1 ↔ A-1-16S-…)
+    const metaKeys = Object.keys(metaByKey);
+    const resolveMeta = (sid) => {
+      if (metaByKey[sid]) return metaByKey[sid];
+      const hit = metaKeys.find((k) => sid.startsWith(k) || k.startsWith(sid));
+      return hit ? metaByKey[hit] : undefined;
+    };
 
     const groupNames = [];
     const groupData = {};
     const perSampleRows = [];
     Object.keys(values).forEach((sampleId) => {
-      const meta = metaByKey[sampleId];
+      const v = values[sampleId];
+      if (typeof v !== 'number' || !isFinite(v)) return;
+      const meta = resolveMeta(sampleId);
       const g = meta ? meta[groupCol] : undefined;
       if (g === undefined || g === '') return;
       if (!groupData[g]) { groupData[g] = []; groupNames.push(g); }
-      groupData[g].push(values[sampleId]);
-      perSampleRows.push({ sampleId, group: g, value: values[sampleId] });
+      groupData[g].push(v);
+      perSampleRows.push({ sampleId, group: g, value: v });
     });
     groupNames.sort();
 
     if (groupNames.length === 0) {
       statsBox.innerHTML = '<p class="ql-field-help">' + t('alpha.noMatch') + '</p>';
+      renderGroupEstimators(groupCol);
       return;
     }
 
+    const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
     const { kw, ceElements } = drawGroupBoxplot({
       svg, chartWrap, tooltip, groupNames, groupData,
-      title: t('alpha.title'), xTitle: groupCol, yTitle: metric, valueLabel: metric,
+      title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
+      valueDecimals: decimals,
     });
 
     statsBox.innerHTML =
@@ -179,7 +211,7 @@ export function render(container) {
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     tbl.innerHTML = '<thead><tr><th><button type="button">' + t('alpha.colSample') + '</button></th><th><button type="button">' +
-      escapeHtml(groupCol) + '</button></th><th><button type="button">' + escapeHtml(metric) + '</button></th></tr></thead>';
+      escapeHtml(groupCol) + '</button></th><th><button type="button">' + escapeHtml(curMetric.label) + '</button></th></tr></thead>';
     const tbody = document.createElement('tbody');
     perSampleRows.sort((a, b) => a.group === b.group ? a.value - b.value : String(a.group).localeCompare(String(b.group)))
       .forEach((r) => {
@@ -190,6 +222,58 @@ export function render(container) {
     tbl.appendChild(tbody);
     scrollDiv.appendChild(tbl);
     tableCard.appendChild(scrollDiv);
+
+    renderGroupEstimators(groupCol);
+  }
+
+  // Tabla comparativa por grupo: Chao2, jackknife 1º/2º orden, bootstrap — todos
+  // por INCIDENCIA (en cuántas muestras del grupo aparece cada taxón). No son de
+  // una muestra suelta, por eso van en su propia tabla y no en el boxplot.
+  function renderGroupEstimators(groupCol) {
+    const rows = groupRichnessEstimators(groupCol);
+    if (!rows || rows.length === 0) return;
+
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+    card.style.marginTop = '20px';
+    card.innerHTML =
+      '<h2>' + t('alpha.groupRichTitle') + '</h2>' +
+      '<p class="ql-panel-note">' + t('alpha.groupRichNote') + '</p>';
+
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    let head = '<thead><tr><th>' + escapeHtml(groupCol) + '</th><th>n</th>';
+    RICHNESS_ESTIMATORS.forEach((e) => { head += '<th>' + escapeHtml(e.label) + '</th>'; });
+    tbl.innerHTML = head + '</tr></thead>';
+    const tbody = document.createElement('tbody');
+    rows.forEach((r) => {
+      const tr = document.createElement('tr');
+      let cells = '<td>' + escapeHtml(String(r.group)) + '</td><td class="ql-num tabular">' + r.n + '</td>';
+      RICHNESS_ESTIMATORS.forEach((e) => {
+        const se = e.se && isFinite(r[e.se]) ? ' <span class="ql-se">± ' + r[e.se].toFixed(1) + '</span>' : '';
+        cells += '<td class="ql-num tabular">' + fmt(r[e.key], 1) + se + '</td>';
+      });
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    scrollDiv.appendChild(tbl);
+    card.appendChild(scrollDiv);
+
+    const dl = document.createElement('dl');
+    dl.className = 'ql-metric-defs';
+    RICHNESS_ESTIMATORS.forEach((e) => {
+      const dt = document.createElement('dt');
+      dt.textContent = e.label;
+      const dd = document.createElement('dd');
+      dd.textContent = t(e.ex);
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    });
+    card.appendChild(dl);
+    container.appendChild(card);
   }
 
   paint();

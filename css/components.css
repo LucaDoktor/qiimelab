@@ -525,6 +525,23 @@ svg.ql-brand-mark {
 .ql-stat-label { font-size: 11px; color: var(--ink-muted); margin-bottom: 4px; }
 .ql-stat-value { font-family: var(--font-display); font-weight: 600; font-size: 22px; }
 
+/* ---------- explicación llana de índices (diversidad alfa / beta) ---------- */
+.ql-se { color: var(--ink-muted); font-size: 0.86em; }
+.ql-metric-defs {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ql-metric-defs dt { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.ql-metric-defs dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 560px) {
+  .ql-metric-defs { grid-template-columns: 1fr; gap: 1px 0; }
+  .ql-metric-defs dd { margin-bottom: 8px; }
+}
+
 /* ---------- leyenda ---------- */
 .ql-legend { display: flex; flex-wrap: wrap; gap: 16px; }
 .ql-legend-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }

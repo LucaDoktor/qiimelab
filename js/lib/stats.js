@@ -26,6 +26,172 @@ export function quartiles(sortedArr) {
   return { q1: pct(0.25), median: pct(0.5), q3: pct(0.75) };
 }
 
+// ---------- diversidad alfa (índices por muestra) ----------
+// Verificados contra vegan::diversity() / vegan::estimateR() (ver README,
+// "Notas de desarrollo"). Todos toman un vector de CONTEOS (o abundancias) por
+// taxón; los ceros y negativos se ignoran.
+
+/** Proporciones que suman 1 sobre las entradas > 0. Devuelve [] si no hay ninguna. */
+function toProportions(counts) {
+  let sum = 0;
+  for (let i = 0; i < counts.length; i++) if (counts[i] > 0) sum += counts[i];
+  if (!(sum > 0)) return [];
+  const p = [];
+  for (let i = 0; i < counts.length; i++) if (counts[i] > 0) p.push(counts[i] / sum);
+  return p;
+}
+
+/** Riqueza observada: nº de taxones con conteo > 0. */
+export function observedRichness(counts) {
+  let s = 0;
+  for (let i = 0; i < counts.length; i++) if (counts[i] > 0) s++;
+  return s;
+}
+
+/** Índice de Shannon H' con logaritmo natural — como vegan::diversity(x, "shannon"). */
+export function shannonIndex(counts) {
+  const p = toProportions(counts);
+  let h = 0;
+  for (let i = 0; i < p.length; i++) h -= p[i] * Math.log(p[i]);
+  return h;
+}
+
+/** Simpson 1 − D (Gini-Simpson) — como vegan::diversity(x, "simpson"). */
+export function simpsonIndex(counts) {
+  const p = toProportions(counts);
+  if (p.length === 0) return NaN;
+  let d = 0;
+  for (let i = 0; i < p.length; i++) d += p[i] * p[i];
+  return 1 - d;
+}
+
+/**
+ * Equidad de Pielou J' = H' / ln(S), con S = riqueza observada.
+ * No está definida con S < 2 (ln 1 = 0) → NaN, igual que vegan.
+ * Se puede pasar (shannon, richness) ya calculados o un vector de conteos.
+ */
+export function pielouEvenness(a, richness) {
+  let h, s;
+  if (Array.isArray(a)) { h = shannonIndex(a); s = observedRichness(a); }
+  else { h = a; s = richness; }
+  if (!(s >= 2)) return NaN;
+  return h / Math.log(s);
+}
+
+/**
+ * Chao1 corregido por sesgo (Chao 1987) — como vegan::estimateR(x)["S.chao1"]:
+ *   Sobs + F1·(F1−1) / (2·(F2+1))
+ * F1 / F2 = nº de taxones con exactamente 1 / 2 lecturas (singletons/doubletons).
+ * El +1 del denominador lo hace estable cuando F2 = 0. Necesita conteos
+ * ENTEROS (redondea por si el archivo trae "9.0").
+ */
+export function chao1(counts) {
+  let sObs = 0, f1 = 0, f2 = 0;
+  for (let i = 0; i < counts.length; i++) {
+    const v = Math.round(counts[i]);
+    if (v <= 0) continue;
+    sObs++;
+    if (v === 1) f1++;
+    else if (v === 2) f2++;
+  }
+  return sObs + (f1 * (f1 - 1)) / (2 * (f2 + 1));
+}
+
+// ---------- estimadores de riqueza por INCIDENCIA (por grupo de muestras) ----------
+// Reproducen vegan::specpool() con su valor por defecto smallsample = TRUE, que
+// aplica el factor de muestra pequeña ssc = (n−1)/n. Verificados número a número
+// contra la salida real de specpool() (ver README, "Notas de desarrollo").
+
+/**
+ * @param {number[][]} siteBySpecies  matriz muestra × taxón: n filas (muestras
+ *   del grupo) × S columnas (taxones). Solo importa si cada celda es > 0.
+ * @returns {{n:number, sObs:number, chao2:number, chao2SE:number,
+ *   jack1:number, jack1SE:number, jack2:number, boot:number, bootSE:number}}
+ */
+export function incidenceRichnessEstimators(siteBySpecies) {
+  const n = siteBySpecies.length;
+  const empty = { n, sObs: 0, chao2: NaN, chao2SE: NaN, jack1: NaN, jack1SE: NaN, jack2: NaN, boot: NaN, bootSE: NaN };
+  if (n === 0) return empty;
+  const S = siteBySpecies[0].length;
+
+  // frecuencia de incidencia (en cuántas muestras del grupo aparece cada taxón)
+  const freq = new Array(S).fill(0);
+  for (let si = 0; si < n; si++) {
+    const row = siteBySpecies[si];
+    for (let j = 0; j < S; j++) if (row[j] > 0) freq[j]++;
+  }
+
+  const ssc = (n - 1) / n;
+  let sObs = 0, a1 = 0, a2 = 0;
+  for (let j = 0; j < S; j++) {
+    if (freq[j] > 0) sObs++;
+    if (freq[j] === 1) a1++;
+    else if (freq[j] === 2) a2++;
+  }
+  if (sObs === 0) return { ...empty, sObs: 0 };
+
+  // Chao2: vegan usa a1²/(2·a2) si a2 > 0; si no, a1·(a1−1)/2. Ambos × ssc.
+  const chao2 = a2 > 0
+    ? sObs + ssc * a1 * a1 / 2 / a2
+    : sObs + ssc * a1 * (a1 - 1) / 2;
+
+  const jack1 = sObs + a1 * (n - 1) / n;
+  const jack2 = n > 1
+    ? sObs + a1 * (2 * n - 3) / n - a2 * (n - 2) * (n - 2) / n / (n - 1)
+    : sObs;
+
+  // Bootstrap: Sobs + Σ (1 − p_j)^n sobre los taxones observados, p_j = freq_j/n
+  let boot = sObs;
+  for (let j = 0; j < S; j++) if (freq[j] > 0) boot += Math.pow(1 - freq[j] / n, n);
+
+  // --- varianzas (idénticas a specpool) ---
+  let varChao;
+  if (a2 > 0) {
+    const aa = a1 / a2;
+    varChao = a1 * ssc * (0.5 + ssc * (1 + aa / 4) * aa) * aa;
+  } else {
+    varChao = ssc * (ssc * (a1 * (2 * a1 - 1) * (2 * a1 - 1) / 4 - a1 * a1 * a1 * a1 / chao2 / 4) + a1 * (a1 - 1) / 2);
+  }
+
+  let varJack1 = 0;
+  if (a1 > 0) {
+    const uniqueCols = [];
+    for (let j = 0; j < S; j++) if (freq[j] === 1) uniqueCols.push(j);
+    let sumSq = 0;
+    for (let si = 0; si < n; si++) {
+      let cnt = 0;
+      for (let u = 0; u < uniqueCols.length; u++) if (siteBySpecies[si][uniqueCols[u]] > 0) cnt++;
+      sumSq += cnt * cnt;
+    }
+    varJack1 = (sumSq - a1 / n) * (n - 1) / n;
+  }
+
+  // Bootstrap SE: Σ pn(1−pn) + 2·Σ_{j<k} [ (co-ausencias_jk / n)^n − pn_j·pn_k ]
+  const obs = [];
+  for (let j = 0; j < S; j++) if (freq[j] > 0) obs.push(j);
+  const m = obs.length;
+  const pn = obs.map((j) => Math.pow(1 - freq[j] / n, n));
+  let varBoot = 0;
+  for (let x = 0; x < m; x++) varBoot += pn[x] * (1 - pn[x]);
+  for (let x = 0; x < m; x++) {
+    for (let y = 0; y < x; y++) {
+      let bothAbsent = 0;
+      for (let si = 0; si < n; si++) {
+        if (!(siteBySpecies[si][obs[x]] > 0) && !(siteBySpecies[si][obs[y]] > 0)) bothAbsent++;
+      }
+      varBoot += 2 * (Math.pow(bothAbsent / n, n) - pn[x] * pn[y]);
+    }
+  }
+
+  return {
+    n, sObs,
+    chao2, chao2SE: Math.sqrt(Math.max(0, varChao)),
+    jack1, jack1SE: Math.sqrt(Math.max(0, varJack1)),
+    jack2,
+    boot, bootSE: Math.sqrt(Math.max(0, varBoot)),
+  };
+}
+
 // ---------- función gamma (para el p-valor de chi-cuadrado) ----------
 
 function logGamma(x) {
