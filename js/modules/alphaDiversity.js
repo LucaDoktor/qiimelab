@@ -222,10 +222,10 @@ export function render(container) {
       // caja
       svg.appendChild(svgEl('rect', {
         x: cx - boxW / 2, y: yScale(q3), width: boxW, height: Math.max(1, yScale(q1) - yScale(q3)),
-        fill: 'var(' + colorVar + ')', opacity: 0.18, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.4, rx: 3,
+        fill: 'var(' + colorVar + ')', 'fill-opacity': 0.16, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.5, rx: 3,
       }));
       // mediana
-      svg.appendChild(svgEl('line', { x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.4 }));
+      svg.appendChild(svgEl('line', { x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5 }));
 
       // puntos individuales con jitter
       vals.forEach((v) => {

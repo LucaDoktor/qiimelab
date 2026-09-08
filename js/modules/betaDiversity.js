@@ -203,7 +203,7 @@ export function render(container) {
     // escala de color (leyenda) dentro del SVG
     const legG = svgEl('g', { 'data-ce': 'legend' });
     const barW = Math.min(160, gridSize * 0.6);
-    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-beta-scale)', stroke: 'var(--border)' }));
+    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-beta-scale)', stroke: 'var(--baseline)' }));
     const l0 = svgEl('text', { x: 0, y: 26, class: 'ql-tick-label' });
     l0.textContent = t('beta.legendSimilar');
     const l1 = svgEl('text', { x: barW, y: 26, class: 'ql-tick-label', 'text-anchor': 'end' });

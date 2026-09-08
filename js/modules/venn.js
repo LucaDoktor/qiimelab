@@ -420,13 +420,16 @@ function drawVenn(host, groups, byMask, onRegion) {
     else svg.appendChild(svgEl('ellipse', { cx: sh.cx, cy: sh.cy, rx: sh.rx, ry: sh.ry, transform: 'rotate(' + sh.rot + ' ' + sh.cx + ' ' + sh.cy + ')', ...common }));
   });
 
-  // nombres de grupo
+  // nombres de grupo — texto en --ink (legible); el color de identidad lo
+  // aporta el círculo/elipse, no hace falta teñir la etiqueta.
   groups.forEach((g, gi) => {
     const at = layout.nameAt[gi];
     if (!at) return;
     const tx = svgEl('text', { x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle', 'font-weight': 700, 'data-ce': 'grp' + gi });
     tx.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
-    tx.setAttribute('fill', 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')');
+    // pequeño disco del color del conjunto, justo encima del nombre
+    const dot = svgEl('circle', { cx: at[0], cy: at[1] - 14, r: 4, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')' });
+    svg.appendChild(dot);
     svg.appendChild(tx);
   });
 

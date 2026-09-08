@@ -30,8 +30,9 @@
   --ink: #0b0b0b;
   --ink-2: #52514e;
   --ink-muted: #898781;
-  --gridline: #e1e0d9;
-  --baseline: #c3c2b7;
+  /* líneas de figura: gridline = rejilla suave, baseline = ejes con más peso */
+  --gridline: #e4e3dc;
+  --baseline: #a9a79b;
 
   /* MARCA (no es un color de datos) — teal profundo, WCAG AA sobre --surface y --page */
   --accent: #0f6e6b;
@@ -86,8 +87,8 @@
     --ink: #ffffff;
     --ink-2: #c3c2b7;
     --ink-muted: #898781;
-    --gridline: #2c2c2a;
-    --baseline: #383835;
+    --gridline: #2c2c2b;
+    --baseline: #4c4c46;
 
     --accent: #2fb8ad;
     --accent-2: #46c9be;
@@ -126,8 +127,8 @@
   --ink: #ffffff;
   --ink-2: #c3c2b7;
   --ink-muted: #898781;
-  --gridline: #2c2c2a;
-  --baseline: #383835;
+  --gridline: #2c2c2b;
+  --baseline: #4c4c46;
 
   --accent: #2fb8ad;
   --accent-2: #46c9be;
