@@ -30,9 +30,11 @@ const FONTS = [
 const I18N = {
   es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG',
         hint: 'Arrastra los textos para recolocarlos. Haz clic en uno para cambiar su estilo.',
+        lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala.',
         text: 'Texto', color: 'Color', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG',
         hint: 'Drag the labels to reposition them. Click one to change its style.',
+        lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it.',
         text: 'Text', color: 'Colour', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
@@ -49,10 +51,14 @@ function injectStyles() {
   const s = document.createElement('style');
   s.id = STYLE_ID;
   s.textContent = `
-.ce-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+.ce-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border-strong); }
+.ce-toolbar .ce-lead { font-size:12px; color:var(--ink-2); flex:1 1 100%; margin:0 0 4px; }
+.ce-toolbar .ce-lead strong { color:var(--ink); font-weight:600; }
 .ce-toolbar .ce-hint { font-size:11.5px; color:var(--ink-muted); flex:1 1 100%; margin:2px 0 0; }
 .ce-toolbar button { display:inline-flex; align-items:center; gap:6px; }
 .ce-toolbar button svg { flex:none; }
+.ce-toolbar .ce-cta { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.ce-toolbar .ce-cta:hover { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 18%, var(--surface)); }
 svg.ce-editing { }
 svg.ce-editing .ce-el { cursor: move; }
 .ce-outline { fill:none; stroke:var(--accent); stroke-width:1; stroke-dasharray:4 3; pointer-events:none; opacity:0; transition:opacity .1s ease; }
@@ -132,8 +138,19 @@ export function attachChartEditor(cfg) {
 
   function renderToolbar() {
     toolbar.innerHTML = '';
+
+    const lead = document.createElement('p');
+    lead.className = 'ce-lead';
+    if (editing) {
+      lead.className = 'ce-hint';
+      lead.textContent = T.hint;
+    } else {
+      lead.innerHTML = '<strong>' + T.lead + '</strong> ' + T.leadRest;
+    }
+    toolbar.appendChild(lead);
+
     const bCustom = mkBtn(CE_ICONS.edit, editing ? T.done : T.customize, () => { setEditing(!editing); });
-    bCustom.className = 'ql-btn' + (editing ? ' ce-on' : '');
+    bCustom.className = 'ql-btn' + (editing ? ' ce-on' : ' ce-cta');
     toolbar.appendChild(bCustom);
 
     const bDl = mkBtn(CE_ICONS.download, T.download, downloadSvg);
@@ -144,12 +161,6 @@ export function attachChartEditor(cfg) {
       const bReset = mkBtn(CE_ICONS.reset, T.reset, resetAll);
       bReset.className = 'ql-btn ql-btn-ghost';
       toolbar.appendChild(bReset);
-    }
-    if (editing) {
-      const hint = document.createElement('p');
-      hint.className = 'ce-hint';
-      hint.textContent = T.hint;
-      toolbar.appendChild(hint);
     }
   }
   function mkBtn(icon, label, onClick) {
