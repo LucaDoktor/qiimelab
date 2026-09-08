@@ -3,6 +3,7 @@
 
 import { state, subscribe } from '../state.js';
 import { t, getLang, setLang, LANGS } from '../lib/i18n.js';
+import { getProfileName, setProfileName } from '../lib/profile.js';
 
 // Sistema de iconos propio: 24×24, trazo 1.7, extremos redondeados, sin
 // relleno salvo los puntos de datos. Cada glifo abstrae su módulo.
@@ -60,6 +61,14 @@ export function renderShell(container, currentRoute) {
   brand.innerHTML = BRAND_MARK + '<span class="ql-brand-name">QiimeLab</span>';
   container.appendChild(brand);
 
+  const who = getProfileName();
+  if (who) {
+    const hi = document.createElement('p');
+    hi.className = 'ql-greeting';
+    hi.textContent = t('shell.greeting', { name: who });
+    container.appendChild(hi);
+  }
+
   const nav = document.createElement('div');
   nav.className = 'ql-nav';
   const label = document.createElement('div');
@@ -108,17 +117,18 @@ export function renderShell(container, currentRoute) {
   statusWrap.appendChild(checklist);
   container.appendChild(statusWrap);
 
-  // ---- selector de idioma (autónimos, sin banderas) ----
-  const langWrap = document.createElement('div');
-  langWrap.className = 'ql-nav';
-  const langLabel = document.createElement('label');
-  langLabel.className = 'ql-nav-group-label';
-  langLabel.setAttribute('for', 'ql-lang-select');
-  langLabel.textContent = t('shell.language');
-  langWrap.appendChild(langLabel);
+  // ---- ajustes: idioma + nombre local (autónimos, sin banderas) ----
+  const setWrap = document.createElement('div');
+  setWrap.className = 'ql-nav ql-settings';
+  const setLabel = document.createElement('div');
+  setLabel.className = 'ql-nav-group-label';
+  setLabel.textContent = t('shell.settings');
+  setWrap.appendChild(setLabel);
+
   const langSel = document.createElement('select');
   langSel.id = 'ql-lang-select';
-  langSel.style.cssText = 'margin:0 12px;width:calc(100% - 24px);';
+  langSel.setAttribute('aria-label', t('shell.language'));
+  langSel.className = 'ql-settings-input';
   LANGS.forEach((l) => {
     const opt = document.createElement('option');
     opt.value = l.code;
@@ -127,11 +137,32 @@ export function renderShell(container, currentRoute) {
     langSel.appendChild(opt);
   });
   langSel.addEventListener('change', () => setLang(langSel.value));
-  langWrap.appendChild(langSel);
-  container.appendChild(langWrap);
+  setWrap.appendChild(langSel);
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.id = 'ql-profile-name';
+  nameInput.className = 'ql-settings-input';
+  nameInput.maxLength = 40;
+  nameInput.autocomplete = 'off';
+  nameInput.spellcheck = false;
+  nameInput.placeholder = t('shell.namePlaceholder');
+  nameInput.setAttribute('aria-label', t('shell.nameLabel'));
+  nameInput.value = getProfileName();
+  // guarda al salir del campo o con Enter; el saludo de la barra se repinta solo
+  const commitName = () => {
+    const before = getProfileName();
+    const after = setProfileName(nameInput.value);
+    if (after !== before) renderShell(container, currentRoute);
+  };
+  nameInput.addEventListener('change', commitName);
+  nameInput.addEventListener('blur', commitName);
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
+  setWrap.appendChild(nameInput);
+  container.appendChild(setWrap);
 
   const footer = document.createElement('p');
-  footer.style.cssText = 'font-size:11px;color:var(--ink-muted);padding:0 12px;line-height:1.5;';
+  footer.className = 'ql-sidebar-note';
   footer.textContent = t('shell.footer');
   container.appendChild(footer);
 }

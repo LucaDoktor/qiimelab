@@ -34,6 +34,9 @@ const DICTS = {
       groupModules: 'Módulos', sessionData: 'Datos en esta sesión',
       footer: 'Todo corre en tu navegador — nada se sube a un servidor.',
       noData: 'sin datos', language: 'Idioma',
+      settings: 'Ajustes', greeting: 'Hola, {name}',
+      nameLabel: 'Tu nombre (opcional, se guarda solo en este navegador)',
+      namePlaceholder: 'Tu nombre (opcional)',
     },
     slots: {
       metadata: 'Metadatos', taxonomy: 'Taxonomía', taxaBarplot: 'Barplot taxonómico',
@@ -360,6 +363,9 @@ const DICTS = {
       groupModules: 'Modules', sessionData: 'Data in this session',
       footer: 'Everything runs in your browser — nothing is uploaded to a server.',
       noData: 'no data', language: 'Language',
+      settings: 'Settings', greeting: 'Hi, {name}',
+      nameLabel: 'Your name (optional, stored only in this browser)',
+      namePlaceholder: 'Your name (optional)',
     },
     slots: {
       metadata: 'Metadata', taxonomy: 'Taxonomy', taxaBarplot: 'Taxonomic barplot',
@@ -686,6 +692,9 @@ const DICTS = {
       groupModules: 'Moduli', sessionData: 'Dati in questa sessione',
       footer: 'Tutto viene eseguito nel tuo browser — nulla viene caricato su un server.',
       noData: 'nessun dato', language: 'Lingua',
+      settings: 'Impostazioni', greeting: 'Ciao, {name}',
+      nameLabel: 'Il tuo nome (facoltativo, salvato solo in questo browser)',
+      namePlaceholder: 'Il tuo nome (facoltativo)',
     },
     slots: {
       metadata: 'Metadati', taxonomy: 'Tassonomia', taxaBarplot: 'Barplot tassonomico',
@@ -775,6 +784,9 @@ const DICTS = {
       groupModules: 'Module', sessionData: 'Daten in dieser Sitzung',
       footer: 'Alles läuft in deinem Browser — nichts wird auf einen Server hochgeladen.',
       noData: 'keine Daten', language: 'Sprache',
+      settings: 'Einstellungen', greeting: 'Hallo, {name}',
+      nameLabel: 'Dein Name (optional, nur in diesem Browser gespeichert)',
+      namePlaceholder: 'Dein Name (optional)',
     },
     slots: {
       metadata: 'Metadaten', taxonomy: 'Taxonomie', taxaBarplot: 'Taxonomischer Barplot',
@@ -864,6 +876,9 @@ const DICTS = {
       groupModules: '模块', sessionData: '本次会话的数据',
       footer: '所有处理都在你的浏览器中进行——不会上传到任何服务器。',
       noData: '无数据', language: '语言',
+      settings: '设置', greeting: '你好，{name}',
+      nameLabel: '你的名字（可选，仅保存在此浏览器中）',
+      namePlaceholder: '你的名字（可选）',
     },
     slots: {
       metadata: '元数据', taxonomy: '分类学', taxaBarplot: '分类学条形图',

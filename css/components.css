@@ -85,6 +85,39 @@ svg.ql-brand-mark {
   letter-spacing: 0.04em;
 }
 
+/* saludo local + ajustes de la barra lateral */
+.ql-greeting {
+  margin: -12px 0 0;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.ql-greeting::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.ql-settings { gap: 8px; }
+.ql-settings-input {
+  margin: 0 12px;
+  width: calc(100% - 24px);
+  font-size: 12.5px;
+  padding: 7px 9px;
+  background: var(--page);
+}
+.ql-settings-input::placeholder { color: var(--ink-muted); }
+.ql-sidebar-note {
+  font-size: 11px;
+  color: var(--ink-muted);
+  padding: 0 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
 .ql-main { padding: 34px 32px 64px; max-width: 1180px; }
 @media (max-width: 640px) { .ql-main { padding: 22px 16px 48px; } }
 
