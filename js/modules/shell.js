@@ -17,6 +17,7 @@ const ICONS = {
   volcano: ic('<path d="M4 20h16"/><path d="M12 20V5" stroke-dasharray="2.4 2.6"/><circle cx="7" cy="10" r="1.35" fill="currentColor" stroke="none"/><circle cx="9.3" cy="14.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12.6" cy="16.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="15.4" cy="12.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.3" cy="8" r="1.35" fill="currentColor" stroke="none"/>'),
   venn: ic('<circle cx="9.5" cy="12" r="6"/><circle cx="14.5" cy="12" r="6"/>'),
   qc: ic('<path d="M4 20h16"/><path d="M6.5 20V9M11 20V7.5M15.5 20V10.5M20 20V15"/>'),
+  recursos: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M10 13.5 8.5 15 10 16.5M14 13.5 15.5 15 14 16.5"/>'),
 };
 
 // Logomark: dendrograma (agrupamiento) reducido a 3 hojas y 2 nodos, sobre
@@ -39,6 +40,7 @@ export const ROUTES = [
   { id: 'diferencial', navKey: 'nav.differential', icon: 'volcano' },
   { id: 'venn', navKey: 'nav.venn', icon: 'venn' },
   { id: 'qc', navKey: 'nav.qc', icon: 'qc' },
+  { id: 'recursos', navKey: 'nav.recursos', icon: 'recursos' },
 ];
 
 function slotFilled(routeId) {
