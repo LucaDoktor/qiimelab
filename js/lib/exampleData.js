@@ -258,6 +258,15 @@ export function loadRealFunctional() {
   ]);
 }
 
+/** Lo mismo que loadRealFunctional() + los metadatos (para el módulo de índices funcionales). */
+export function loadRealFunctionalWithMeta() {
+  return ingestMany([
+    ['metadatos/sample-metadata.tsv', 'Ejemplo real — metadatos (42 muestras, 14 grupos)'],
+    ['funcional-picrust2/KOlist.csv', 'Ejemplo real — 53 KOs curados por módulo funcional'],
+    ['funcional-picrust2/KO_pred_metagenome_unstrat.tsv.gz', 'Ejemplo real — abundancia de KOs por muestra (PICRUSt2, .tsv.gz)'],
+  ]);
+}
+
 /** Tabla de conteos absolutos por género (taxón × muestra) — para Venn/UpSet. */
 export function loadRealCounts() {
   return ingestMany([

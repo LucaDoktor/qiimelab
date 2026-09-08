@@ -28,7 +28,7 @@ const DICTS = {
     nav: {
       home: 'Resumen', upload: 'Cargar datos', barplots: 'Barplots taxonómicos',
       alpha: 'Diversidad alfa', beta: 'Diversidad beta', differential: 'Abundancia diferencial',
-      venn: 'Venn / UpSet', correlograma: 'Correlograma', qc: 'Control de calidad (FASTQ)', recursos: 'Recursos',
+      venn: 'Venn / UpSet', correlograma: 'Correlograma', funcional: 'Índices funcionales', qc: 'Control de calidad (FASTQ)', recursos: 'Recursos',
     },
     shell: {
       groupModules: 'Módulos', sessionData: 'Datos en esta sesión',
@@ -442,7 +442,7 @@ const DICTS = {
     nav: {
       home: 'Overview', upload: 'Load data', barplots: 'Taxonomic barplots',
       alpha: 'Alpha diversity', beta: 'Beta diversity', differential: 'Differential abundance',
-      venn: 'Venn / UpSet', correlograma: 'Correlogram', qc: 'Quality control (FASTQ)', recursos: 'Resources',
+      venn: 'Venn / UpSet', correlograma: 'Correlogram', funcional: 'Functional indices', qc: 'Quality control (FASTQ)', recursos: 'Resources',
     },
     shell: {
       groupModules: 'Modules', sessionData: 'Data in this session',
@@ -856,7 +856,7 @@ const DICTS = {
     nav: {
       home: 'Panoramica', upload: 'Carica dati', barplots: 'Barplot tassonomici',
       alpha: 'Diversità alfa', beta: 'Diversità beta', differential: 'Abbondanza differenziale',
-      venn: 'Venn / UpSet', correlograma: 'Correlogramma', qc: 'Controllo qualità (FASTQ)', recursos: 'Risorse',
+      venn: 'Venn / UpSet', correlograma: 'Correlogramma', funcional: 'Indici funzionali', qc: 'Controllo qualità (FASTQ)', recursos: 'Risorse',
     },
     shell: {
       groupModules: 'Moduli', sessionData: 'Dati in questa sessione',
@@ -949,7 +949,7 @@ const DICTS = {
     nav: {
       home: 'Übersicht', upload: 'Daten laden', barplots: 'Taxonomische Barplots',
       alpha: 'Alpha-Diversität', beta: 'Beta-Diversität', differential: 'Differenzielle Abundanz',
-      venn: 'Venn / UpSet', correlograma: 'Korrelogramm', qc: 'Qualitätskontrolle (FASTQ)', recursos: 'Ressourcen',
+      venn: 'Venn / UpSet', correlograma: 'Korrelogramm', funcional: 'Funktionelle Indizes', qc: 'Qualitätskontrolle (FASTQ)', recursos: 'Ressourcen',
     },
     shell: {
       groupModules: 'Module', sessionData: 'Daten in dieser Sitzung',
@@ -1042,7 +1042,7 @@ const DICTS = {
     nav: {
       home: '概览', upload: '加载数据', barplots: '分类学条形图',
       alpha: 'Alpha 多样性', beta: 'Beta 多样性', differential: '差异丰度',
-      venn: 'Venn / UpSet', correlograma: '相关图', qc: '质量控制（FASTQ）', recursos: '资源',
+      venn: 'Venn / UpSet', correlograma: '相关图', funcional: '功能指数', qc: '质量控制（FASTQ）', recursos: '资源',
     },
     shell: {
       groupModules: '模块', sessionData: '本次会话的数据',

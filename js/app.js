@@ -19,6 +19,7 @@ const moduleLoaders = {
   diferencial: () => import('./modules/differentialAbundance.js'),
   venn: () => import('./modules/venn.js'),
   correlograma: () => import('./modules/correlogram.js'),
+  funcional: () => import('./modules/functional.js'),
   qc: () => import('./modules/sequenceQC.js'),
   recursos: () => import('./modules/recursos.js'),
 };
