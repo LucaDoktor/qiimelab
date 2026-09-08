@@ -62,3 +62,17 @@ select {
 }
 
 input[type="range"] { accent-color: var(--accent); }
+
+/* Respeto global a "reducir movimiento": corta transiciones, animaciones y
+   desplazamientos suaves en todo el árbol. Los bloques de motivo/esqueleto ya
+   van tras `prefers-reduced-motion: no-preference`; esto cubre el resto
+   (transiciones de hover, .ql-skip-link, scrollIntoView, etc.). */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

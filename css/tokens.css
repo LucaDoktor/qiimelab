@@ -29,7 +29,7 @@
   /* tinta */
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --ink-muted: #898781;
+  --ink-muted: #6f6e69; /* WCAG AA: 4.98:1 sobre --surface, 4.76:1 sobre --page (antes #898781 = 3.4:1, texto normal) */
   /* líneas de figura: gridline = rejilla suave, baseline = ejes con más peso */
   --gridline: #e4e3dc;
   --baseline: #a9a79b;

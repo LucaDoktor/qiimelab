@@ -5,10 +5,25 @@ import { renderShell, subscribeShell } from './modules/shell.js';
 import { renderFooter } from './modules/footer.js';
 import { onLangChange, t } from './lib/i18n.js';
 import { onProfileChange } from './lib/profile.js';
+import { watchFieldLabels, linkFieldLabels } from './lib/a11yFields.js';
 
 const sidebar = document.getElementById('sidebar');
 const view = document.getElementById('app-view');
 const footer = document.getElementById('app-footer');
+
+// enlace "saltar al contenido" (primer tabulador de la página) + destino enfocable
+view.setAttribute('tabindex', '-1');
+const skipLink = document.createElement('a');
+skipLink.className = 'ql-skip-link';
+skipLink.href = '#app-view';
+skipLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  view.focus();
+  view.scrollIntoView({ block: 'start' });
+});
+document.body.insertBefore(skipLink, document.body.firstChild);
+function syncSkipLink() { skipLink.textContent = t('ui.skipToContent'); }
+syncSkipLink();
 
 const moduleLoaders = {
   '': () => import('./modules/home.js'),
@@ -56,6 +71,7 @@ async function renderRoute() {
     if (routeId !== currentRouteId()) return; // el usuario ya navegó a otro sitio mientras cargaba
     view.innerHTML = '';
     cleanupCurrentModule = mod.render(view) || null;
+    linkFieldLabels(view); // etiqueta↔control tras el render inicial (el observer cubre los re-render)
   } catch (err) {
     console.error(err);
     view.innerHTML = '<div class="ql-card ql-panel"><h2>' + t('app.moduleLoadError') + '</h2>' +
@@ -64,8 +80,9 @@ async function renderRoute() {
 }
 
 subscribeShell(sidebar, () => routeId);
+watchFieldLabels(view); // re-enlaza label↔control en cada re-render de módulo
 window.addEventListener('hashchange', renderRoute);
 // al cambiar de idioma o de nombre local se repinta toda la app
-onLangChange(renderRoute);
+onLangChange(() => { syncSkipLink(); renderRoute(); });
 onProfileChange(renderRoute);
 renderRoute();

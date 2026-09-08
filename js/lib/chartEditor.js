@@ -29,21 +29,24 @@ const FONTS = [
 
 const I18N = {
   es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG',
-        hint: 'Arrastra los textos para recolocarlos. Haz clic en uno para cambiar su estilo.',
+        hint: 'Arrastra los textos (o enfócalos con el tabulador y muévelos con las flechas). Haz clic o pulsa Intro para cambiar su estilo.',
         lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala en SVG o PNG.',
-        text: 'Texto', color: 'Color', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar' },
+        text: 'Texto', color: 'Color', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar',
+        handle: (name) => name + ', elemento arrastrable: muévelo con las flechas (Mayús = paso mayor), Intro para editar su estilo' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
-        hint: 'Drag the labels to reposition them. Click one to change its style.',
+        hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
-        text: 'Text', color: 'Colour', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close' },
+        text: 'Text', color: 'Colour', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close',
+        handle: (name) => name + ', draggable element: move it with the arrow keys (Shift = larger step), Enter to edit its style' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
 // iconos propios, mismo estilo que la barra lateral (24×24, trazo 1.7, redondeado)
+// aria-hidden/focusable="false": son decorativos, el <span> del botón lleva el texto.
 const CE_ICONS = {
-  edit: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.4 3.6a2 2 0 0 1 2.9 2.9L7.5 18.3 3.5 19.5l1.2-4Z"/></svg>',
-  download: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0-3.5-3.5M12 14l3.5-3.5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
-  reset: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 1 1-1.5 4.5"/><path d="M3.5 4.5v4.8h4.8"/></svg>',
+  edit: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.4 3.6a2 2 0 0 1 2.9 2.9L7.5 18.3 3.5 19.5l1.2-4Z"/></svg>',
+  download: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0-3.5-3.5M12 14l3.5-3.5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
+  reset: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 1 1-1.5 4.5"/><path d="M3.5 4.5v4.8h4.8"/></svg>',
 };
 
 function injectStyles() {
@@ -65,7 +68,9 @@ svg.ce-editing .ce-el { cursor: move; }
 svg.ce-editing .ce-el:hover .ce-outline, svg.ce-editing .ce-el.ce-selected .ce-outline { opacity:1; }
 svg.ce-editing .ce-el.ce-selected .ce-outline { stroke-width:1.4; stroke-dasharray:none; }
 .ce-hit { fill:transparent; pointer-events:none; }
-svg.ce-editing .ce-hit { pointer-events:all; }
+svg.ce-editing .ce-hit { pointer-events:all; cursor:move; }
+svg.ce-editing .ce-hit:focus { outline:none; }
+svg.ce-editing .ce-hit:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .ce-panel {
   position:fixed; z-index:60; width:230px; background:var(--surface); color:var(--ink);
   border:1px solid var(--border-strong); border-radius:var(--radius-md); box-shadow:var(--shadow);
@@ -115,6 +120,7 @@ export function attachChartEditor(cfg) {
   let editing = false;
   let selectedId = null;
   let panel = null;
+  let cePanelUid = 0; // ids para enlazar <label for> ↔ control dentro del panel
   const wraps = new Map(); // id -> { wrap, inner, def }
 
   function readStore() {
@@ -249,9 +255,57 @@ export function attachChartEditor(cfg) {
     };
     const outline = mk('ce-outline');
     const hit = mk('ce-hit');
+    // accesible por teclado: foco + rol + descripción; flechas mueven, Intro edita
+    hit.setAttribute('tabindex', '0');
+    hit.setAttribute('role', 'button');
+    hit.setAttribute('aria-label', T.handle(elLabel(id)));
     w.wrap.appendChild(outline);
     w.wrap.appendChild(hit);
     hit.addEventListener('pointerdown', (e) => startDrag(e, id, hit));
+    hit.addEventListener('focus', () => { selectedId = id; syncSelection(); });
+    hit.addEventListener('keydown', (e) => onHitKey(e, id, hit));
+  }
+
+  // teclado sobre un "tirador": flechas mueven, Mayús multiplica el paso,
+  // Intro / Espacio abren el panel de estilo, Escape lo cierra.
+  function onHitKey(e, id, hit) {
+    if (!editing) return;
+    const STEP = e.shiftKey ? 12 : 2;
+    let dx = 0, dy = 0;
+    switch (e.key) {
+      case 'ArrowLeft': dx = -STEP; break;
+      case 'ArrowRight': dx = STEP; break;
+      case 'ArrowUp': dy = -STEP; break;
+      case 'ArrowDown': dy = STEP; break;
+      case 'Enter': case ' ': case 'Spacebar':
+        e.preventDefault();
+        openPanelForHit(id, hit);
+        return;
+      default:
+        return;
+    }
+    e.preventDefault();
+    const s = st(id);
+    s.dx = (s.dx || 0) + dx;
+    s.dy = (s.dy || 0) + dy;
+    const w = wraps.get(id);
+    if (w) w.wrap.setAttribute('transform', 'translate(' + s.dx + ',' + s.dy + ')');
+    writeStoreDebounced();
+  }
+
+  // abre el panel anclado al centro del tirador (no hay puntero en teclado)
+  function openPanelForHit(id, hit) {
+    let r;
+    try { r = hit.getBoundingClientRect(); } catch (err) { r = null; }
+    const ev = r
+      ? { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }
+      : null;
+    selectAndOpen(id, ev);
+    // llevar el foco al primer control editable del panel (no al botón de cerrar)
+    if (panel) {
+      const first = panel.querySelector('.ce-row input, .ce-row select') || panel.querySelector('button');
+      if (first) first.focus();
+    }
   }
 
   function syncSelection() {
@@ -380,20 +434,39 @@ export function attachChartEditor(cfg) {
     const togWrap = document.createElement('div');
     togWrap.className = 'ce-toggles';
     const bB = document.createElement('button'); bB.type = 'button'; bB.textContent = 'B'; bB.style.fontWeight = '700';
+    bB.setAttribute('aria-label', T.bold);
     const bI = document.createElement('button'); bI.type = 'button'; bI.textContent = 'I'; bI.style.fontStyle = 'italic';
+    bI.setAttribute('aria-label', T.italic);
     const isBold = s.bold ?? (parseInt(cs.fontWeight, 10) >= 600);
     const isItalic = s.italic ?? (cs.fontStyle === 'italic');
-    bB.classList.toggle('on', !!isBold);
-    bI.classList.toggle('on', !!isItalic);
-    bB.addEventListener('click', () => { s.bold = !bB.classList.contains('on'); bB.classList.toggle('on'); applyState(id); decorate(id); writeStore(); });
-    bI.addEventListener('click', () => { s.italic = !bI.classList.contains('on'); bI.classList.toggle('on'); applyState(id); decorate(id); writeStore(); });
+    bB.classList.toggle('on', !!isBold); bB.setAttribute('aria-pressed', String(!!isBold));
+    bI.classList.toggle('on', !!isItalic); bI.setAttribute('aria-pressed', String(!!isItalic));
+    bB.addEventListener('click', () => { const on = !bB.classList.contains('on'); s.bold = on; bB.classList.toggle('on', on); bB.setAttribute('aria-pressed', String(on)); applyState(id); decorate(id); writeStore(); });
+    bI.addEventListener('click', () => { const on = !bI.classList.contains('on'); s.italic = on; bI.classList.toggle('on', on); bI.setAttribute('aria-pressed', String(on)); applyState(id); decorate(id); writeStore(); });
     togWrap.appendChild(bB); togWrap.appendChild(bI);
     rTog.appendChild(togWrap);
     rows.appendChild(rTog);
 
+    // enlazar cada <label> de fila con su control (accesibilidad del panel)
+    panel.querySelectorAll('.ce-row').forEach((r) => {
+      const lab = r.querySelector(':scope > label');
+      const ctl = r.querySelector('input, select');
+      if (lab && ctl && lab.textContent.trim()) {
+        if (!ctl.id) ctl.id = 'ce-f-' + (++cePanelUid);
+        lab.setAttribute('for', ctl.id);
+      }
+    });
+
+    panel.setAttribute('role', 'group');
+    panel.setAttribute('aria-label', elLabel(id));
     document.body.appendChild(panel);
     positionPanel(ev);
-    panel.querySelector('h4 button').addEventListener('click', () => { closePanel(); selectedId = null; syncSelection(); });
+    panel.querySelector('h4 button').addEventListener('click', () => {
+      closePanel(); selectedId = null; syncSelection();
+      const w = wraps.get(id);
+      const hit = w && w.wrap.querySelector(':scope > .ce-hit');
+      if (hit) try { hit.focus(); } catch (e) { /* noop */ }
+    });
   }
   function elLabel(id) {
     const es = lang === 'es';
@@ -436,7 +509,17 @@ export function attachChartEditor(cfg) {
     if (svg.contains(e.target)) return; // clics dentro del svg los gestiona el hit
     closePanel(); selectedId = null; syncSelection();
   }
-  function onKey(e) { if (e.key === 'Escape') { closePanel(); selectedId = null; syncSelection(); } }
+  function onKey(e) {
+    if (e.key !== 'Escape') return;
+    const back = selectedId;
+    closePanel(); selectedId = null; syncSelection();
+    // devolver el foco al tirador que abrió el panel (navegación solo-teclado)
+    if (back && editing) {
+      const w = wraps.get(back);
+      const hit = w && w.wrap.querySelector(':scope > .ce-hit');
+      if (hit) try { hit.focus(); } catch (err) { /* noop */ }
+    }
+  }
   document.addEventListener('pointerdown', onDocDown, true);
   document.addEventListener('keydown', onKey);
 

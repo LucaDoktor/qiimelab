@@ -777,6 +777,13 @@ export function render(container) {
         if (typeof av === 'string') return av.localeCompare(bv) * dir;
         return (av - bv) * dir;
       });
+      // aria-sort en la cabecera activa (tabla ordenable accesible)
+      tbl.querySelectorAll('thead th').forEach((th) => {
+        const b = th.querySelector('button[data-sort]');
+        if (!b) return;
+        th.setAttribute('aria-sort',
+          b.dataset.sort === sort.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+      });
       tbody.innerHTML = '';
       if (sorted.length === 0) {
         tbody.innerHTML = '<tr><td colspan="' + (isKO ? 6 : 5) + '" style="text-align:center;color:var(--ink-muted);padding:24px;">' + t('differential.noRows') + '</td></tr>';

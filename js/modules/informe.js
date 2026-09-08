@@ -265,7 +265,8 @@ export function render(container) {
       host.appendChild(report);
       genBtn.textContent = prev;
       genBtn.disabled = false;
-      report.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const smooth = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      report.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
     });
   }
 

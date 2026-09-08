@@ -68,6 +68,7 @@ function slotFilled(routeId) {
 
 export function renderShell(container, currentRoute) {
   container.innerHTML = '';
+  container.setAttribute('aria-label', t('shell.nav'));
 
   const brand = document.createElement('div');
   brand.className = 'ql-brand';
@@ -92,7 +93,9 @@ export function renderShell(container, currentRoute) {
   ROUTES.forEach((r) => {
     const a = document.createElement('a');
     a.href = '#/' + r.id;
-    a.className = 'ql-nav-item' + (currentRoute === r.id ? ' is-active' : '');
+    const isActive = currentRoute === r.id;
+    a.className = 'ql-nav-item' + (isActive ? ' is-active' : '');
+    if (isActive) a.setAttribute('aria-current', 'page');
     const filled = slotFilled(r.id);
     a.innerHTML = '<span class="ql-nav-icon">' + ICONS[r.icon] + '</span><span>' + t(r.navKey) + '</span>' +
       (r.id !== '' && r.id !== 'cargar' && !filled ? '<span class="ql-nav-soon">' + t('shell.noData') + '</span>' : '');
