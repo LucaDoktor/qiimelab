@@ -13,28 +13,47 @@ import { findChrome } from './env.mjs';
 
 let portSeq = 9700 + Math.floor(Math.random() * 200);
 
+// Lanza Chrome y espera a que el puerto de depuración responda. En un runner
+// de CI cargado el proceso puede morir al arrancar (contención, /dev/shm…),
+// así que se reintenta un par de veces con puerto y perfil nuevos antes de
+// rendirse.
+async function launchChrome(chromeBin) {
+  let lastErr = 'CHROME_NO_START';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const port = portSeq++;
+    const profileDir = mkdtempSync(join(tmpdir(), 'ql-cdp-'));
+    const chrome = spawn(chromeBin, [
+      '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
+      '--disable-extensions', '--disable-background-networking', '--disable-dev-shm-usage',
+      `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`,
+      '--window-size=1400,2200', 'about:blank',
+    ], { stdio: 'ignore' });
+    let died = false;
+    chrome.once('exit', () => { died = true; });
+
+    let wsUrl;
+    for (let i = 0; i < 100; i++) {
+      if (died) break;
+      try {
+        const j = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+        if (j.webSocketDebuggerUrl) { wsUrl = j.webSocketDebuggerUrl; break; }
+      } catch { /* aún no responde */ }
+      await sleep(200);
+    }
+    if (wsUrl) return { chrome, profileDir, wsUrl };
+    try { chrome.kill('SIGKILL'); } catch { /* noop */ }
+    try { rmSync(profileDir, { recursive: true, force: true }); } catch { /* noop */ }
+    lastErr = died ? 'CHROME_DIED_ON_START' : 'CHROME_NO_START';
+    await sleep(400);
+  }
+  throw new Error(lastErr);
+}
+
 export async function connect({ dark = false, url = 'http://127.0.0.1:8931', label = 'cdp' } = {}) {
   const chromeBin = findChrome();
   if (!chromeBin) throw new Error('NO_CHROME');
-  const port = portSeq++;
-  const profileDir = mkdtempSync(join(tmpdir(), 'ql-cdp-'));
 
-  const chrome = spawn(chromeBin, [
-    '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
-    '--disable-extensions', '--disable-background-networking',
-    `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`,
-    '--window-size=1400,2200', 'about:blank',
-  ], { stdio: 'ignore' });
-
-  let wsUrl;
-  for (let i = 0; i < 80; i++) {
-    try {
-      const j = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
-      if (j.webSocketDebuggerUrl) { wsUrl = j.webSocketDebuggerUrl; break; }
-    } catch { /* not up yet */ }
-    await sleep(200);
-  }
-  if (!wsUrl) { try { chrome.kill('SIGKILL'); } catch {} throw new Error('CHROME_NO_START'); }
+  const { chrome, profileDir, wsUrl } = await launchChrome(chromeBin);
 
   const ws = new WebSocket(wsUrl);
   await new Promise((res, rej) => {
