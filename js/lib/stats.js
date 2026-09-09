@@ -555,3 +555,119 @@ export function formatP(p) {
   if (p < 0.0001) return '< 0.0001';
   return p.toFixed(4);
 }
+
+// ---------- PERMANOVA de un factor (Anderson 2001) ----------
+// PRNG local para que las permutaciones sean deterministas con la misma semilla
+// (no arrastra dependencias: stats.js es puro).
+function mulberry32s(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Suma de cuadrados "within" a partir de la matriz de distancias, para una
+// asignación de grupos dada (Anderson 2001, ec. de la partición geométrica):
+//   SS_W = Σ_g [ (1/n_g) · Σ_{i<j ∈ g} d²_ij ]
+function ssWithin(d2, labelIdx, nGroups) {
+  const n = labelIdx.length;
+  const sums = new Float64Array(nGroups);
+  const counts = new Float64Array(nGroups);
+  for (let g = 0; g < nGroups; g++) counts[g] = 0;
+  for (let i = 0; i < n; i++) counts[labelIdx[i]]++;
+  for (let i = 0; i < n; i++) {
+    const gi = labelIdx[i];
+    const row = d2[i];
+    for (let j = i + 1; j < n; j++) {
+      if (labelIdx[j] === gi) sums[gi] += row[j];
+    }
+  }
+  let ssw = 0;
+  for (let g = 0; g < nGroups; g++) if (counts[g] > 0) ssw += sums[g] / counts[g];
+  return ssw;
+}
+
+/**
+ * PERMANOVA de un factor sobre una matriz de distancias (equivalente a
+ * `vegan::adonis2(D ~ grupo)` con un solo término). Pseudo-F por permutación
+ * de las etiquetas de grupo.
+ *
+ * @param {number[][]} distMatrix  matriz de distancias n×n (simétrica, 0 en la diagonal)
+ * @param {(string|number)[]} groups  etiqueta de grupo de cada muestra, en el
+ *   mismo orden que las filas/columnas de la matriz
+ * @param {object} [opt]
+ * @param {number} [opt.permutations=999]
+ * @param {number} [opt.seed=0x51M2]  semilla del PRNG (determinista)
+ * @returns {{
+ *   n:number, groups:string[], groupSizes:number[],
+ *   df1:number, df2:number, SSa:number, SSw:number, SSt:number,
+ *   MSa:number, MSw:number, F:number, R2:number, p:number, permutations:number
+ * } | { error:string }}
+ */
+export function permanova(distMatrix, groups, opt = {}) {
+  const perms = Math.max(0, Math.floor(opt.permutations != null ? opt.permutations : 999));
+  const n = distMatrix.length;
+  if (!n || groups.length !== n) return { error: 'La matriz y las etiquetas no tienen el mismo tamaño.' };
+
+  const gName = [];
+  const gIndex = new Map();
+  const labelIdx = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const key = String(groups[i]);
+    let idx = gIndex.get(key);
+    if (idx === undefined) { idx = gName.length; gIndex.set(key, idx); gName.push(key); }
+    labelIdx[i] = idx;
+  }
+  const a = gName.length;
+  if (a < 2) return { error: 'Hacen falta al menos 2 grupos.' };
+  if (a >= n) return { error: 'Cada muestra está en su propio grupo; no hay réplicas.' };
+
+  // distancias al cuadrado
+  const d2 = [];
+  for (let i = 0; i < n; i++) {
+    const row = new Float64Array(n);
+    for (let j = 0; j < n; j++) { const v = +distMatrix[i][j] || 0; row[j] = v * v; }
+    d2.push(row);
+  }
+
+  let sst = 0;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) sst += d2[i][j];
+  sst /= n;
+
+  const groupSizes = gName.map((_, g) => {
+    let c = 0; for (let i = 0; i < n; i++) if (labelIdx[i] === g) c++; return c;
+  });
+
+  const ssw0 = ssWithin(d2, labelIdx, a);
+  const ssa0 = sst - ssw0;
+  const df1 = a - 1, df2 = n - a;
+  const Fobs = (ssa0 / df1) / (ssw0 / df2);
+  const R2 = sst > 0 ? ssa0 / sst : NaN;
+
+  let pval = NaN;
+  if (perms > 0 && isFinite(Fobs)) {
+    const rnd = mulberry32s(opt.seed != null ? opt.seed : 0x5152);
+    const perm = Int32Array.from(labelIdx);
+    let ge = 0;
+    for (let k = 0; k < perms; k++) {
+      // Fisher-Yates sobre `perm`
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        const tmp = perm[i]; perm[i] = perm[j]; perm[j] = tmp;
+      }
+      const sswP = ssWithin(d2, perm, a);
+      const Fp = ((sst - sswP) / df1) / (sswP / df2);
+      if (Fp >= Fobs - 1e-12) ge++;
+    }
+    pval = (ge + 1) / (perms + 1);
+  }
+
+  return {
+    n, groups: gName, groupSizes,
+    df1, df2, SSa: ssa0, SSw: ssw0, SSt: sst,
+    MSa: ssa0 / df1, MSw: ssw0 / df2,
+    F: Fobs, R2, p: pval, permutations: perms,
+  };
+}

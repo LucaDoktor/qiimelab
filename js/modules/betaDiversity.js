@@ -1,6 +1,6 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { upgma, leafOrder } from '../lib/stats.js';
+import { upgma, leafOrder, permanova, formatP } from '../lib/stats.js';
 import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
@@ -61,6 +61,9 @@ export function render(container) {
   let pcX = 0, pcY = 1;
   let pcoaGroupCol = null;
   let editor = null;
+  let permGroupCol = null;
+  let permN = 999;
+  let permResult = null;   // cache del último cálculo {key, res}
   // UPGMA de matrices grandes corre en un Web Worker (js/lib/heavyStats.js);
   // cacheamos el resultado para que el repaint tras el worker no lo relance.
   let heatCache = null;   // { key, tree, order }
@@ -110,6 +113,129 @@ export function render(container) {
 
     if (view === 'heatmap') renderHeatmap();
     else renderPcoa(hasPcoa);
+
+    if (hasHeat && state.metadata) renderPermanova();
+  }
+
+  // =========================================================================
+  //  PERMANOVA de un factor (adonis2 en JS puro)
+  // =========================================================================
+  function renderPermanova() {
+    const metrics = Object.keys(state.betaDiversity.metrics);
+    const m = (metric && metrics.includes(metric)) ? metric : metrics[0];
+    const data = state.betaDiversity.metrics[m];
+    const groupOptions = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
+    if (!groupOptions.length) return;
+    if (!permGroupCol || !groupOptions.includes(permGroupCol)) permGroupCol = groupOptions[0];
+
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+    card.style.marginTop = '20px';
+    card.innerHTML = '<h2>' + t('beta.permTitle') + '</h2><p class="ql-panel-note">' + t('beta.permNote', { metric: escapeHtml(m) }) + '</p>';
+
+    const controls = document.createElement('div');
+    controls.className = 'ql-inputrow';
+    controls.style.cssText = 'flex-wrap:wrap;gap:14px;margin-bottom:14px;';
+
+    const gf = document.createElement('div');
+    gf.className = 'ql-field';
+    gf.style.cssText = 'flex:1 1 160px;margin:0;';
+    gf.innerHTML = '<label>' + t('beta.permGroup') + '</label>';
+    const gsel = document.createElement('select');
+    groupOptions.forEach((h) => {
+      const o = document.createElement('option');
+      o.value = h; o.textContent = h;
+      if (h === permGroupCol) o.selected = true;
+      gsel.appendChild(o);
+    });
+    gsel.addEventListener('change', () => { permGroupCol = gsel.value; permResult = null; paint(); });
+    gf.appendChild(gsel);
+    controls.appendChild(gf);
+
+    const pf = document.createElement('div');
+    pf.className = 'ql-field';
+    pf.style.cssText = 'flex:0 0 auto;margin:0;';
+    pf.innerHTML = '<label>' + t('beta.permPermutations') + '</label>';
+    const psel = document.createElement('select');
+    [99, 499, 999, 4999, 9999].forEach((v) => {
+      const o = document.createElement('option');
+      o.value = String(v); o.textContent = String(v);
+      if (v === permN) o.selected = true;
+      psel.appendChild(o);
+    });
+    psel.addEventListener('change', () => { permN = parseInt(psel.value, 10); permResult = null; paint(); });
+    pf.appendChild(psel);
+    controls.appendChild(pf);
+    card.appendChild(controls);
+
+    // resolver muestra → grupo, en el orden de la matriz
+    const resolve = makeGroupResolver(state.metadata, permGroupCol);
+    const groups = data.sampleIds.map((sid) => resolve(sid));
+    const keep = [];
+    groups.forEach((g, i) => { if (g != null && g !== '') keep.push(i); });
+    const nDropped = data.sampleIds.length - keep.length;
+
+    const key = m + '|' + permGroupCol + '|' + permN + '|' + keep.length + '|' + data.sourceFileId;
+    if (!permResult || permResult.key !== key) {
+      if (keep.length < 4) {
+        permResult = { key, res: { error: t('beta.permTooFew') } };
+      } else {
+        const sub = keep.map((i) => keep.map((j) => data.matrix[i][j]));
+        const subGroups = keep.map((i) => groups[i]);
+        permResult = { key, res: permanova(sub, subGroups, { permutations: permN, seed: 0x5152 }) };
+      }
+    }
+    const r = permResult.res;
+
+    if (r.error) {
+      card.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + escapeHtml(r.error) + '</p>');
+      container.appendChild(card);
+      return;
+    }
+
+    const sig = isFinite(r.p) && r.p < 0.05;
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    tbl.innerHTML = '<thead><tr><th></th><th>' + t('beta.permDf') + '</th><th>' + t('beta.permSS') +
+      '</th><th>R²</th><th>' + t('beta.permF') + '</th><th>' + t('beta.permP') + '</th></tr></thead>' +
+      '<tbody>' +
+      '<tr><td>' + escapeHtml(permGroupCol) + '</td><td class="ql-num tabular">' + r.df1 + '</td>' +
+      '<td class="ql-num tabular">' + r.SSa.toFixed(4) + '</td>' +
+      '<td class="ql-num tabular">' + r.R2.toFixed(4) + '</td>' +
+      '<td class="ql-num tabular">' + r.F.toFixed(3) + '</td>' +
+      '<td class="ql-num tabular">' + formatP(r.p) + (sig ? ' <span class="mono">∗</span>' : '') + '</td></tr>' +
+      '<tr><td>' + t('beta.permResidual') + '</td><td class="ql-num tabular">' + r.df2 + '</td>' +
+      '<td class="ql-num tabular">' + r.SSw.toFixed(4) + '</td>' +
+      '<td class="ql-num tabular">' + (1 - r.R2).toFixed(4) + '</td><td></td><td></td></tr>' +
+      '<tr><td>' + t('beta.permTotal') + '</td><td class="ql-num tabular">' + (r.df1 + r.df2) + '</td>' +
+      '<td class="ql-num tabular">' + r.SSt.toFixed(4) + '</td><td class="ql-num tabular">1.0000</td><td></td><td></td></tr>' +
+      '</tbody>';
+    scrollDiv.appendChild(tbl);
+    card.appendChild(scrollDiv);
+
+    const verdict = document.createElement('p');
+    verdict.style.cssText = 'margin:12px 0 0;font-size:13px;';
+    verdict.innerHTML = '<strong style="color:' + (sig ? 'var(--good)' : 'var(--ink-muted)') + ';">' +
+      (sig ? t('beta.permSig') : t('beta.permNs')) + '</strong> ' +
+      t('beta.permInterpret', { pct: (r.R2 * 100).toFixed(1), group: escapeHtml(permGroupCol), n: r.permutations });
+    card.appendChild(verdict);
+
+    const groupsInfo = document.createElement('p');
+    groupsInfo.className = 'ql-field-help';
+    groupsInfo.textContent = t('beta.permGroups', {
+      list: r.groups.map((g, i) => g + ' (n=' + r.groupSizes[i] + ')').join(', '),
+    }) + (nDropped ? ' · ' + t('beta.permDropped', { n: nDropped }) : '');
+    card.appendChild(groupsInfo);
+
+    const disc = document.createElement('p');
+    disc.className = 'ql-field-help';
+    disc.style.fontStyle = 'italic';
+    disc.textContent = t('beta.permDisclaimer');
+    card.appendChild(disc);
+
+    container.appendChild(card);
   }
 
   // =========================================================================
