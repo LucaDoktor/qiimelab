@@ -1,0 +1,101 @@
+// Piezas compartidas por los tests de navegador: rutas, carga de ejemplos,
+// recorrido de subvistas y la sonda de accesibilidad.
+
+import { setTimeout as sleep } from 'node:timers/promises';
+
+export { sleep };
+
+// 12 rutas de módulo + la subvista "Red" del correlograma = las 13 del enunciado.
+export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
+  '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos'];
+
+// carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones)
+export const LOAD_ALL = `(async () => {
+  const m = await import('/js/lib/exampleData.js');
+  await m.loadRealCommunityData();
+  await m.loadRealDifferentialAbundance();
+  await m.loadRealFunctionalWithMeta();
+  await m.loadRealSequenceQC();
+  m.loadExampleCounts && m.loadExampleCounts();
+  if (m.loadRealDiffComparisons) await m.loadRealDiffComparisons();
+})()`;
+
+export async function waitQC(c) {
+  await c.ev("location.hash = '#/qc'");
+  await sleep(600);
+  for (let i = 0; i < 40; i++) {
+    const done = await c.ev(`(async () => { const { state } = await import('/js/state.js'); return state.sequenceQC.filter(e => e.report).length; })()`);
+    if (done >= 2) break;
+    await sleep(400);
+  }
+}
+
+// pestañas .ql-tab / .ql-seg-btn a recorrer por ruta
+const TABS_FOR = {
+  '#/alfa': ['rarefac', 'Boxplot'],
+  '#/barplots': ['Biomarc', 'Barplot'],
+  '#/diferencial': ['Comparar', 'Lollipop', 'calor', 'Volcano', 'Individual'],
+  '#/correlograma': ['Red', 'Matriz'],
+};
+
+export async function walkRoute(c, route, { report = false, onInfo = () => {} } = {}) {
+  await c.ev(`location.hash = ${JSON.stringify(route)}`);
+  await sleep(1500);
+  await c.ev(`document.querySelectorAll('details').forEach(d => d.open = true)`);
+  await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); if (b) b.click(); })()`);
+  await sleep(350);
+  for (const frag of (TABS_FOR[route] || [])) {
+    await c.ev(`(() => { const b = [...document.querySelectorAll('.ql-tab, .ql-seg-btn')].find(x => x.textContent.indexOf(${JSON.stringify(frag)}) > -1); if (b) b.click(); })()`);
+    await sleep(600);
+  }
+  if (route === '#/correlograma') {
+    await c.ev(`(() => { const n = document.querySelector('#clR'); if (n) { n.value = '0.1'; n.dispatchEvent(new Event('change')); } })()`);
+    await sleep(400);
+  }
+  if (route === '#/informe' && report) {
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.indexOf('Generar') > -1 || x.textContent.indexOf('Generate') > -1); if (b) b.click(); })()`);
+    await sleep(6000);
+    const secs = await c.ev(`document.querySelectorAll('.ql-report-section').length`);
+    onInfo(`#/informe → ${secs} secciones`);
+  }
+}
+
+// heurísticas de accesibilidad — devuelve una lista de problemas (vacía = ok)
+export const A11Y_PROBE = `(() => {
+  const bad = [];
+  const vis = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  const accName = (el) => (
+    (el.getAttribute('aria-label') || '').trim() ||
+    (el.getAttribute('title') || '').trim() ||
+    (el.textContent || '').trim() ||
+    (el.querySelector('img[alt]') ? el.querySelector('img[alt]').getAttribute('alt').trim() : '') ||
+    (el.getAttribute('aria-labelledby') ? 'labelledby' : '')
+  );
+  document.querySelectorAll('button, a[href]').forEach((el) => {
+    if (!vis(el)) return;
+    if (!accName(el)) bad.push('boton/enlace sin nombre: <' + el.tagName.toLowerCase() + (el.className ? ' class="' + el.className + '"' : '') + '>');
+  });
+  document.querySelectorAll('input, select, textarea').forEach((el) => {
+    if (el.type === 'hidden' || !vis(el)) return;
+    const byId = el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+    const wrap = el.closest('label');
+    const al = (el.getAttribute('aria-label') || '').trim();
+    const alb = el.getAttribute('aria-labelledby');
+    if (!byId && !wrap && !al && !alb) bad.push('input sin etiqueta: ' + (el.name || el.id || el.type || el.className));
+  });
+  document.querySelectorAll('svg[role="img"]').forEach((el) => {
+    if (!(el.getAttribute('aria-label') || '').trim() && !el.getAttribute('aria-labelledby')) bad.push('svg[role=img] sin aria-label');
+  });
+  const mains = document.querySelectorAll('main');
+  if (mains.length !== 1) bad.push('nº de <main> = ' + mains.length);
+  if (mains[0] && mains[0].getAttribute('tabindex') !== '-1') bad.push('<main> sin tabindex=-1');
+  const skip = document.querySelector('a.ql-skip-link');
+  if (!skip) bad.push('sin enlace "saltar al contenido"');
+  else if (skip.getAttribute('href') !== '#app-view') bad.push('skip-link con destino incorrecto');
+  document.querySelectorAll('nav').forEach((n) => {
+    if (!(n.getAttribute('aria-label') || '').trim() && !n.getAttribute('aria-labelledby')) bad.push('<nav> sin aria-label');
+  });
+  const active = document.querySelector('.ql-nav-item.is-active');
+  if (active && active.getAttribute('aria-current') !== 'page') bad.push('enlace de navegación activo sin aria-current');
+  return bad;
+})()`;

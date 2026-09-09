@@ -1,0 +1,101 @@
+// Cliente CDP mínimo sobre el WebSocket nativo de Node. Lanza Chrome headless,
+// abre una pestaña y expone ev()/screenshot()/problems.
+//
+// Recoge en `problems` cualquier console.error / assert / excepción no
+// capturada de la página (con la etiqueta de la fase actual, via setLabel()).
+
+import { spawn } from 'node:child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { findChrome } from './env.mjs';
+
+let portSeq = 9700 + Math.floor(Math.random() * 200);
+
+export async function connect({ dark = false, url = 'http://127.0.0.1:8931', label = 'cdp' } = {}) {
+  const chromeBin = findChrome();
+  if (!chromeBin) throw new Error('NO_CHROME');
+  const port = portSeq++;
+  const profileDir = mkdtempSync(join(tmpdir(), 'ql-cdp-'));
+
+  const chrome = spawn(chromeBin, [
+    '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
+    '--disable-extensions', '--disable-background-networking',
+    `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`,
+    '--window-size=1400,2200', 'about:blank',
+  ], { stdio: 'ignore' });
+
+  let wsUrl;
+  for (let i = 0; i < 80; i++) {
+    try {
+      const j = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+      if (j.webSocketDebuggerUrl) { wsUrl = j.webSocketDebuggerUrl; break; }
+    } catch { /* not up yet */ }
+    await sleep(200);
+  }
+  if (!wsUrl) { try { chrome.kill('SIGKILL'); } catch {} throw new Error('CHROME_NO_START'); }
+
+  const ws = new WebSocket(wsUrl);
+  await new Promise((res, rej) => {
+    ws.addEventListener('open', res, { once: true });
+    ws.addEventListener('error', () => rej(new Error('WS_FAIL')), { once: true });
+  });
+
+  let mid = 0;
+  const rpc = (method, params = {}, sessionId) => new Promise((res, rej) => {
+    const id = ++mid;
+    const h = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.id === id) { ws.removeEventListener('message', h); m.error ? rej(new Error(m.error.message)) : res(m.result); }
+    };
+    ws.addEventListener('message', h);
+    ws.send(JSON.stringify({ id, method, params, sessionId }));
+  });
+
+  const { targetId } = await rpc('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await rpc('Target.attachToTarget', { targetId, flatten: true });
+  await rpc('Page.enable', {}, sessionId);
+  await rpc('Runtime.enable', {}, sessionId);
+  await rpc('Console.enable', {}, sessionId);
+  if (dark) await rpc('Emulation.setEmulatedMedia', { media: '', features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, sessionId);
+
+  const problems = [];
+  let current = label;
+  ws.addEventListener('message', (e) => {
+    const m = JSON.parse(e.data);
+    if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'assert')) {
+      problems.push(`[${current}] console.${m.params.type}: ` + m.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
+    }
+    if (m.method === 'Runtime.exceptionThrown') {
+      const d = m.params.exceptionDetails;
+      problems.push(`[${current}] EXCEPTION: ` + (d.exception?.description || d.text));
+    }
+  });
+
+  const ev = async (expr) => {
+    const r = await rpc('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, sessionId);
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+    return r.result.value;
+  };
+  const screenshot = async (path) => {
+    const { data } = await rpc('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId);
+    writeFileSync(path, Buffer.from(data, 'base64'));
+  };
+  const setViewport = (width, height = 1400) =>
+    rpc('Emulation.setDeviceMetricsOverride', {
+      width, height, deviceScaleFactor: 1, mobile: width < 700,
+      screenWidth: width, screenHeight: height, positionX: 0, positionY: 0,
+      screenOrientation: { angle: 0, type: 'portraitPrimary' },
+    }, sessionId);
+
+  return {
+    ev, rpc, screenshot, setViewport, problems, sessionId,
+    setLabel: (l) => { current = l; },
+    goto: (u) => rpc('Page.navigate', { url: u ?? url }, sessionId),
+    kill() {
+      try { chrome.kill('SIGKILL'); } catch { /* noop */ }
+      try { rmSync(profileDir, { recursive: true, force: true }); } catch { /* noop */ }
+    },
+  };
+}
