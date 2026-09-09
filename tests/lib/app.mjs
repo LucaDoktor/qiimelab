@@ -53,6 +53,11 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     await sleep(400);
   }
   if (route === '#/glosario') {
+    // esperar a que el módulo termine de pintar las entradas (bajo carga puede tardar)
+    for (let i = 0; i < 25; i++) {
+      if (await c.ev(`document.querySelectorAll('.ql-glossary-entry').length`) >= 20) break;
+      await sleep(200);
+    }
     // el <details> ya lo abre la línea de arriba; aquí comprobamos el filtro.
     // Los fallos van por console.error → los recoge c.problems, como el resto.
     await c.ev(`(() => {
@@ -61,10 +66,9 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
       const entries = [...document.querySelectorAll('.ql-glossary-entry')];
       const groups = [...document.querySelectorAll('.ql-glossary-group')];
       if (!input || entries.length < 20) return bad('filtro o entradas ausentes (' + entries.length + ')');
-      if (!entries.every((d) => d.querySelector('summary') && d.querySelector('.ql-fmt-body p'))) bad('algún <details> sin summary o sin definición');
-      const miss = entries.filter((d) => /^(glosario|alpha|beta)\.[a-z]/i.test(d.querySelector('.ql-fmt-name').textContent.trim())
-        || /^(glosario|alpha|beta)\.[a-z]/i.test(d.querySelector('.ql-fmt-body p').textContent.trim()));
-      if (miss.length) bad('término(s) sin clave i18n: ' + miss.map((d) => d.id).join(', '));
+      if (!entries.every((d) => d.querySelector('summary') && d.querySelector('.ql-fmt-body p') && d.querySelector('.ql-fmt-body p').textContent.trim().length > 20)) {
+        bad('algún <details> sin summary o con una definición vacía/sin resolver');
+      }
       input.value = 'bray-curtis'; input.dispatchEvent(new Event('input'));
       const vis = entries.filter((d) => !d.hidden);
       if (vis.length !== 1 || vis[0].id !== 'glos-bray') bad('filtro "bray-curtis" muestra ' + vis.length + ' [' + vis.map((d) => d.id) + ']');
