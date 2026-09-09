@@ -40,6 +40,12 @@ const DICTS = {
       namePlaceholder: 'Tu nombre (opcional)',
     },
     footer: { by: 'por', source: 'Código en GitHub' },
+    pwa: {
+      install: 'Instalar app',
+      offline: 'Sin conexión — los datos que ya cargaste siguen aquí; todo se procesa en tu navegador.',
+      updateReady: 'Hay una versión nueva de QiimeLab.',
+      reload: 'Recargar',
+    },
     slots: {
       metadata: 'Metadatos', taxonomy: 'Taxonomía', taxaBarplot: 'Barplot taxonómico',
       taxaCounts: 'Conteos taxón × muestra', alpha: 'Diversidad alfa', beta: 'Diversidad beta',
@@ -763,6 +769,12 @@ const DICTS = {
       namePlaceholder: 'Your name (optional)',
     },
     footer: { by: 'by', source: 'Source on GitHub' },
+    pwa: {
+      install: 'Install app',
+      offline: 'Offline — the data you already loaded is still here; everything runs in your browser.',
+      updateReady: 'A new version of QiimeLab is available.',
+      reload: 'Reload',
+    },
     slots: {
       metadata: 'Metadata', taxonomy: 'Taxonomy', taxaBarplot: 'Taxonomic barplot',
       taxaCounts: 'Taxon × sample counts', alpha: 'Alpha diversity', beta: 'Beta diversity',
@@ -1485,6 +1497,12 @@ const DICTS = {
       namePlaceholder: 'Il tuo nome (facoltativo)',
     },
     footer: { by: 'di', source: 'Codice su GitHub' },
+    pwa: {
+      install: 'Installa app',
+      offline: 'Offline — i dati che hai già caricato restano qui; tutto viene elaborato nel tuo browser.',
+      updateReady: 'È disponibile una nuova versione di QiimeLab.',
+      reload: 'Ricarica',
+    },
     slots: {
       metadata: 'Metadati', taxonomy: 'Tassonomia', taxaBarplot: 'Barplot tassonomico',
       taxaCounts: 'Conteggi taxon × campione', alpha: 'Diversità alfa', beta: 'Diversità beta',
@@ -1578,6 +1596,12 @@ const DICTS = {
       namePlaceholder: 'Dein Name (optional)',
     },
     footer: { by: 'von', source: 'Quellcode auf GitHub' },
+    pwa: {
+      install: 'App installieren',
+      offline: 'Offline — die bereits geladenen Daten bleiben erhalten; alles läuft in deinem Browser.',
+      updateReady: 'Eine neue Version von QiimeLab ist verfügbar.',
+      reload: 'Neu laden',
+    },
     slots: {
       metadata: 'Metadaten', taxonomy: 'Taxonomie', taxaBarplot: 'Taxonomischer Barplot',
       taxaCounts: 'Zählungen Taxon × Probe', alpha: 'Alpha-Diversität', beta: 'Beta-Diversität',
@@ -1671,6 +1695,12 @@ const DICTS = {
       namePlaceholder: '你的名字（可选）',
     },
     footer: { by: '作者', source: 'GitHub 源代码' },
+    pwa: {
+      install: '安装应用',
+      offline: '离线 — 已加载的数据仍然可用；所有处理都在你的浏览器中进行。',
+      updateReady: 'QiimeLab 有新版本可用。',
+      reload: '重新加载',
+    },
     slots: {
       metadata: '元数据', taxonomy: '分类学', taxaBarplot: '分类学条形图',
       taxaCounts: '类群 × 样本 计数', alpha: 'Alpha 多样性', beta: 'Beta 多样性',

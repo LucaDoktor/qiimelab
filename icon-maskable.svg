@@ -1,0 +1,23 @@
+<svg width="512" height="512" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="q" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c7d77"/>
+      <stop offset="1" stop-color="#0d514e"/>
+    </linearGradient>
+  </defs>
+  <!-- fondo a sangre completa: sin esquinas redondeadas, para que el
+       recorte de icono adaptable (Android) no muerda la marca -->
+  <rect width="32" height="32" fill="url(#q)"/>
+  <!-- marca escalada al ~66% y centrada, dentro de la zona segura -->
+  <g transform="translate(16 16) scale(0.66) translate(-15.5 -18)">
+    <g fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 25V17H15V25"/>
+      <path d="M11.5 17V11H23V25"/>
+    </g>
+    <g fill="#ffffff">
+      <circle cx="8" cy="25" r="1.9"/>
+      <circle cx="15" cy="25" r="1.9"/>
+      <circle cx="23" cy="25" r="1.9"/>
+    </g>
+  </g>
+</svg>

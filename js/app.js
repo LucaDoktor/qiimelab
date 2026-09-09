@@ -6,6 +6,7 @@ import { renderFooter } from './modules/footer.js';
 import { onLangChange, t } from './lib/i18n.js';
 import { onProfileChange } from './lib/profile.js';
 import { watchFieldLabels, linkFieldLabels } from './lib/a11yFields.js';
+import { initPWA, onPWAChange } from './lib/pwa.js';
 
 const sidebar = document.getElementById('sidebar');
 const view = document.getElementById('app-view');
@@ -87,4 +88,7 @@ window.addEventListener('hashchange', renderRoute);
 // al cambiar de idioma o de nombre local se repinta toda la app
 onLangChange(() => { syncSkipLink(); renderRoute(); });
 onProfileChange(renderRoute);
+// PWA: al aparecer/desaparecer la posibilidad de instalar, repinta el footer
+onPWAChange(() => renderFooter(footer));
+initPWA();
 renderRoute();

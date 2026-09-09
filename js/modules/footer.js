@@ -3,6 +3,7 @@
 // así que no lo tocan los módulos al repintar.
 
 import { t } from '../lib/i18n.js';
+import { pwa } from '../lib/pwa.js';
 
 const REPO_URL = 'https://github.com/LucaDoktor/qiimelab';
 const CONTACT = 'bioincode.info@gmail.com';
@@ -17,4 +18,15 @@ export function renderFooter(el) {
     '<a class="ql-footer-link" href="mailto:' + CONTACT + '">' + CONTACT + '</a>' +
     '<a class="ql-footer-link" href="' + REPO_URL + '" target="_blank" rel="noopener noreferrer">' + t('footer.source') + '</a>' +
     '</div>';
+
+  // Botón "Instalar app": solo si el navegador ofreció beforeinstallprompt
+  // (Chromium en la web; oculto en el resto y una vez instalada).
+  if (pwa.canInstall) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ql-footer-install';
+    btn.textContent = t('pwa.install');
+    btn.addEventListener('click', () => pwa.promptInstall());
+    el.querySelector('.ql-footer-inner').appendChild(btn);
+  }
 }

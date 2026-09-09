@@ -40,6 +40,7 @@ los saltados no cuentan.
 | `stats/benjaminihochberg.mjs` | R base | `benjaminiHochberg()` vs `p.adjust(p, method = "BH")`. |
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
 | `mobile-audit.mjs` | navegador | Recorre las 14 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
+| `pwa.mjs` | estático + navegador | `manifest.json` es JSON válido con los campos obligatorios y sus iconos existen; `index.html` enlaza el manifest. Con navegador: el service worker registra, activa y controla la página tras la 1ª carga, y con la red simulada offline por CDP una 2ª navegación sigue sirviendo el shell (sidebar + main + footer) desde caché con el banner "sin conexión". |
 
 ### Modo de los tests de `stats/`
 

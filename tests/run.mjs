@@ -37,6 +37,7 @@ const SUITE = [
   { name: 'sweep-session', file: 'sweep-session.mjs', kind: 'navegador' },
   { name: 'sweep-routes', file: 'sweep-routes.mjs', kind: 'navegador' },
   { name: 'mobile-audit', file: 'mobile-audit.mjs', kind: 'navegador' },
+  { name: 'pwa', file: 'pwa.mjs', kind: 'navegador' },
 ];
 
 const filters = process.argv.slice(2);
