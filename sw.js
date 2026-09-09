@@ -16,18 +16,24 @@
 
 // Súbelo a mano cuando quieras forzar un vaciado de caché (normalmente no hace
 // falta: el propio cambio de bytes de este archivo ya instala un SW nuevo).
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'qiimelab-' + VERSION;
 
 // El shell mínimo que garantiza que la app arranca sin red la primera vez que
 // ya se visitó. Son rutas estables (no módulos de análisis): si alguna falla
-// la instalación NO se aborta.
+// la instalación NO se aborta. Las fuentes van aquí porque ahora son locales
+// (css/fonts.css) y el shell sin ellas parpadea a la tipografía del sistema.
 const SHELL = [
   './',
   './index.html',
   './css/tokens.css',
   './css/base.css',
   './css/components.css',
+  './css/fonts.css',
+  './fonts/IBMPlexSans-var.latin.woff2',
+  './fonts/IBMPlexSans-var.latin-ext.woff2',
+  './fonts/IBMPlexSerif-SemiBold.latin.woff2',
+  './fonts/IBMPlexMono-Regular.latin.woff2',
   './js/app.js',
   './manifest.json',
   './favicon.svg',
@@ -87,9 +93,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2) Resto del mismo origen (css/js/fuentes/svg/json) → cache-first +
-  //    revalidación en segundo plano. Otros orígenes (Google Fonts) igual.
-  if (sameOrigin || /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname)) {
+  // 2) Resto del mismo origen (css/js/fuentes/svg/json/woff2) → cache-first +
+  //    revalidación en segundo plano. Ya no hay orígenes externos que atender.
+  if (sameOrigin) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
       const cached = await cache.match(req);

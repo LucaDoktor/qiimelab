@@ -87,9 +87,10 @@ biom convert -i exported/feature-table.biom -o feature-table.tsv --to-tsv
 ## Dependencias
 
 **Ninguna a nivel de código** — son módulos ES nativos, sin `npm install`, sin
-bundler. La única petición externa es la hoja de estilos de **Google Fonts**
-(IBM Plex); si no carga, se usa la tipografía del sistema y la app funciona
-igual.
+bundler. **Cero peticiones externas**: la tipografía **IBM Plex** se sirve
+desde el propio repo (`fonts/` + `css/fonts.css`, subconjuntos latin/latin-ext,
+~256 KB), así que la app carga y funciona 100 % sin conexión desde la primera
+visita cacheada. Si una fuente faltara, el CSS degrada a la del sistema.
 
 ## Datos de ejemplo (`datos-ejemplo/`)
 

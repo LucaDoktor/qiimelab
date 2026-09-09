@@ -83,14 +83,37 @@ async function harvestModule(file) {
   return result;
 }
 
+// Inlinea css/fonts.css con cada woff2 como data URI, para que el HTML
+// autocontenido no dependa de ninguna petición de red (ni de Google Fonts, que
+// era lo único externo que quedaba).
+async function inlineFontsCss() {
+  let css;
+  try { css = await (await fetch('css/fonts.css')).text(); }
+  catch (e) { return ''; }
+  const urls = [...new Set([...css.matchAll(/url\((\.\.\/fonts\/[^)]+\.woff2)\)/g)].map((m) => m[1]))];
+  for (const rel of urls) {
+    try {
+      const buf = await (await fetch(rel.replace('../', ''))).arrayBuffer();
+      let bin = '';
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const dataUri = 'data:font/woff2;base64,' + btoa(bin);
+      css = css.split('url(' + rel + ')').join('url(' + dataUri + ')');
+    } catch (e) { /* deja la url relativa; degradará a la fuente del sistema */ }
+  }
+  return css;
+}
+
 async function buildStandaloneHtml(reportEl, lang) {
   const cssFiles = ['css/tokens.css', 'css/base.css', 'css/components.css'];
-  const styles = await Promise.all(cssFiles.map(async (f) => {
-    try { return await (await fetch(f)).text(); } catch (e) { return ''; }
-  }));
+  const [styles, fontsCss] = await Promise.all([
+    Promise.all(cssFiles.map(async (f) => {
+      try { return await (await fetch(f)).text(); } catch (e) { return ''; }
+    })),
+    inlineFontsCss(),
+  ]);
   const clone = reportEl.cloneNode(true);
   clone.querySelectorAll('.ql-report-actions, button').forEach((n) => n.remove());
-  const fontLink = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">';
   const extra = 'body.ql-standalone{margin:0;background:var(--surface);color:var(--ink);'
     + 'font-family:var(--font-body);padding:32px 20px;}'
     + '.ql-standalone .ql-report{margin:0 auto;}'
@@ -98,7 +121,7 @@ async function buildStandaloneHtml(reportEl, lang) {
   return '<!doctype html><html lang="' + escapeHtml(lang) + '"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1">'
     + '<title>' + escapeHtml(t('informe.docTitle')) + '</title>'
-    + fontLink
+    + '<style>' + fontsCss + '</style>'
     + styles.map((s) => '<style>' + s + '</style>').join('')
     + '<style>' + extra + '</style>'
     + '</head><body class="ql-standalone">' + clone.outerHTML + '</body></html>';
