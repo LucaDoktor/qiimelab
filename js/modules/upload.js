@@ -5,6 +5,7 @@ import { routeResultToState } from '../lib/route.js';
 import { exportSession, importSession, describeSession, sessionFilename, SCHEMA_VERSION } from '../lib/session.js';
 import { openConfirm } from '../lib/modal.js';
 import { healthBannerEl } from '../lib/healthBanner.js';
+import { detectedMappings } from '../lib/columnMapping.js';
 import {
   loadExampleCommunityData, loadExampleDifferentialAbundance,
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
@@ -311,6 +312,54 @@ export function render(container) {
     }
     stack.appendChild(listCard);
 
+    // --- columnas detectadas (qué columna del archivo hace de cada campo) ---
+    const mappings = detectedMappings();
+    if (mappings.length) {
+      const mapCard = document.createElement('section');
+      mapCard.className = 'ql-card ql-panel';
+      mapCard.innerHTML = '<h2>' + t('colmap.title') + '</h2><p class="ql-panel-note">' + t('colmap.note') + '</p>';
+      mappings.forEach((m) => {
+        const block = document.createElement('div');
+        block.className = 'ql-colmap-block';
+        const head = document.createElement('div');
+        head.className = 'ql-colmap-head';
+        head.innerHTML = '<span class="ql-colmap-slot">' + escapeHtml(t('slots.' + slotI18nKey(m.slot))) + '</span>' +
+          (m.fileName ? '<span class="ql-colmap-file">' + escapeHtml(m.fileName) + '</span>' : '') +
+          (m.route ? '<a class="ql-colmap-link" href="#/' + m.route + '">' + t('colmap.openModule') + '</a>' : '');
+        block.appendChild(head);
+
+        m.fields.forEach((f) => {
+          const row = document.createElement('div');
+          row.className = 'ql-colmap-row';
+          const lbl = document.createElement('span');
+          lbl.className = 'ql-colmap-label';
+          lbl.textContent = f.label;
+          row.appendChild(lbl);
+          if (m.readOnly || !f.options || !f.set) {
+            const val = document.createElement('span');
+            val.className = 'ql-colmap-val';
+            val.textContent = f.current;
+            row.appendChild(val);
+          } else {
+            const sel = document.createElement('select');
+            sel.className = 'ql-colmap-sel';
+            sel.setAttribute('aria-label', f.label + ' — ' + (m.fileName || t('slots.' + slotI18nKey(m.slot))));
+            f.options.forEach((h, i) => {
+              const o = document.createElement('option');
+              o.value = h; o.textContent = h || t('ui.columnN', { n: i + 1 });
+              if (h === f.current) o.selected = true;
+              sel.appendChild(o);
+            });
+            sel.addEventListener('change', () => { f.set(sel.value); });
+            row.appendChild(sel);
+          }
+          block.appendChild(row);
+        });
+        mapCard.appendChild(block);
+      });
+      stack.appendChild(mapCard);
+    }
+
     // --- panel de estado tipo semáforo + detalle (solo cuando hay algo cargado) ---
     if (anyData) {
       const health = healthBannerEl({ compact: false });
@@ -490,6 +539,15 @@ export function render(container) {
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // nombre de slot del estado → clave i18n slots.*
+  function slotI18nKey(slot) {
+    return ({
+      differentialAbundance: 'differential',
+      alphaDiversity: 'alpha',
+      betaDiversity: 'beta',
+    })[slot] || slot;
   }
 
   paint();
