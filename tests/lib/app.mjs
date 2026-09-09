@@ -5,9 +5,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 15 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 16.
+// 16 rutas de módulo (#/…#/validacion) + la subvista "Red" del correlograma = 17.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/recuentos', '#/ufc', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
+  '#/recuentos', '#/ufc', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe',
+  '#/recursos', '#/glosario', '#/validacion'];
 
 // carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones + 2 recuentos)
 export const LOAD_ALL = `(async () => {
@@ -88,6 +89,19 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     await sleep(6000);
     const secs = await c.ev(`document.querySelectorAll('.ql-report-section').length`);
     onInfo(`#/informe → ${secs} secciones`);
+  }
+  if (route === '#/validacion') {
+    // la página autocomprueba stats.js contra R en vivo: si alguna fila falla,
+    // es una regresión numérica → que lo pille el barrido.
+    await c.ev(`(async () => {
+      const { runValidation } = await import('/js/lib/statsValidation.js');
+      const r = runValidation();
+      const failed = r.filter((x) => !x.pass);
+      if (failed.length) console.error('validacion: ' + failed.map((x) => x.key + (x.error ? ' (' + x.error + ')' : ' rel=' + x.maxRelErr.toExponential(1))).join(', '));
+      const dom = document.querySelectorAll('.ql-table tbody tr').length;
+      if (dom !== r.length) console.error('validacion: la tabla pinta ' + dom + ' filas, esperaba ' + r.length);
+    })()`);
+    await sleep(150);
   }
 }
 

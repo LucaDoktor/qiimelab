@@ -24,6 +24,7 @@ const ICONS = {
   recursos: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M10 13.5 8.5 15 10 16.5M14 13.5 15.5 15 14 16.5"/>'),
   informe: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>'),
   glosario: ic('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 10.5h4"/>'),
+  validacion: ic('<path d="M12 3 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
 };
 
 // Logomark: dendrograma (agrupamiento) reducido a 3 hojas y 2 nodos, sobre
@@ -53,6 +54,7 @@ export const ROUTES = [
   { id: 'informe', navKey: 'nav.informe', icon: 'informe' },
   { id: 'recursos', navKey: 'nav.recursos', icon: 'recursos' },
   { id: 'glosario', navKey: 'nav.glosario', icon: 'glosario' },
+  { id: 'validacion', navKey: 'nav.validacion', icon: 'validacion' },
 ];
 
 /** ¿Tiene ESE módulo los datos que necesita, ahora mismo? Lo usa la barra

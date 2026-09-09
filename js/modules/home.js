@@ -25,6 +25,7 @@ const MORE_LINKS = [
   { route: 'informe', navKey: 'nav.informe' },
   { route: 'recursos', navKey: 'nav.recursos' },
   { route: 'glosario', navKey: 'nav.glosario' },
+  { route: 'validacion', navKey: 'nav.validacion' },
 ];
 
 function escapeHtml(s) {

@@ -42,6 +42,7 @@ const moduleLoaders = {
   informe: () => import('./modules/informe.js'),
   recursos: () => import('./modules/recursos.js'),
   glosario: () => import('./modules/glosario.js'),
+  validacion: () => import('./modules/validacion.js'),
 };
 
 let routeId = '';
