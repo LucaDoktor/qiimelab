@@ -3,6 +3,7 @@ import { t } from '../lib/i18n.js';
 import { domainMotif } from '../lib/motif.js';
 import { getProfileName } from '../lib/profile.js';
 import { slotFilled } from './shell.js';
+import { healthBannerEl } from '../lib/healthBanner.js';
 
 // route = fragmento de ruta; qKey = pregunta en lenguaje llano (texto principal);
 // nameKey/descKey = rótulo y descripción técnicos (secundarios); glos = id del
@@ -65,6 +66,10 @@ export function render(container) {
     ctaBtn.textContent = anyData ? t('home.ctaBtnMore') : t('home.ctaBtnLoad');
     cta.appendChild(ctaBtn);
     stack.appendChild(cta);
+
+    // panel de estado (semáforo) — solo si ya hay algo cargado
+    const banner = healthBannerEl({ compact: true, link: true, hideWhenEmpty: true });
+    if (banner) stack.appendChild(banner);
 
     // resumen de slots
     const summary = document.createElement('section');

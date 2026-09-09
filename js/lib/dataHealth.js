@@ -160,3 +160,35 @@ export function checkDataHealth() {
 
   return findings;
 }
+
+/** ¿Hay ALGÚN dato de análisis cargado ahora mismo? */
+function anyAnalysisData() {
+  return !!(state.metadata || state.taxonomy || state.taxaBarplot || state.taxaCounts ||
+    state.alphaDiversity || state.betaDiversity || state.differentialAbundance ||
+    state.functionalKO || state.functionalCategories || state.ordination ||
+    (Array.isArray(state.sequenceQC) && state.sequenceQC.length) ||
+    (Array.isArray(state.diffComparisons) && state.diffComparisons.length) ||
+    (Array.isArray(state.microbialCounts) && state.microbialCounts.length));
+}
+
+/**
+ * Resume `checkDataHealth()` en un semáforo.
+ * @returns {{ level:'empty'|'good'|'warning'|'error',
+ *             findings:Array, errors:Array, warnings:Array, infos:Array,
+ *             counts:{error:number,warning:number,info:number} }}
+ */
+export function summariseHealth() {
+  const anyData = anyAnalysisData();
+  const findings = anyData ? checkDataHealth() : [];
+  const errors = findings.filter((f) => f.level === 'error');
+  const warnings = findings.filter((f) => f.level === 'warning');
+  const infos = findings.filter((f) => f.level === 'info');
+  let level = 'good';
+  if (!anyData) level = 'empty';
+  else if (errors.length) level = 'error';
+  else if (warnings.length) level = 'warning';
+  return {
+    level, findings, errors, warnings, infos,
+    counts: { error: errors.length, warning: warnings.length, info: infos.length },
+  };
+}

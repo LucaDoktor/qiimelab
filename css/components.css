@@ -427,6 +427,20 @@ svg.ql-brand-mark {
 .ql-health-msg { color: var(--ink); }
 .ql-health-ids { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ink-muted); font-family: var(--font-mono); word-break: break-word; }
 
+/* semáforo de estado de los datos (portada + #/cargar) */
+.ql-health-banner { border-left: 3px solid var(--border-strong); }
+.ql-health-banner.is-good { border-left-color: var(--good); }
+.ql-health-banner.is-warning { border-left-color: var(--warning); }
+.ql-health-banner.is-error { border-left-color: var(--critical); }
+.ql-health-banner-row { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+.ql-health-light { flex: none; width: 12px; height: 12px; border-radius: 50%; }
+.ql-health-banner-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
+.ql-health-banner-txt strong { font-size: 13.5px; color: var(--ink); }
+.ql-health-banner-sub { font-size: 12px; color: var(--ink-muted); }
+.ql-health-banner-link { flex: none; font-size: 12.5px; color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+.ql-health-banner-link:hover { border-bottom-color: currentColor; }
+.ql-health-banner-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
 /* Panel de biomarcadores (pestaña de barplots) */
 .ql-bm-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 

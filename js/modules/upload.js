@@ -4,7 +4,7 @@ import { ingestFile } from '../lib/ingest.js';
 import { routeResultToState } from '../lib/route.js';
 import { exportSession, importSession, describeSession, sessionFilename, SCHEMA_VERSION } from '../lib/session.js';
 import { openConfirm } from '../lib/modal.js';
-import { checkDataHealth } from '../lib/dataHealth.js';
+import { healthBannerEl } from '../lib/healthBanner.js';
 import {
   loadExampleCommunityData, loadExampleDifferentialAbundance,
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
@@ -311,32 +311,14 @@ export function render(container) {
     }
     stack.appendChild(listCard);
 
-    // --- tarjeta "Salud de los datos" (solo cuando hay algo cargado) ---
+    // --- panel de estado tipo semáforo + detalle (solo cuando hay algo cargado) ---
     if (anyData) {
-      const health = document.createElement('section');
-      health.className = 'ql-card ql-panel ql-health-card';
-      const findings = checkDataHealth();
-      let hh = '<h2>' + t('health.title') + '</h2>';
-      if (findings.length === 0) {
-        hh += '<p class="ql-health-ok"><span class="ql-health-dot is-good" aria-hidden="true"></span>' +
-          escapeHtml(t('health.allOk')) + '</p>';
-      } else {
-        hh += '<ul class="ql-health-list">';
-        findings.forEach((f) => {
-          const cls = f.level === 'error' ? 'is-error' : f.level === 'warning' ? 'is-warning' : 'is-info';
-          let ids = '';
-          if (f.sampleIds && f.sampleIds.length) {
-            const shown = f.sampleIds.slice(0, 12).map(escapeHtml).join(', ');
-            const more = f.sampleIds.length > 12 ? ' ' + t('health.andMore', { n: f.sampleIds.length - 12 }) : '';
-            ids = '<span class="ql-health-ids">' + escapeHtml(t('health.samplesLabel')) + ': ' + shown + more + '</span>';
-          }
-          hh += '<li class="ql-health-item"><span class="ql-health-dot ' + cls + '" aria-hidden="true"></span>' +
-            '<span><span class="ql-health-msg">' + escapeHtml(f.message) + '</span>' + ids + '</span></li>';
-        });
-        hh += '</ul>';
+      const health = healthBannerEl({ compact: false });
+      if (health) {
+        health.classList.add('ql-health-card');
+        health.insertAdjacentHTML('afterbegin', '<h2 style="margin-bottom:10px;">' + t('health.title') + '</h2>');
+        stack.appendChild(health);
       }
-      health.innerHTML = hh;
-      stack.appendChild(health);
     }
 
     // guía: "qué pasa si mi archivo no se detecta"
