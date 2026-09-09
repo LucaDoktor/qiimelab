@@ -219,6 +219,91 @@ export function classifyTable(headers, rows, fileNameHint) {
   return null;
 }
 
+/**
+ * Cuando classifyTable() no reconoce una tabla, intenta decir POR QUÉ: busca
+ * pistas parciales (una columna clave presente y otra ausente, tabla casi
+ * cuadrada pero con ids que no casan, el nombre del archivo…) y devuelve una
+ * frase que sugiere el formato esperado y el módulo al que pertenece, o null
+ * si no hay ninguna pista.
+ */
+export function diagnoseTable(headers, rows, fileNameHint) {
+  if (!Array.isArray(headers) || headers.length === 0) {
+    return 'La tabla no tiene cabeceras legibles. La primera fila debe ser la fila de nombres de columna (sin título ni comentario encima).';
+  }
+  const norm = headers.map(normalizeHeader);
+  const name = String(fileNameHint || '').toLowerCase();
+  const nRows = Array.isArray(rows) ? rows.length : 0;
+
+  // 1. abundancia diferencial: una de las dos columnas clave, no las dos
+  const lfcIdx = findBestColumn(headers, LFC_KEYS);
+  const padjIdx = findBestColumn(headers, PADJ_KEYS);
+  if (lfcIdx !== -1 && padjIdx === -1) {
+    return `Tiene una columna de log2FoldChange («${headers[lfcIdx]}») pero no encuentro la de p-valor ajustado (padj / qvalue / FDR). Es una tabla de abundancia diferencial para #/diferencial: necesita columna de identidad, log2FoldChange y padj.`;
+  }
+  if (padjIdx !== -1 && lfcIdx === -1) {
+    return `Tiene una columna de p-valor ajustado («${headers[padjIdx]}») pero no la de log2FoldChange. Es una tabla de abundancia diferencial para #/diferencial: necesita columna de identidad, log2FoldChange y padj.`;
+  }
+
+  // 2. barplot taxonómico: alguna cabecera de linaje, pero no las 3 que pide
+  const lineageHeaders = headers.filter((h) => (String(h).match(/;/g) || []).length >= 2).length;
+  if (lineageHeaders >= 1 && lineageHeaders < 3) {
+    return `Solo ${lineageHeaders} cabecera(s) con formato de linaje (d__;p__;c__…). Un barplot taxonómico para #/barplots necesita al menos 3 columnas de taxón, o el .qzv nativo de «qiime taxa barplot».`;
+  }
+
+  // 3. diversidad alfa: 2 columnas pero la 2ª no es suficientemente numérica
+  if (headers.length === 2 && nRows > 0) {
+    const numeric = rows.map((r) => r[headers[1]]).filter(isNumeric).length;
+    if (numeric < nRows * 0.9) {
+      return `2 columnas, pero la 2ª no es numérica (${numeric} de ${nRows} valores lo son). Un vector de diversidad alfa para #/alfa es «id de muestra , valor» con casi todos los valores numéricos.`;
+    }
+  }
+
+  // 4. matriz de distancias beta: tabla cuadrada y numérica cuyos ids de fila no
+  //    coinciden con las cabeceras (orden distinto o etiquetas distintas)
+  if (headers.length - 1 === nRows && headers.length > 3) {
+    const ids = headers.slice(1);
+    let matches = 0, numCells = 0, cells = 0;
+    rows.forEach((r, i) => {
+      if (String(r[headers[0]]).trim() === ids[i]) matches++;
+      ids.forEach((id) => { cells++; if (isNumeric(r[id])) numCells++; });
+    });
+    if (numCells >= cells * 0.9 && matches < nRows) {
+      return 'Tabla cuadrada y numérica, pero las etiquetas de la primera columna no coinciden con las de las cabeceras. Una matriz de distancias beta para #/beta debe llevar las mismas muestras en filas y columnas, en el mismo orden.';
+    }
+  }
+
+  // 5. KOs de PICRUSt2: la primera columna tiene algunos códigos KEGG
+  if (headers.length >= 2 && nRows > 0) {
+    const k0 = headers[0];
+    const koLike = rows.filter((r) => /^K\d{4,6}$/.test(String(r[k0] ?? '').trim())).length;
+    if (koLike > 0 && koLike < nRows * 0.8) {
+      return `La primera columna tiene algunos códigos KEGG (K#####) pero no la mayoría. La tabla de KOs de PICRUSt2 para #/funcional los necesita en casi todas las filas.`;
+    }
+  }
+
+  // 6. metadatos: primera columna tipo sample-id pero sin más columnas
+  if (['sampleid', 'id', 'sample'].includes(norm[0]) && headers.length < 2) {
+    return 'La primera columna parece de identificadores de muestra pero no hay más columnas. Los metadatos necesitan al menos una variable además del id.';
+  }
+
+  // 7. sin pistas en el contenido → pista por el nombre del archivo
+  const byName = [
+    [/deseq|ancom|aldex|maaslin|lefse|diff.?abund|_da[_.]/, 'una tabla de abundancia diferencial para #/diferencial (identidad + log2FoldChange + padj)'],
+    [/shannon|simpson|pielou|chao|observed|faith|evenness|alpha.?div/, 'un vector de diversidad alfa para #/alfa (id de muestra + valor numérico)'],
+    [/bray|jaccard|unifrac|aitchison|dist.?mat|distance.?matrix|beta.?div/, 'una matriz de distancias beta para #/beta (cuadrada, mismas etiquetas en filas y columnas)'],
+    [/taxonomy|taxon.*assign/, 'una tabla de taxonomía (columnas «Feature ID» y «Taxon»)'],
+    [/sample.?meta|metadata|mapping.?file/, 'unos metadatos (primera columna «sample-id» + variables)'],
+    [/pred_metagenome|picrust|ko.?abund|ko.?table|kegg/, 'la tabla de KOs de PICRUSt2 para #/funcional'],
+    [/kolist|ko.?list|functional.?module|modulo.?funcional/, 'la lista de KOs por módulo funcional para #/funcional'],
+    [/barplot|taxa.?bar|rel.?abund|abundancia.?relativa|top\d+/, 'un barplot taxonómico para #/barplots (muestras en filas, taxones en columnas)'],
+    [/conteos|counts|feature.?table|otu.?table|asv.?table/, 'una tabla de conteos taxón × muestra para #/venn (etiquetas de texto + columnas numéricas por muestra)'],
+  ];
+  for (const [re, what] of byName) {
+    if (re.test(name)) return `Por el nombre parece ${what}. Comprueba que las columnas casan con ese formato (ver la guía de #/cargar).`;
+  }
+  return null;
+}
+
 function guessTaxonomyLevel(headers) {
   let maxSegments = 0;
   headers.forEach((h) => {
@@ -312,7 +397,10 @@ export async function ingestFile(file) {
       const { headers, rows } = parseTable(text);
       const classified = classifyTable(headers, rows, hint);
       if (classified) results.push(classified);
-      else warnings.push('"' + shortName + '" (dentro de ' + name + '): no se reconoce el formato — puedes mapearlo a mano si es necesario.');
+      else {
+        const hint2 = diagnoseTable(headers, rows, hint);
+        warnings.push('"' + shortName + '" (dentro de ' + name + '): no se reconoce el formato.' + (hint2 ? ' ' + hint2 : ' Puedes mapearlo a mano si es necesario.'));
+      }
     }
     return { results, warnings };
   }
@@ -334,7 +422,10 @@ export async function ingestFile(file) {
     const { headers, rows } = parseTable(text);
     const classified = classifyTable(headers, rows, innerName);
     if (classified) results.push(classified);
-    else warnings.push('"' + innerName + '" (descomprimido de ' + name + '): no se ha reconocido el formato automáticamente.');
+    else {
+      const hint = diagnoseTable(headers, rows, innerName);
+      warnings.push('"' + innerName + '" (descomprimido de ' + name + '): no se ha reconocido el formato.' + (hint ? ' ' + hint : ''));
+    }
     return { results, warnings };
   }
 
@@ -350,7 +441,11 @@ export async function ingestFile(file) {
     const { headers, rows } = parseTable(text);
     const classified = classifyTable(headers, rows, name);
     if (classified) results.push(classified);
-    else warnings.push('"' + name + '": no se ha podido determinar automáticamente qué tipo de dato es. Revisa que la primera fila tenga cabeceras.');
+    else {
+      const hint = diagnoseTable(headers, rows, name);
+      warnings.push('"' + name + '": no se ha podido determinar qué tipo de dato es.' +
+        (hint ? ' ' + hint : ' Revisa que la primera fila tenga cabeceras, o usa la guía de formatos de #/cargar.'));
+    }
     return { results, warnings };
   }
 
