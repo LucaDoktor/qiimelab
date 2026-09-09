@@ -19,6 +19,35 @@ const errors = new Map();      // nombre -> mensaje de error
 let maxReads = 200000;
 let selected = null;           // nombre del archivo cuyo informe se muestra
 
+const QC_PRESETS = [50000, 200000, 500000, Infinity];
+
+// Estimación tosca del nº de lecturas de un archivo por su tamaño (una lectura
+// 16S ≈ 250 nt + calidad + cabecera ≈ 620 B; un .gz comprime ~3,5×).
+function estReadsFromSize(file) {
+  if (!file || !file.size) return null;
+  const perRead = 620;
+  const factor = /\.gz$/i.test(file.name || '') ? 3.5 : 1;
+  return Math.round((file.size * factor) / perRead);
+}
+
+/** Aviso (texto) si el límite elegido va a costar tiempo/memoria; '' si no. */
+function estimateCost(entries, limit) {
+  const pending = (entries || []).filter((e) => !e.report);
+  const sizes = pending.map((e) => estReadsFromSize(e.file)).filter((n) => n != null);
+  const biggest = sizes.length ? Math.max(...sizes) : null;
+  const eff = limit === Infinity ? (biggest || Infinity) : Math.min(limit, biggest || limit);
+
+  if (limit === Infinity) {
+    return biggest
+      ? t('qc.costAllFile', { n: fmtInt(biggest), secs: Math.max(1, Math.round(biggest / 90000)) })
+      : t('qc.costAll');
+  }
+  if (eff >= 400000) {
+    return t('qc.costBig', { n: fmtInt(eff), secs: Math.max(1, Math.round(eff / 90000)) });
+  }
+  return '';
+}
+
 function svgEl(tag, attrs) {
   const e = document.createElementNS(SVG_NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -393,6 +422,7 @@ function renderReport(container, r) {
     [t('qc.stats.length'), r.lenMin + ' / ' + r.lenMean.toFixed(0) + ' / ' + r.lenMax],
     [t('qc.stats.gc'), r.gcPercent.toFixed(1) + ' %'],
     [t('qc.stats.meanQ'), r.meanQuality.toFixed(1)],
+    [t('qc.stats.q30'), r.pctQ30 != null ? r.pctQ30.toFixed(1) + ' %' : '—'],
     [t('qc.stats.nContent'), r.nContentPct.toFixed(3) + ' %'],
     [t('qc.stats.encoding'), r.encoding],
     [t('qc.stats.totalBases'), fmtInt(r.totalBases)],
@@ -579,6 +609,81 @@ function renderReport(container, r) {
 }
 
 // ---------------------------------------------------------------------------
+//  resumen numérico global + veredicto en lenguaje llano
+// ---------------------------------------------------------------------------
+function overallQualityVerdict({ q30, meanQ, dup }) {
+  const q = q30 != null ? q30 : (meanQ >= 32 ? 88 : meanQ >= 28 ? 78 : meanQ >= 22 ? 58 : 35);
+  if (q >= 80 && meanQ >= 28 && dup <= 25) return 'good';
+  if (q >= 55 && meanQ >= 20 && dup <= 55) return 'warning';
+  return 'critical';
+}
+
+function renderGlobalSummary(container, entries) {
+  const done = entries.filter((e) => e.report && e.report.nReads > 0);
+  if (done.length === 0) return;
+
+  let reads = 0, readsEst = 0, anySub = false;
+  let lenW = 0, gcW = 0, qW = 0, q30W = 0, dupW = 0;
+  let wReads = 0, wBases = 0, wDup = 0, anyQ30 = false;
+  done.forEach((e) => {
+    const r = e.report;
+    reads += r.nReads;
+    readsEst += (r.subsampled && r.estTotalReads) ? r.estTotalReads : r.nReads;
+    if (r.subsampled) anySub = true;
+    lenW += (r.lenMean || 0) * r.nReads;
+    gcW += (r.gcPercent || 0) * r.nReads;
+    wReads += r.nReads;
+    const tb = r.totalBases || (r.nReads * (r.lenMean || 1));
+    qW += (r.meanQuality || 0) * tb;
+    if (r.pctQ30 != null) { q30W += r.pctQ30 * tb; anyQ30 = true; }
+    wBases += tb;
+    const tr = (r.duplication && r.duplication.trackedReads) || r.nReads;
+    dupW += ((r.duplication && r.duplication.pctDuplicated) || 0) * tr;
+    wDup += tr;
+  });
+  const meanLen = wReads ? lenW / wReads : 0;
+  const meanGC = wReads ? gcW / wReads : 0;
+  const meanQ = wBases ? qW / wBases : 0;
+  const q30 = anyQ30 && wBases ? q30W / wBases : null;
+  const dup = wDup ? dupW / wDup : 0;
+  const verdict = overallQualityVerdict({ q30, meanQ, dup });
+
+  const card = document.createElement('section');
+  card.className = 'ql-card ql-panel';
+  card.style.marginTop = '18px';
+  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">' +
+    '<h2 style="margin:0 0 4px;">' + t('qc.summary.title') + '</h2>' + verdictBadge(verdict) + '</div>' +
+    '<p class="ql-panel-note">' + t('qc.summary.note') + '</p>';
+
+  const grid = document.createElement('div');
+  grid.className = 'ql-stats';
+  const rows = [
+    [t('qc.summary.samples'), fmtInt(done.length)],
+    [anySub ? t('qc.summary.readsEst') : t('qc.summary.reads'), (anySub ? '≈ ' : '') + fmtInt(anySub ? readsEst : reads)],
+    [t('qc.summary.length'), meanLen.toFixed(0) + ' bp'],
+    [t('qc.summary.gc'), meanGC.toFixed(1) + ' %'],
+    [t('qc.summary.q30'), q30 != null ? q30.toFixed(1) + ' %' : '—'],
+    [t('qc.summary.meanQ'), meanQ.toFixed(1)],
+    [t('qc.summary.dup'), dup.toFixed(1) + ' %'],
+  ];
+  rows.forEach(([lbl, val]) => {
+    const tile = document.createElement('div');
+    tile.className = 'ql-stat';
+    tile.innerHTML = '<div class="ql-stat-label">' + lbl + '</div><div class="ql-stat-value" style="font-size:16px;">' + escapeHtml(String(val)) + '</div>';
+    grid.appendChild(tile);
+  });
+  card.appendChild(grid);
+
+  const line = document.createElement('p');
+  line.style.cssText = 'margin:12px 0 0;font-size:13.5px;';
+  line.innerHTML = '<strong style="color:' + verdictColor(verdict) + ';">' +
+    t('qc.summary.verdictLabel') + ':</strong> ' + t('qc.summary.verdict' + VK[verdict]);
+  card.appendChild(line);
+
+  container.appendChild(card);
+}
+
+// ---------------------------------------------------------------------------
 //  comparativa multi-muestra
 // ---------------------------------------------------------------------------
 function renderComparison(container, entries, onPick) {
@@ -651,13 +756,59 @@ export function render(container) {
     dz.appendChild(input);
     loadCard.appendChild(dz);
 
-    // límite de submuestra
+    // --- submuestra: visible y ajustable (presets + valor libre) ---
     const optRow = document.createElement('div');
     optRow.className = 'ql-field';
     optRow.style.marginTop = '14px';
-    optRow.innerHTML = '<label for="qc-maxreads">' + t('qc.maxReadsLabel') + '</label>' +
-      '<input type="number" id="qc-maxreads" min="1000" step="10000" value="' + maxReads + '" />' +
-      '<p class="ql-field-help">' + t('qc.maxReadsHelp') + '</p>';
+    optRow.innerHTML = '<label>' + t('qc.maxReadsLabel') + '</label>';
+    const seg = document.createElement('div');
+    seg.className = 'ql-segmented';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', t('qc.maxReadsLabel'));
+    QC_PRESETS.forEach((v) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (maxReads === v ? ' is-on' : '');
+      b.textContent = v === Infinity ? t('qc.presetAll') : fmtInt(v);
+      if (maxReads === v) b.setAttribute('aria-pressed', 'true');
+      b.addEventListener('click', () => { maxReads = v; paint(); });
+      seg.appendChild(b);
+    });
+    optRow.appendChild(seg);
+
+    const customRow = document.createElement('div');
+    customRow.className = 'ql-inputrow';
+    customRow.style.marginTop = '8px';
+    const cLabel = document.createElement('label');
+    cLabel.setAttribute('for', 'qc-maxreads');
+    cLabel.className = 'ql-field-help';
+    cLabel.style.cssText = 'margin:0;flex:none;';
+    cLabel.textContent = t('qc.presetCustom');
+    const mrInput = document.createElement('input');
+    mrInput.type = 'number';
+    mrInput.id = 'qc-maxreads';
+    mrInput.className = 'ql-num-small tabular';
+    mrInput.min = '1000';
+    mrInput.step = '10000';
+    mrInput.value = isFinite(maxReads) ? String(maxReads) : '';
+    mrInput.placeholder = '∞';
+    mrInput.addEventListener('change', () => {
+      const v = parseInt(mrInput.value, 10);
+      if (isFinite(v) && v >= 1000) { maxReads = v; paint(); }
+    });
+    customRow.append(cLabel, mrInput);
+    optRow.appendChild(customRow);
+    optRow.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('qc.maxReadsHelp') + '</p>');
+
+    // aviso de memoria / tiempo al elegir una submuestra grande
+    const cost = estimateCost(entries, maxReads);
+    if (cost) {
+      const w = document.createElement('p');
+      w.className = 'ql-field-help';
+      w.style.cssText = 'margin-top:6px;color:#8a5a00;';
+      w.innerHTML = '⚠ ' + cost;
+      optRow.appendChild(w);
+    }
     loadCard.appendChild(optRow);
 
     if (entries.length === 0) {
@@ -689,11 +840,6 @@ export function render(container) {
     dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
     dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('is-drag'); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
     input.addEventListener('change', (e) => { if (e.target.files.length) addFiles(e.target.files); });
-    const mrInput = optRow.querySelector('#qc-maxreads');
-    mrInput.addEventListener('change', () => {
-      const v = parseInt(mrInput.value, 10);
-      if (isFinite(v) && v >= 1000) maxReads = v;
-    });
 
     if (entries.length === 0) {
       const empty = document.createElement('div');
@@ -740,10 +886,27 @@ export function render(container) {
       const w = document.createElement('p');
       w.className = 'ql-field-help';
       w.style.cssText = 'margin-top:10px;color:#8a5a00;';
-      w.textContent = t('qc.bigFileWarn', { size: '> 100 MB', n: fmtInt(maxReads) });
+      w.textContent = t('qc.bigFileWarn', { size: '> 100 MB', n: isFinite(maxReads) ? fmtInt(maxReads) : t('qc.presetAll') });
       fileList.appendChild(w);
     }
+    // volver a analizar todo con el límite actual (útil al cambiar el preset)
+    const doneNow = entries.filter((e) => e.report);
+    if (doneNow.length > 0) {
+      const reAll = document.createElement('button');
+      reAll.type = 'button';
+      reAll.className = 'ql-btn';
+      reAll.style.marginTop = '10px';
+      reAll.textContent = t('qc.reanalyzeAll', { n: isFinite(maxReads) ? fmtInt(maxReads) : t('qc.presetAll') });
+      reAll.addEventListener('click', () => {
+        doneNow.forEach((e) => { e.report = null; errors.delete(e.name); });
+        paint();
+      });
+      fileList.appendChild(reAll);
+    }
     container.appendChild(fileList);
+
+    // --- resumen numérico + veredicto en lenguaje llano (antes de la tabla) ---
+    renderGlobalSummary(container, entries);
 
     // --- comparativa ---
     renderComparison(container, entries, (name) => { selected = name; paint(); });

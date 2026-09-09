@@ -133,6 +133,7 @@ export async function analyzeFastq(file, { maxReads = DEFAULT_MAX_READS, onProgr
   let L = 0;
   let sumLen = 0, minLen = Infinity, maxLen = 0;
   let gcBases = 0, atBases = 0, nBases = 0, totalBases = 0;
+  let basesQ20 = 0, basesQ30 = 0; // para el resumen: % de bases con Phred ≥ 20 / 30
 
   const lengthHist = new Map();
   const seqQualHist = new Uint32Array(QMAX + 1);
@@ -194,6 +195,7 @@ export async function analyzeFastq(file, { maxReads = DEFAULT_MAX_READS, onProgr
       posQSum[i] += q;
       posCount[i]++;
       readQSum += q;
+      if (q >= 20) { basesQ20++; if (q >= 30) basesQ30++; }
     }
 
     const meanQ = readQSum / len;
@@ -349,6 +351,8 @@ export async function analyzeFastq(file, { maxReads = DEFAULT_MAX_READS, onProgr
     lenMax: maxLen,
     lenMean: nReads ? sumLen / nReads : 0,
     meanQuality,
+    pctQ20: totalBases ? (basesQ20 / totalBases) * 100 : 0,
+    pctQ30: totalBases ? (basesQ30 / totalBases) * 100 : 0,
     gcPercent: totalBases ? (gcBases / (gcBases + atBases || 1)) * 100 : 0,
     nContentPct: totalBases ? (nBases / totalBases) * 100 : 0,
     totalBases,
