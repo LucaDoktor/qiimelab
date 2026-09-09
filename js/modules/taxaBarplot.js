@@ -53,6 +53,7 @@ export function render(container) {
   let sortByGroup = true;
   let groupCol = null;
   let topN = TOP_N_DEFAULT;
+  let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
   let view = 'barplot';        // 'barplot' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
   let bmSort = { key: 'delta', dir: 'desc' };
@@ -150,6 +151,15 @@ export function render(container) {
       '<p class="ql-field-help">' + t('barplots.topNHelp') + '</p>';
     controls.appendChild(topField);
 
+    const prevField = document.createElement('div');
+    prevField.className = 'ql-field';
+    prevField.innerHTML = '<label for="qlPrev">' + t('barplots.prevLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="qlPrevR" min="0" max="100" step="5" value="' + minPrev + '" />' +
+      '<input type="number" id="qlPrev" class="ql-num-small tabular" min="0" max="100" step="5" value="' + minPrev + '" /></div>' +
+      '<p class="ql-field-help">' + t('barplots.prevHelp') + '</p>';
+    controls.appendChild(prevField);
+
     if (groupOptions.length > 0) {
       const groupField = document.createElement('div');
       groupField.className = 'ql-field';
@@ -201,6 +211,17 @@ export function render(container) {
       rInput.addEventListener('change', () => apply(rInput.value));
       rInput.addEventListener('input', () => { nInput.value = rInput.value; });
     }
+    {
+      const nInput = prevField.querySelector('#qlPrev');
+      const rInput = prevField.querySelector('#qlPrevR');
+      const apply = (v) => {
+        const nv = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
+        if (nv !== minPrev) { minPrev = nv; paint(); }
+      };
+      nInput.addEventListener('change', () => apply(nInput.value));
+      rInput.addEventListener('change', () => apply(rInput.value));
+      rInput.addEventListener('input', () => { nInput.value = rInput.value; });
+    }
 
     // ---- tabla ----
     const tableCard = document.createElement('section');
@@ -228,13 +249,31 @@ export function render(container) {
       otherTaxa.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0) +
       preAggOtherHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
 
+    const nRows = table.rows.length || 1;
     const means = taxonHeaders.map((h) => {
-      const vals = table.rows.map((r) => { const t = rowSum(r); return t > 0 ? (parseFloat(r[h]) || 0) / t : 0; });
-      return { header: h, mean: vals.reduce((a, b) => a + b, 0) / (vals.length || 1) };
+      let present = 0;
+      const vals = table.rows.map((r) => {
+        const t = rowSum(r);
+        const v = parseFloat(r[h]) || 0;
+        if (v > 0) present++;
+        return t > 0 ? v / t : 0;
+      });
+      return { header: h, mean: vals.reduce((a, b) => a + b, 0) / (vals.length || 1), prev: present / nRows };
     }).sort((a, b) => b.mean - a.mean);
 
-    const topTaxa = means.slice(0, topN).map((m) => m.header);
-    const otherTaxa = means.slice(topN).map((m) => m.header);
+    // filtro de prevalencia: los taxones presentes en menos del umbral % de
+    // muestras no compiten por un color propio; se pliegan dentro de "Otros".
+    const eligible = means.filter((m) => m.prev * 100 >= minPrev);
+    const belowPrev = means.length - eligible.length;
+    const topSet = new Set(eligible.slice(0, topN).map((m) => m.header));
+    const topTaxa = means.filter((m) => topSet.has(m.header)).map((m) => m.header);
+    const otherTaxa = means.filter((m) => !topSet.has(m.header)).map((m) => m.header);
+
+    if (minPrev > 0) {
+      tableCard.insertAdjacentHTML('beforeend',
+        '<p class="ql-field-help" style="margin-top:0">' +
+        t('barplots.prevApplied', { pct: minPrev, n: belowPrev, total: means.length }) + '</p>');
+    }
 
     let sampleOrder = table.rows.map((r) => r[sampleKey]);
     let groupBySample = {};
