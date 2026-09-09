@@ -468,6 +468,12 @@ svg.ql-brand-mark {
 .ql-cmp-rm:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ql-cmp-rm:disabled { opacity: 0.35; cursor: default; }
 
+/* ---------- matriz de consenso entre métodos ---------- */
+.ql-consensus th[scope="row"] { text-align: left; font-weight: 600; white-space: nowrap; }
+.ql-consensus .ql-cons-diag { font-weight: 700; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ql-cons-disc { color: var(--critical); font-size: 12px; white-space: nowrap; }
+.ql-cons-ok { color: var(--good); font-weight: 700; }
+
 /* ---------- calculadora UFC/mL ---------- */
 .ql-ufc-table td { vertical-align: middle; padding: 5px 8px 5px 0; }
 .ql-ufc-table th:first-child, .ql-ufc-table td:first-child { color: var(--ink-muted); font-variant-numeric: tabular-nums; width: 1%; }

@@ -1031,8 +1031,11 @@ export function render(container) {
     // el diagrama de solapamiento cuentan la misma historia
     const rows = [...allIds].map((id) => {
       const cells = perCmp.map((p) => p.byId[id] || null);
-      const sigCount = cells.filter((c) => c && c.padj != null && c.padj < cmpPadj).length;
-      return { id, cells, sigCount };
+      const sigCells = cells.filter((c) => c && c.padj != null && c.padj < cmpPadj);
+      const sigCount = sigCells.length;
+      const signs = sigCells.map((c) => Math.sign(c.lfc || 0)).filter((s) => s !== 0);
+      const concordant = signs.length > 0 && signs.every((s) => s === signs[0]);
+      return { id, cells, sigCount, concordant };
     }).filter((r) => r.sigCount > 0);
 
     // partición de solapamiento (entidad → comparaciones donde es significativa)
@@ -1087,6 +1090,69 @@ export function render(container) {
       }
     }
 
+    // ---- matriz de consenso entre métodos ----
+    // Por cada par de comparaciones: entidades significativas en AMBAS, separando
+    // las que coinciden en el signo del efecto (concordantes) de las de signo
+    // opuesto (discordantes → señal poco fiable). La diagonal = sig. de cada una.
+    {
+      const sigDir = perCmp.map((p) => {
+        const m = new Map(); // id -> signo (+1 / -1 / 0)
+        Object.keys(p.byId).forEach((id) => {
+          const c = p.byId[id];
+          if (c && c.padj != null && c.padj < cmpPadj) m.set(id, Math.sign(c.lfc || 0));
+        });
+        return m;
+      });
+      const consCard = document.createElement('section');
+      consCard.className = 'ql-card ql-panel';
+      consCard.style.marginBottom = '20px';
+      consCard.innerHTML = '<h2>' + t('differential.cmpConsensusTitle') + '</h2>' +
+        '<p class="ql-panel-note">' + t('differential.cmpConsensusNote', { p: cmpPadj }) + '</p>';
+      const cScroll = document.createElement('div');
+      cScroll.className = 'ql-table-scroll scroll-x';
+      const cTbl = document.createElement('table');
+      cTbl.className = 'ql-table ql-consensus';
+      let ch = '<thead><tr><td></td>';
+      comparisons.forEach((c) => { ch += '<th scope="col">' + escapeHtml(c.label) + '</th>'; });
+      ch += '</tr></thead>';
+      let cb = '<tbody>';
+      comparisons.forEach((ci, i) => {
+        cb += '<tr><th scope="row">' + escapeHtml(ci.label) + '</th>';
+        comparisons.forEach((cj, j) => {
+          if (i === j) { cb += '<td class="ql-num tabular ql-cons-diag">' + sigDir[i].size + '</td>'; return; }
+          let concord = 0, discord = 0;
+          sigDir[i].forEach((si, id) => {
+            if (!sigDir[j].has(id)) return;
+            const sj = sigDir[j].get(id);
+            if (si !== 0 && sj !== 0 && si !== sj) discord++;
+            else concord++;
+          });
+          cb += '<td class="ql-num tabular">' +
+            (concord + discord === 0 ? '<span class="ql-cell-muted">0</span>' : '<strong>' + concord + '</strong>' +
+              (discord ? ' <span class="ql-cons-disc" title="' + escapeHtml(t('differential.cmpConsensusDiscord')) + '">(' + discord + ' ✗)</span>' : '')) +
+            '</td>';
+        });
+        cb += '</tr>';
+      });
+      cTbl.innerHTML = ch + cb + '</tbody>';
+      cScroll.appendChild(cTbl);
+      consCard.appendChild(cScroll);
+
+      const fullSig = [...allIds].filter((id) => perCmp.every((p) => {
+        const c = p.byId[id]; return c && c.padj != null && c.padj < cmpPadj;
+      }));
+      const consistent = fullSig.filter((id) => {
+        const signs = perCmp.map((p) => Math.sign(p.byId[id].lfc || 0)).filter((s) => s !== 0);
+        return signs.length > 0 && signs.every((s) => s === signs[0]);
+      }).sort();
+      const consP = document.createElement('p');
+      consP.className = 'ql-field-help';
+      consP.innerHTML = t('differential.cmpConsensusAll', { n: consistent.length, m: comparisons.length }) +
+        (consistent.length ? ' ' + consistent.slice(0, 40).map((x) => '<span class="mono">' + escapeHtml(x) + '</span>').join(', ') : '');
+      consCard.appendChild(consP);
+      container.appendChild(consCard);
+    }
+
     // ---- tabla resumen ----
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
@@ -1131,7 +1197,12 @@ export function render(container) {
         html += '<td class="ql-num tabular"' + (sig ? ' style="font-weight:600;"' : '') + '>' +
           c.lfc.toFixed(2) + ' <span class="ql-cell-muted">(' + (c.padj != null ? formatP(c.padj) : '—') + ')</span></td>';
       });
-      html += '<td class="ql-num tabular">' + r.sigCount + ' / ' + comparisons.length + '</td>';
+      html += '<td class="ql-num tabular">' + r.sigCount + ' / ' + comparisons.length +
+        (r.sigCount >= 2
+          ? (r.concordant
+            ? ' <span class="ql-cons-ok" title="' + escapeHtml(t('differential.cmpConsensusOk')) + '">✓</span>'
+            : ' <span class="ql-cons-disc" title="' + escapeHtml(t('differential.cmpConsensusMixed')) + '">✗</span>')
+          : '') + '</td>';
       tr.innerHTML = html;
       tb.appendChild(tr);
     });
