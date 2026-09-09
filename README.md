@@ -1,5 +1,7 @@
 # QiimeLab
 
+[![verify](https://github.com/LucaDoktor/qiimelab/actions/workflows/verify.yml/badge.svg)](https://github.com/LucaDoktor/qiimelab/actions/workflows/verify.yml)
+
 Analiza resultados de **QIIME2** y archivos **FASTQ** enteramente en el
 navegador: barplots taxonómicos, diversidad alfa y beta, abundancia
 diferencial, diagramas de Venn/UpSet, correlograma entre variables, índices
@@ -111,9 +113,14 @@ diccionario se publican; solo el resultado ya anonimizado.
 qiimelab/
 ├── index.html
 ├── favicon.svg               # logotipo (dendrograma sobre baldosa de marca)
+├── icon-maskable.svg         # icono adaptable para la PWA (fondo a sangre)
+├── manifest.json             # manifiesto de la PWA
+├── sw.js                     # service worker (caché en tiempo de ejecución)
 ├── .nojekyll                 # desactiva el procesado Jekyll de GitHub Pages
 ├── datos-ejemplo/            # recorte real anonimizado + su README
 ├── recursos/                 # plantillas de scripts (pipeline QIIME2 + R) + su README
+├── tests/                    # batería de verificación (node tests/run.mjs)
+├── .github/workflows/        # verify.yml — CI en cada push/PR a main
 ├── css/                      # tokens.css (paleta), base.css, components.css
 └── js/
     ├── app.js                 # router por hash + carga perezosa de módulos
@@ -127,6 +134,7 @@ qiimelab/
     │   ├── stats.js             # Kruskal-Wallis, chi², beta incompleta,
     │   │                        #   Pearson/Spearman + p-valor, UPGMA
     │   ├── i18n.js              # traducciones (es/en/it/de/zh) + t()
+    │   ├── pwa.js               # registro del SW + aviso de versión / offline / instalar
     │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG/PNG
     │   ├── groupBoxplot.js      # boxplot por grupo + Kruskal-Wallis (alfa y funcional)
     │   ├── motif.js             # motivo SVG del hero (dendrograma + puntos)
@@ -150,6 +158,32 @@ descargar en `#/recursos`. Ver `recursos/README.md`.
 
 Añadir un módulo: crear el archivo en `js/modules/`, una entrada en
 `moduleLoaders` de `js/app.js` y otra en `ROUTES` de `js/modules/shell.js`.
+
+## Verificación
+
+```bash
+node tests/run.mjs          # toda la batería, con resumen final
+```
+
+Node ESM sin dependencias de `npm`. Los tests de navegador usan Chrome
+headless vía CDP; los de estadística comparan contra R cuando está disponible
+y, si no, contra una referencia R embebida (modo GOLDEN). Cubre las 14
+rutas en claro/oscuro, el ciclo de sesión, accesibilidad, el desborde móvil
+a 375/768px, la PWA (manifest + service worker + carga offline) y ~40
+comprobaciones numéricas. Detalle en `tests/README.md`.
+
+El workflow **verify** (`.github/workflows/verify.yml`) ejecuta `node
+tests/run.mjs` en cada push y pull request a `main` (Ubuntu; sin R → modo
+GOLDEN).
+
+## PWA
+
+`manifest.json` + `sw.js` en la raíz. El service worker cachea en tiempo de
+ejecución (network-first para el HTML, cache-first con revalidación para el
+resto del mismo origen) — sin lista de precache, porque no hay build step.
+La app se puede instalar (botón en el pie, en navegadores que lo soportan) y
+abre sin conexión con los datos que ya se cargaran. Cuando hay una versión
+nueva aparece un aviso discreto para recargar.
 
 ## Notas de desarrollo
 

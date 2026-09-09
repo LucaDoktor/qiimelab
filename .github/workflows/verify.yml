@@ -1,0 +1,36 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela ejecuciones antiguas de la misma rama/PR si llega un push nuevo.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # El runner de ubuntu-latest ya trae python3 (lo usa tests/lib/server.mjs
+      # para servir la app) y Google Chrome (tests de navegador vía CDP).
+      # NO trae R: los tests de tests/stats/ caen a modo GOLDEN (referencia R
+      # embebida) automáticamente, así que un fallo de stats es un fallo real,
+      # no la ausencia de Rscript.
+      - name: versiones
+        run: |
+          node --version
+          python3 --version
+          google-chrome --version || true
+
+      - name: node tests/run.mjs
+        run: node tests/run.mjs
