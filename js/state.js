@@ -30,6 +30,7 @@ export const state = {
   functionalCategories: null, // { sourceFileId, headers, rows, mapping: {module, ko} } — KOlist categorizada
   ordination: null, // { sourceFileId, metricName, sampleIds, coords: number[][], proportionExplained: number[], eigvals: number[] }
   sequenceQC: [], // [{ sourceFileId, name, report }] — informes de calidad FASTQ (varios archivos)
+  diffComparisons: [], // [{ id, label, sourceFileId, headers, rows, mapping:{taxon,lfc,padj}, entityType }] — varias tablas de abundancia diferencial a la vez (vista "Comparar varias"); NO toca el slot único differentialAbundance
 };
 
 const listeners = new Set();
@@ -67,6 +68,7 @@ export function clearAllState() {
   state.files = [];
   SLOT_KEYS.forEach((k) => { state[k] = null; });
   state.sequenceQC = [];
+  state.diffComparisons = [];
   nextFileId = 1;
   // sin notify() — quien llama decide cuándo avisar
 }
@@ -85,6 +87,9 @@ export function removeFile(id) {
   ['metadata', 'taxonomy', 'taxaBarplot', 'taxaCounts', 'differentialAbundance', 'functionalKO', 'functionalCategories', 'ordination'].forEach(clearIfMatches);
   if (Array.isArray(state.sequenceQC)) {
     state.sequenceQC = state.sequenceQC.filter((q) => q.sourceFileId !== id);
+  }
+  if (Array.isArray(state.diffComparisons)) {
+    state.diffComparisons = state.diffComparisons.filter((cmp) => cmp.sourceFileId !== id);
   }
   if (state.alphaDiversity) {
     for (const key of Object.keys(state.alphaDiversity.metrics)) {
@@ -129,5 +134,22 @@ export function addSequenceQC(entry) {
   // reemplaza si ya hay un informe para el mismo nombre de archivo
   state.sequenceQC = state.sequenceQC.filter((q) => q.name !== entry.name);
   state.sequenceQC.push(entry);
+  notify();
+}
+
+let nextCmpId = 1;
+/** Añade una tabla de abundancia diferencial a la vista "Comparar varias".
+ *  No toca el slot único `differentialAbundance`. */
+export function addDiffComparison(entry) {
+  if (!Array.isArray(state.diffComparisons)) state.diffComparisons = [];
+  state.diffComparisons.push({ id: 'cmp' + nextCmpId++, ...entry });
+  notify();
+}
+export function updateDiffComparison(id, patch) {
+  state.diffComparisons = (state.diffComparisons || []).map((c) => (c.id === id ? { ...c, ...patch } : c));
+  notify();
+}
+export function removeDiffComparison(id) {
+  state.diffComparisons = (state.diffComparisons || []).filter((c) => c.id !== id);
   notify();
 }

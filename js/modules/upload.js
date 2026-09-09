@@ -201,7 +201,8 @@ export function render(container) {
     saveBtn.textContent = t('session.save');
     const anyData = state.files.length > 0
       || ['metadata', 'taxonomy', 'taxaBarplot', 'alphaDiversity', 'betaDiversity', 'differentialAbundance', 'taxaCounts', 'functionalKO', 'functionalCategories', 'ordination'].some((k) => state[k])
-      || (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0);
+      || (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0)
+      || (Array.isArray(state.diffComparisons) && state.diffComparisons.length > 0);
     saveBtn.disabled = !anyData;
     saveBtn.addEventListener('click', () => {
       const json = JSON.stringify(exportSession(), null, 2);

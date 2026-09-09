@@ -47,6 +47,9 @@ export function exportSession() {
     report: jclone(e.report),
   }));
 
+  // diffComparisons: tablas ya parseadas (headers/rows/mapping) — JSON plano
+  out.state.diffComparisons = (Array.isArray(state.diffComparisons) ? state.diffComparisons : []).map((c) => jclone(c));
+
   // estilos de gráfico personalizados
   out.chartStyles = {};
   try {
@@ -85,7 +88,8 @@ function remapIds(node, idMap) {
 export function describeSession(sess) {
   const s = (sess && sess.state) || {};
   const slots = SLOT_KEYS.filter((k) => s[k] != null).length
-    + ((Array.isArray(s.sequenceQC) && s.sequenceQC.length) ? 1 : 0);
+    + ((Array.isArray(s.sequenceQC) && s.sequenceQC.length) ? 1 : 0)
+    + ((Array.isArray(s.diffComparisons) && s.diffComparisons.length) ? 1 : 0);
   return {
     files: Array.isArray(s.files) ? s.files.length : 0,
     slots,
@@ -135,6 +139,9 @@ export function importSession(sess) {
     file: null, // el FASTQ crudo no viaja en la sesión
     report: (e && e.report != null) ? jclone(e.report) : null,
   })).filter((e) => e.name);
+  state.diffComparisons = (Array.isArray(src.diffComparisons) ? src.diffComparisons : [])
+    .map((c) => remapIds(c, idMap))
+    .filter((c) => c && Array.isArray(c.headers) && Array.isArray(c.rows));
 
   // 4. estilos de gráfico: quita los actuales, mete los guardados
   try {

@@ -383,6 +383,16 @@ svg.ql-brand-mark {
 /* Panel de biomarcadores (pestaña de barplots) */
 .ql-bm-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 
+/* Vista "Comparar varias" (abundancia diferencial) */
+.ql-cmp-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.ql-cmp-row:last-child { border-bottom: none; }
+.ql-cmp-label { flex: 1 1 180px; min-width: 140px; font-weight: 600; }
+.ql-cmp-map { display: flex; gap: 6px; flex-wrap: wrap; }
+.ql-cmp-map select { width: auto; min-width: 90px; max-width: 160px; font-size: 12px; padding: 5px 7px; }
+.ql-cmp-rm { border: none; background: none; color: var(--ink-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.ql-cmp-rm:hover { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
+.ql-cmp-rm:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* ---------- checklist de datos requeridos ---------- */
 .ql-checklist { display: flex; flex-direction: column; gap: 8px; }
 .ql-check-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }

@@ -54,7 +54,7 @@ function slotFilled(routeId) {
     case 'barplots': return !!state.taxaBarplot;
     case 'alfa': return !!state.alphaDiversity;
     case 'beta': return !!state.betaDiversity;
-    case 'diferencial': return !!state.differentialAbundance;
+    case 'diferencial': return !!state.differentialAbundance || (Array.isArray(state.diffComparisons) && state.diffComparisons.length > 0);
     case 'venn': return !!state.taxaCounts && !!state.metadata;
     case 'correlograma': return !!state.metadata || !!state.alphaDiversity || !!state.taxaBarplot || !!state.taxaCounts;
     case 'funcional': return !!state.functionalKO && !!state.functionalCategories && !!state.metadata;

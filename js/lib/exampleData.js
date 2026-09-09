@@ -10,7 +10,7 @@
 //     así que además enseña la estructura exacta que debe tener tu propio
 //     archivo.
 
-import { state, registerFile, setSlot, addAlphaMetric, addBetaMetric, addTaxaBarplotLevel } from '../state.js';
+import { state, registerFile, setSlot, addAlphaMetric, addBetaMetric, addTaxaBarplotLevel, addDiffComparison } from '../state.js';
 import { ingestFile } from './ingest.js';
 import { routeResultToState } from './route.js';
 import { t } from './i18n.js';
@@ -290,6 +290,49 @@ export function loadRealCommunityData() {
 export function loadRealDifferentialAbundance(which) {
   const file = which || 'DESeq2_D_vs_Control.csv';
   return ingestMany([['abundancia-diferencial/' + file, 'Ejemplo real — DESeq2 ' + file.replace(/^DESeq2_|\.csv$/g, '').replace(/_/g, ' ')]]);
+}
+
+/** Las 3 tablas DESeq2 reales, cargadas en la vista "Comparar varias"
+ *  (NO en el slot único differentialAbundance). */
+export async function loadRealDiffComparisons() {
+  const files = ['DESeq2_D_vs_Control.csv', 'DESeq2_D_vs_N.csv', 'DESeq2_N_vs_Control.csv'];
+  const warnings = [];
+  for (const name of files) {
+    try {
+      const w = await addDiffComparisonFromExample('abundancia-diferencial/' + name);
+      warnings.push(...w);
+    } catch (e) { warnings.push(e && e.message ? e.message : String(e)); }
+  }
+  return warnings;
+}
+
+/** Descarga un CSV de ejemplo, lo pasa por ingest.js y lo añade como una
+ *  comparación (vista "Comparar varias"). */
+async function addDiffComparisonFromExample(relPath) {
+  const resp = await fetch(EXAMPLE_BASE + relPath);
+  if (!resp.ok) throw new Error('No se ha podido descargar "' + relPath + '" (' + resp.status + ').');
+  const blob = await resp.blob();
+  const filename = relPath.split('/').pop();
+  const file = new File([blob], filename, { type: blob.type });
+  const { results, warnings } = await ingestFile(file);
+  const da = results.find((r) => r.kind === 'differentialAbundance');
+  if (!da) throw new Error('"' + filename + '" no se reconoce como tabla de abundancia diferencial.');
+  const fileId = registerFile(filename, blob.size, 'Ejemplo real — comparación ' + filename.replace(/^DESeq2_|\.csv$/g, '').replace(/_/g, ' '));
+  addDiffComparison({
+    label: comparisonLabelFromName(filename) || filename,
+    sourceFileId: fileId,
+    headers: da.headers,
+    rows: da.rows,
+    mapping: da.mapping,
+    entityType: da.entityType,
+  });
+  return warnings;
+}
+
+// "DESeq2_D_vs_Control.csv" -> "D vs Control"
+function comparisonLabelFromName(fileName) {
+  const m = String(fileName || '').replace(/\.[^.]+$/, '').match(/([A-Za-z0-9]+)[_ ]v[s]?[_ ]([A-Za-z0-9]+)/i);
+  return m ? m[1] + ' vs ' + m[2] : null;
 }
 
 /** Lista de KOs por módulo funcional + abundancia de KOs por muestra (PICRUSt2, gzip). */

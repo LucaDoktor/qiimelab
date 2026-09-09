@@ -1,9 +1,12 @@
-import { state, subscribe, setSlot } from '../state.js';
+import { state, subscribe, setSlot, registerFile, addDiffComparison, updateDiffComparison, removeDiffComparison } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import {
   loadExampleDifferentialAbundance, loadExampleFunctionalDifferential,
-  loadRealDifferentialAbundance, mountExampleButtons,
+  loadRealDifferentialAbundance, loadRealDiffComparisons, mountExampleButtons,
 } from '../lib/exampleData.js';
+import { ingestFile } from '../lib/ingest.js';
+import { formatP } from '../lib/stats.js';
+import { partitionByMask, drawVenn } from '../lib/setDiagram.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 
@@ -114,6 +117,10 @@ export function render(container) {
   let mappedFileId = null; // para re-mapear si se carga otra tabla distinta
   let showRScript = false;
   let chartType = 'volcano'; // 'volcano' | 'lollipop' | 'heatmap'
+  let mainView = 'individual'; // 'individual' | 'compare'
+  let cmpPadj = 0.05;          // umbral padj de "significativo en N de M"
+  let cmpSort = { key: 'count', dir: 'desc' };
+  let cmpOpenMask = null;      // región del diagrama de solapamiento seleccionada
   let editor = null;
 
   // columnas de log2FoldChange presentes en la tabla (la mapeada + cualquier
@@ -167,6 +174,21 @@ export function render(container) {
       '<h1 class="ql-page-title">' + t('differential.title') + '</h1>' +
       '<p class="ql-page-sub">' + t('differential.subtitle') + '</p>';
     container.appendChild(header);
+
+    // --- vista principal: Individual | Comparar varias ---
+    const mainTabs = document.createElement('div');
+    mainTabs.className = 'ql-tabs';
+    [['individual', t('differential.viewIndividual')], ['compare', t('differential.viewCompare')]].forEach(([v, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-tab' + (mainView === v ? ' is-active' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => { if (mainView !== v) { mainView = v; paint(); } });
+      mainTabs.appendChild(b);
+    });
+    container.appendChild(mainTabs);
+
+    if (mainView === 'compare') { renderCompare(); return; }
 
     if (!state.differentialAbundance) {
       const card = document.createElement('div');
@@ -858,6 +880,279 @@ export function render(container) {
       renderStats(); renderChart(); renderTable();
       if (editor) editor.sync();
     }
+  }
+
+  // =========================================================================
+  //  VISTA "COMPARAR VARIAS" — varias tablas de abundancia diferencial a la vez
+  // =========================================================================
+  function cmpRows(cmp) {
+    // filas de UNA comparación → { id -> { lfc, padj } } con su mapeo de columnas
+    const tk = cmp.headers[cmp.mapping.taxon], lk = cmp.headers[cmp.mapping.lfc], pk = cmp.headers[cmp.mapping.padj];
+    const out = {};
+    cmp.rows.forEach((r) => {
+      const id = String(r[tk] ?? '').trim();
+      if (!id) return;
+      const lfc = parseFloat(r[lk]);
+      const padj = parseFloat(r[pk]);
+      out[id] = { lfc: isFinite(lfc) ? lfc : null, padj: (isFinite(padj) && padj >= 0) ? padj : null };
+    });
+    return out;
+  }
+
+  async function addComparisonFromFile(file) {
+    let ing;
+    try { ing = await ingestFile(file); }
+    catch (e) { return { error: (e && e.message) || String(e) }; }
+    const da = ing.results.find((r) => r.kind === 'differentialAbundance');
+    if (!da) return { error: t('differential.cmpNotRecognised', { name: file.name }) };
+    const fileId = registerFile(file.name, file.size, 'Comparación — ' + file.name);
+    addDiffComparison({
+      label: comparisonLabel(file.name) || file.name.replace(/\.[^.]+$/, ''),
+      sourceFileId: fileId,
+      headers: da.headers, rows: da.rows, mapping: da.mapping, entityType: da.entityType,
+    });
+    return { ok: true, warnings: ing.warnings };
+  }
+
+  function renderCompare() {
+    const comparisons = Array.isArray(state.diffComparisons) ? state.diffComparisons : [];
+
+    const intro = document.createElement('section');
+    intro.className = 'ql-card ql-panel';
+    intro.style.marginBottom = '20px';
+    intro.innerHTML = '<h2>' + t('differential.cmpTitle') + '</h2><p class="ql-panel-note">' + t('differential.cmpIntro') + '</p>';
+
+    const bar = document.createElement('div');
+    bar.className = 'ql-session-bar';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button'; addBtn.className = 'ql-btn'; addBtn.textContent = t('differential.cmpAdd');
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file'; fileInput.accept = '.csv,.tsv,.txt'; fileInput.style.display = 'none';
+    addBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
+      if (!f) return;
+      addBtn.disabled = true;
+      const res = await addComparisonFromFile(f);
+      addBtn.disabled = false;
+      if (res.error) { cmpMsg.textContent = res.error; }
+      // addDiffComparison hace notify() → paint() por el subscribe
+    });
+    bar.append(addBtn, fileInput);
+
+    if (state.differentialAbundance && !comparisons.some((c) => c.sourceFileId === state.differentialAbundance.sourceFileId)) {
+      const useInd = document.createElement('button');
+      useInd.type = 'button'; useInd.className = 'ql-btn'; useInd.textContent = t('differential.cmpUseIndividual');
+      useInd.addEventListener('click', () => {
+        const da = state.differentialAbundance;
+        const fname = (state.files.find((f) => f.id === da.sourceFileId) || {}).name || 'comparación';
+        addDiffComparison({
+          label: comparisonLabel(fname) || fname.replace(/\.[^.]+$/, ''),
+          sourceFileId: da.sourceFileId,
+          headers: da.headers, rows: da.rows, mapping: { ...da.mapping }, entityType: da.entityType,
+        });
+      });
+      bar.appendChild(useInd);
+    }
+    if (comparisons.length === 0) {
+      const exBtn = document.createElement('button');
+      exBtn.type = 'button'; exBtn.className = 'ql-btn'; exBtn.textContent = t('differential.cmpExample');
+      exBtn.addEventListener('click', async () => { exBtn.disabled = true; try { await loadRealDiffComparisons(); } catch (e) { /* noop */ } });
+      bar.appendChild(exBtn);
+    }
+    intro.appendChild(bar);
+    const cmpMsg = document.createElement('p');
+    cmpMsg.className = 'ql-field-help';
+    intro.appendChild(cmpMsg);
+    container.appendChild(intro);
+
+    if (comparisons.length === 0) {
+      const empty = document.createElement('section');
+      empty.className = 'ql-card ql-panel';
+      empty.innerHTML = '<p class="ql-field-help">' + t('differential.cmpEmpty') + '</p>';
+      container.appendChild(empty);
+      return;
+    }
+
+    // ---- lista de comparaciones: etiqueta editable + mapeo de columnas + quitar ----
+    const listCard = document.createElement('section');
+    listCard.className = 'ql-card ql-panel';
+    listCard.style.marginBottom = '20px';
+    listCard.innerHTML = '<h2>' + t('differential.cmpLoaded', { n: comparisons.length }) + '</h2>';
+    comparisons.forEach((cmp) => {
+      const row = document.createElement('div');
+      row.className = 'ql-cmp-row';
+      const lblInput = document.createElement('input');
+      lblInput.type = 'text'; lblInput.value = cmp.label; lblInput.className = 'ql-cmp-label';
+      lblInput.setAttribute('aria-label', t('differential.cmpLabelAria'));
+      lblInput.addEventListener('change', () => updateDiffComparison(cmp.id, { label: lblInput.value.trim() || cmp.label }));
+      row.appendChild(lblInput);
+
+      const mapWrap = document.createElement('div');
+      mapWrap.className = 'ql-cmp-map';
+      ['taxon', 'lfc', 'padj'].forEach((key) => {
+        const sel = document.createElement('select');
+        sel.setAttribute('aria-label', ({ taxon: t('differential.colTaxon'), lfc: t('differential.colLfc'), padj: t('differential.colPadj') }[key]));
+        cmp.headers.forEach((h, i) => {
+          const o = document.createElement('option');
+          o.value = String(i); o.textContent = h || t('ui.columnN', { n: i + 1 });
+          if (cmp.mapping[key] === i) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => updateDiffComparison(cmp.id, { mapping: { ...cmp.mapping, [key]: parseInt(sel.value, 10) } }));
+        mapWrap.appendChild(sel);
+      });
+      row.appendChild(mapWrap);
+
+      const rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'ql-cmp-rm'; rm.title = t('ui.remove'); rm.textContent = '✕';
+      rm.addEventListener('click', () => removeDiffComparison(cmp.id));
+      row.appendChild(rm);
+      listCard.appendChild(row);
+    });
+    container.appendChild(listCard);
+
+    if (comparisons.length < 2) {
+      const need = document.createElement('section');
+      need.className = 'ql-card ql-panel';
+      need.innerHTML = '<p class="ql-field-help">' + t('differential.cmpNeed2') + '</p>';
+      container.appendChild(need);
+      return;
+    }
+
+    // ---- matriz por entidad: LFC/padj por comparación + "sig. en N de M" ----
+    const perCmp = comparisons.map((c) => ({ cmp: c, byId: cmpRows(c) }));
+    const allIds = new Set();
+    perCmp.forEach((p) => Object.keys(p.byId).forEach((id) => allIds.add(id)));
+    const isKO = comparisons.some((c) => c.entityType === 'ko');
+
+    // solo entidades significativas en AL MENOS una comparación — así la tabla y
+    // el diagrama de solapamiento cuentan la misma historia
+    const rows = [...allIds].map((id) => {
+      const cells = perCmp.map((p) => p.byId[id] || null);
+      const sigCount = cells.filter((c) => c && c.padj != null && c.padj < cmpPadj).length;
+      return { id, cells, sigCount };
+    }).filter((r) => r.sigCount > 0);
+
+    // partición de solapamiento (entidad → comparaciones donde es significativa)
+    const memberSets = perCmp.map((p) => Object.keys(p.byId).filter((id) => {
+      const c = p.byId[id]; return c && c.padj != null && c.padj < cmpPadj;
+    }));
+    const setNames = comparisons.map((c) => c.label);
+    const { byMask, presence } = partitionByMask(setNames, memberSets);
+
+    // controles: umbral padj
+    const ctl = document.createElement('section');
+    ctl.className = 'ql-card ql-panel';
+    ctl.style.marginBottom = '20px';
+    ctl.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+    const pf = document.createElement('div');
+    pf.className = 'ql-field';
+    pf.innerHTML = '<label for="cmpPadj">' + t('differential.cmpPadjLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="cmpPadjR" min="0.001" max="0.2" step="0.001" value="' + cmpPadj + '" />' +
+      '<input type="number" id="cmpPadj" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + cmpPadj + '" /></div>' +
+      '<p class="ql-field-help">' + t('differential.cmpPadjHelp') + '</p>';
+    ctl.appendChild(pf);
+    const pR = pf.querySelector('#cmpPadjR'), pN = pf.querySelector('#cmpPadj');
+    const applyP = (v) => { const nv = Math.max(0.0001, Math.min(1, Number(v))); if (isFinite(nv) && nv !== cmpPadj) { cmpPadj = nv; cmpOpenMask = null; paint(); } };
+    pR.addEventListener('input', () => { pN.value = pR.value; });
+    pR.addEventListener('change', () => applyP(pR.value));
+    pN.addEventListener('change', () => applyP(pN.value));
+    container.appendChild(ctl);
+
+    // ---- diagrama de solapamiento (2-4 comparaciones) ----
+    if (comparisons.length >= 2 && comparisons.length <= 4) {
+      const diagCard = document.createElement('section');
+      diagCard.className = 'ql-card ql-panel';
+      diagCard.style.marginBottom = '20px';
+      diagCard.innerHTML = '<h2>' + t('differential.cmpOverlapTitle') + '</h2>' +
+        '<p class="ql-panel-note">' + t('differential.cmpOverlapNote', { p: cmpPadj }) + '</p>';
+      const diagWrap = document.createElement('div');
+      diagWrap.className = 'ql-chartwrap';
+      diagCard.appendChild(diagWrap);
+      container.appendChild(diagCard);
+      drawVenn(diagWrap, setNames, byMask, (mask) => { cmpOpenMask = (cmpOpenMask === mask ? null : mask); paint(); }, {
+        ariaLabel: t('differential.cmpOverlapAria'),
+      });
+      if (cmpOpenMask != null) {
+        const inSets = setNames.filter((_, i) => (cmpOpenMask >> i) & 1);
+        const members = (byMask.get(cmpOpenMask) || []).slice().sort();
+        const sel = document.createElement('p');
+        sel.className = 'ql-field-help';
+        sel.innerHTML = '<strong>' + escapeHtml(inSets.join(' ∩ ')) + '</strong> (' + members.length + '): ' +
+          members.map((m) => '<span class="mono">' + escapeHtml(m) + '</span>').join(', ');
+        diagCard.appendChild(sel);
+      }
+    }
+
+    // ---- tabla resumen ----
+    const tableCard = document.createElement('section');
+    tableCard.className = 'ql-card ql-panel';
+    tableCard.innerHTML = '<h2>' + t('differential.cmpTableTitle') + '</h2>' +
+      '<p class="ql-panel-note">' + t('differential.cmpTableNote', { n: rows.length, m: comparisons.length }) + '</p>';
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+
+    const headCells = [['id', isKO ? 'KO' : t('differential.colTaxon')]];
+    comparisons.forEach((c, i) => headCells.push(['c' + i, c.label]));
+    headCells.push(['count', t('differential.cmpSigCount', { m: comparisons.length })]);
+    let thead = '<thead><tr>';
+    headCells.forEach(([key, lbl]) => {
+      const on = cmpSort.key === key;
+      thead += '<th aria-sort="' + (on ? (cmpSort.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        '<button type="button" data-sort="' + key + '">' + escapeHtml(lbl) +
+        (on ? ' <span aria-hidden="true">' + (cmpSort.dir === 'asc' ? '▲' : '▼') + '</span>' : '') + '</button></th>';
+    });
+    tbl.innerHTML = thead + '</tr></thead>';
+
+    const dir = cmpSort.dir === 'asc' ? 1 : -1;
+    const sorted = rows.slice().sort((a, b) => {
+      if (cmpSort.key === 'id') return a.id.localeCompare(b.id) * dir;
+      if (cmpSort.key === 'count') return (a.sigCount - b.sigCount) * dir || a.id.localeCompare(b.id);
+      const ci = parseInt(cmpSort.key.slice(1), 10);
+      const av = a.cells[ci] && a.cells[ci].padj != null ? a.cells[ci].padj : Infinity;
+      const bv = b.cells[ci] && b.cells[ci].padj != null ? b.cells[ci].padj : Infinity;
+      return (av - bv) * dir;
+    });
+
+    const tb = document.createElement('tbody');
+    sorted.slice(0, 300).forEach((r) => {
+      const tr = document.createElement('tr');
+      let html = '<td>' + (isKO
+        ? '<span class="mono">' + escapeHtml(r.id) + '</span> <a class="ql-kegg-link" href="' + escapeHtml(keggEntryUrl(r.id)) + '" target="_blank" rel="noopener">KEGG&nbsp;↗</a>'
+        : escapeHtml(r.id)) + '</td>';
+      r.cells.forEach((c) => {
+        if (!c || c.lfc == null) { html += '<td class="ql-num tabular ql-cell-muted">—</td>'; return; }
+        const sig = c.padj != null && c.padj < cmpPadj;
+        html += '<td class="ql-num tabular"' + (sig ? ' style="font-weight:600;"' : '') + '>' +
+          c.lfc.toFixed(2) + ' <span class="ql-cell-muted">(' + (c.padj != null ? formatP(c.padj) : '—') + ')</span></td>';
+      });
+      html += '<td class="ql-num tabular">' + r.sigCount + ' / ' + comparisons.length + '</td>';
+      tr.innerHTML = html;
+      tb.appendChild(tr);
+    });
+    if (sorted.length > 300) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="' + headCells.length + '" style="text-align:center;color:var(--ink-muted);padding:12px;">' +
+        t('differential.cmpTruncated', { shown: 300, total: sorted.length }) + '</td>';
+      tb.appendChild(tr);
+    }
+    tbl.appendChild(tb);
+    scrollDiv.appendChild(tbl);
+    tableCard.appendChild(scrollDiv);
+    container.appendChild(tableCard);
+    tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-sort');
+        if (cmpSort.key === key) cmpSort = { key, dir: cmpSort.dir === 'asc' ? 'desc' : 'asc' };
+        else cmpSort = { key, dir: key === 'id' ? 'asc' : (key === 'count' ? 'desc' : 'asc') };
+        paint();
+      });
+    });
   }
 
   paint();
