@@ -21,10 +21,10 @@
 //
 // Resultado medido (Chrome del sistema, dataset de abajo):
 //   operación                                  sync ms   sync jank   worker jank
-//   Bray-Curtis S×S                              ~94        ~107        (no migrada)
-//   UPGMA + leafOrder (320×320)                  ~50        ~64         ~18
+//   Bray-Curtis S×S (260)                        ~93        ~105        (no migrada)
+//   UPGMA + leafOrder (560×560)                 ~210       ~220         ~30
 //   correlaciones + force-layout (k=34)          ~35        ~48         (no migrada, rápida)
-//   curvas de rarefacción (260 muestras)        ~534       ~548        ~20
+//   curvas de rarefacción (260 muestras)        ~530       ~545         ~20
 //   render tabla diferencial (4200 filas)       ~146       ~160        (DOM: un worker no puede)
 
 import { ensureServer } from './lib/server.mjs';
@@ -32,17 +32,22 @@ import { connect } from './lib/cdp.mjs';
 import { findChrome, skip } from './lib/env.mjs';
 import { sleep } from './lib/app.mjs';
 
-const JANK_MAX = 120;   // ms — umbral de bloqueo perceptible del hilo principal
+// ms — por encima de esto el bloqueo del hilo principal se nota. Con margen
+// para el ruido de un runner de CI compartido: la ruta con worker mide
+// ~20-40 ms, la síncrona que vigila ~210 ms (UPGMA) / ~540 ms (rarefacción).
+const JANK_MAX = 150;
 
 if (!findChrome()) skip('no se encontró Chrome/Chromium');
 const server = await ensureServer();
 if (!server) skip('no se pudo servir la app (¿python3?)');
 
-// Parámetros del dataset de estrés (cientos × miles).
+// Parámetros del dataset de estrés (cientos × miles). N_DIST se elige para que
+// el UPGMA SÍNCRONO (O(n³)) bloquee de sobra: si el worker se rompe y cae al
+// hilo principal, el test lo pilla.
 const S_SAMPLES = 260;
 const T_TAXA = 2800;
 const DENSITY = 0.34;
-const N_DIST = 320;
+const N_DIST = 560;
 const N_DIFF = 4200;
 
 const HARNESS = `(async () => {
