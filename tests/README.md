@@ -41,6 +41,7 @@ los saltados no cuentan.
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
 | `mobile-audit.mjs` | navegador | Recorre las 14 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
 | `pwa.mjs` | estático + navegador | `manifest.json` es JSON válido con los campos obligatorios y sus iconos existen; `index.html` enlaza el manifest. Con navegador: el service worker registra, activa y controla la página tras la 1ª carga, y con la red simulada offline por CDP una 2ª navegación sigue sirviendo el shell (sidebar + main + footer) desde caché con el banner "sin conexión". |
+| `perf-stress.mjs` | navegador | Genera un dataset de estrés (260 muestras × 2800 taxones, semilla fija, **no** en `datos-ejemplo/`) y cronometra las 4 operaciones pesadas midiendo el "jank" (hueco máximo entre frames de `requestAnimationFrame`). **Falla** si la ruta migrada a Web Worker (`js/lib/heavyStats.js`: UPGMA de matrices grandes + curvas de rarefacción) vuelve a bloquear el hilo principal (> 120 ms). El resto solo se informa. |
 
 ### Modo de los tests de `stats/`
 
@@ -72,5 +73,7 @@ R instalado.
   combinado**, **descarga del HTML autocontenido**: no automatizadas.
 - **i18n**: no se comprueba que existan todas las claves en `es`/`en` ni que
   `it`/`de`/`zh` caigan a `es` sin huecos.
-- **Rendimiento** y **compatibilidad de navegadores** (solo se prueba en el
-  Chrome del sistema).
+- **Rendimiento**: `perf-stress.mjs` mide las 4 operaciones pesadas y verifica
+  que las migradas a worker no bloqueen; no hay presupuesto de tiempo para el
+  resto de rutas ni medición de memoria.
+- **Compatibilidad de navegadores**: solo se prueba en el Chrome del sistema.

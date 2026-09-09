@@ -135,12 +135,14 @@ qiimelab/
     │   │                        #   Pearson/Spearman + p-valor, UPGMA
     │   ├── i18n.js              # traducciones (es/en/it/de/zh) + t()
     │   ├── pwa.js               # registro del SW + aviso de versión / offline / instalar
+    │   ├── heavyStats.js        # UPGMA / rarefacción en worker si el tamaño lo justifica
     │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG/PNG
     │   ├── groupBoxplot.js      # boxplot por grupo + Kruskal-Wallis (alfa y funcional)
     │   ├── motif.js             # motivo SVG del hero (dendrograma + puntos)
     │   └── exampleData.js       # cargadores de ejemplo (sintéticos y reales)
     ├── workers/
-    │   └── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
+    │   ├── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
+    │   └── statsWorker.js       # UPGMA + curvas de rarefacción fuera del hilo de la UI
     └── modules/                 # un archivo por módulo (shell, home, upload,
         │                        # taxaBarplot, alphaDiversity, betaDiversity,
         │                        # differentialAbundance, venn, correlogram,
@@ -212,6 +214,19 @@ nueva aparece un aviso discreto para recargar.
   métricas; los percentiles de calidad por posición salen de un histograma
   `[posición][Phred]`, sin guardar las lecturas. **No sustituye a
   DADA2/QIIME2**: son estadísticas descriptivas sobre el FASTQ tal cual.
+- **Rendimiento con datasets grandes** — medido antes de tocar nada
+  (`tests/perf-stress.mjs`, dataset sintético de 260 muestras × 2800 taxones).
+  Bloqueaban el hilo principal: las **curvas de rarefacción** de todas las
+  muestras (~530 ms) y el **UPGMA** del mapa de calor beta (O(n³): ~170 ms a
+  520 muestras). Ambos se movieron a `js/workers/statsWorker.js` vía
+  `js/lib/heavyStats.js`, que solo usa el worker por encima de un umbral de
+  tamaño (por debajo calcula en el hilo principal, sin el coste de arrancarlo).
+  Con el worker el hueco máximo entre frames baja a ~17-20 ms. **No** se
+  tocaron: el correlograma (acotado por diseño a ≤ ~40 variables, ~35 ms), la
+  matriz Bray-Curtis (solo para el ejemplo sintético de 20 muestras) y el
+  render de la tabla de abundancia diferencial (~150 ms para 4200 filas: es
+  trabajo de DOM que un worker no puede hacer; el arreglo sería virtualizar la
+  tabla).
 
 ## Licencia
 

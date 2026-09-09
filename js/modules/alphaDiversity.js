@@ -1,6 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP, rarefactionCurve } from '../lib/stats.js';
+import { rarefactionBatchAsync } from '../lib/heavyStats.js';
 import { drawGroupBoxplot, groupColor } from '../lib/groupBoxplot.js';
 import { matchSampleId, makeGroupResolver } from '../lib/sampleMatch.js';
 import {
@@ -36,6 +37,11 @@ export function render(container) {
   let groupCol = null;
   let view = 'boxplot'; // 'boxplot' | 'rarefaction'
   let editor = null;
+  // Las curvas de rarefacción de muchas muestras corren en un Web Worker
+  // (js/lib/heavyStats.js); cacheamos el resultado para que ni el repaint tras
+  // el worker ni un cambio de columna de agrupación las recalculen.
+  let rareCache = null; // { key, curves: { [sid]: {N,sObs,depths,richness} } }
+  let rareGen = 0;
 
   function paint() {
     if (editor) { editor.destroy(); editor = null; }
@@ -334,8 +340,42 @@ export function render(container) {
       : () => null;
 
     const { sampleIds, vectors } = countVectors(state.taxaCounts);
+
+    // rarefactionCurve por muestra es O(50 · taxones no nulos · logGamma):
+    // ~530 ms para 260 muestras × ~2800 taxones. Pequeño → hilo principal;
+    // grande → Web Worker con aviso y repaint al terminar.
+    const rk = (state.taxaCounts.sourceFileId ?? '?') + '|' + sampleIds.length + '|' +
+      (state.taxaCounts.rows ? state.taxaCounts.rows.length : 0);
+    let raw;
+    if (rareCache && rareCache.key === rk) {
+      raw = rareCache.curves;
+    } else {
+      let work = 0;
+      for (const sid of sampleIds) {
+        const v = vectors[sid];
+        for (let i = 0; i < v.length; i++) if (v[i] > 0) work++;
+      }
+      if (work < 120000) {
+        raw = {};
+        sampleIds.forEach((sid) => { raw[sid] = rarefactionCurve(vectors[sid], 50); });
+        rareCache = { key: rk, curves: raw };
+      } else {
+        const wait = document.createElement('section');
+        wait.className = 'ql-card ql-panel';
+        wait.innerHTML = '<p class="ql-panel-note">' + t('alpha.rareWait') + '</p>';
+        container.appendChild(wait);
+        const gen = ++rareGen;
+        rarefactionBatchAsync(vectors, 50).then((curves) => {
+          if (gen !== rareGen) return; // el usuario cambió de pestaña / de ruta
+          rareCache = { key: rk, curves };
+          paint();
+        });
+        return;
+      }
+    }
+
     const curves = sampleIds
-      .map((sid) => ({ sid, group: resolveGroup(sid), ...rarefactionCurve(vectors[sid], 50) }))
+      .map((sid) => ({ sid, group: resolveGroup(sid), ...raw[sid] }))
       .filter((c) => c.N > 0);
 
     if (curves.length === 0) {
@@ -549,5 +589,5 @@ export function render(container) {
 
   paint();
   const stop = subscribe(paint);
-  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
+  return () => { stop(); rareGen++; if (editor) { editor.destroy(); editor = null; } };
 }

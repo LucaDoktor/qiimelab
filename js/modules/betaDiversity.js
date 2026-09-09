@@ -1,6 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { upgma, leafOrder } from '../lib/stats.js';
+import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
@@ -60,6 +61,10 @@ export function render(container) {
   let pcX = 0, pcY = 1;
   let pcoaGroupCol = null;
   let editor = null;
+  // UPGMA de matrices grandes corre en un Web Worker (js/lib/heavyStats.js);
+  // cacheamos el resultado para que el repaint tras el worker no lo relance.
+  let heatCache = null;   // { key, tree, order }
+  let clusterGen = 0;     // token: descarta resultados de un worker ya obsoleto
 
   function paint() {
     if (editor) { editor.destroy(); editor = null; }
@@ -181,10 +186,33 @@ export function render(container) {
     tableCard.innerHTML = '<h2>' + t('beta.tableTitle') + '</h2><p class="ql-panel-note">' + t('beta.tableNote') + '</p>';
     container.appendChild(tableCard);
 
-    // ---- orden ----
-    const clustered = orderMode === 'clustering' && data.sampleIds.length > 1;
-    const tree = clustered ? upgma(data.matrix, data.sampleIds) : null;
-    const order = tree ? leafOrder(tree) : data.sampleIds.slice();
+    // ---- orden (UPGMA: en el hilo principal si es pequeño, en un Web Worker
+    //      si la matriz es grande — O(n³), ~170 ms a 520 muestras) ----
+    const wantClustering = orderMode === 'clustering' && data.sampleIds.length > 1;
+    const ck = metric + '|' + data.sourceFileId + '|' + data.sampleIds.length;
+    let tree = null, order = null;
+    if (!wantClustering) {
+      order = data.sampleIds.slice();
+    } else if (heatCache && heatCache.key === ck) {
+      tree = heatCache.tree; order = heatCache.order;
+    } else if (data.sampleIds.length < 180) {
+      tree = upgma(data.matrix, data.sampleIds);
+      order = leafOrder(tree);
+      heatCache = { key: ck, tree, order };
+    } else {
+      const wait = document.createElement('p');
+      wait.className = 'ql-panel-note';
+      wait.textContent = t('beta.clusteringWait');
+      chartWrap.appendChild(wait);
+      const gen = ++clusterGen;
+      upgmaOrderAsync(data.matrix, data.sampleIds).then((res) => {
+        if (gen !== clusterGen) return; // el usuario cambió de métrica / de ruta
+        heatCache = { key: ck, tree: res.tree, order: res.order };
+        paint();
+      });
+      return;
+    }
+    const clustered = !!tree;
     const idxOf = {};
     data.sampleIds.forEach((id, i) => { idxOf[id] = i; });
 
@@ -508,5 +536,5 @@ export function render(container) {
 
   paint();
   const stop = subscribe(paint);
-  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
+  return () => { stop(); clusterGen++; if (editor) { editor.destroy(); editor = null; } };
 }
