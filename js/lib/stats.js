@@ -441,6 +441,51 @@ export function kruskalWallis(groups) {
   return { H: Hc, df, p };
 }
 
+/**
+ * Corrección de Benjamini-Hochberg (FDR) de un vector de p-valores.
+ * Equivalente a `p.adjust(p, method = "BH")` de R: ordena los p descendentes,
+ * aplica m/i·p con i = m, m-1, …, 1, toma el mínimo acumulado y lo recorta a 1.
+ * Asume p-valores finitos (quien llama filtra los NaN antes).
+ * @param {number[]} pvals
+ * @returns {number[]} q-valores en el orden original
+ */
+export function benjaminiHochberg(pvals) {
+  const m = pvals.length;
+  if (m === 0) return [];
+  const idx = pvals.map((_, i) => i).sort((a, b) => pvals[b] - pvals[a]); // p descendente
+  const adj = new Array(m);
+  let running = Infinity;
+  for (let k = 0; k < m; k++) {
+    const i = idx[k];
+    const rank = m - k; // m, m-1, …, 1
+    running = Math.min(running, (m / rank) * pvals[i]);
+    adj[i] = Math.min(1, running);
+  }
+  return adj;
+}
+
+/**
+ * Delta de Cliff entre dos muestras: δ = (#{x>y} − #{x<y}) / (n_x · n_y).
+ * Rango [−1, 1]; δ > 0 ⇒ `x` tiende a ser mayor que `y`. Es la misma
+ * definición que `effsize::cliff.delta(x, y)` de R (no paramétrico, sin
+ * supuestos de distribución).
+ * @param {number[]} x @param {number[]} y
+ * @returns {number} NaN si algún grupo está vacío
+ */
+export function cliffsDelta(x, y) {
+  const nx = x.length, ny = y.length;
+  if (nx === 0 || ny === 0) return NaN;
+  let gt = 0, lt = 0;
+  for (let i = 0; i < nx; i++) {
+    const xi = x[i];
+    for (let j = 0; j < ny; j++) {
+      if (xi > y[j]) gt++;
+      else if (xi < y[j]) lt++;
+    }
+  }
+  return (gt - lt) / (nx * ny);
+}
+
 // ---------- UPGMA (clustering jerárquico para el mapa de calor beta) ----------
 
 /**

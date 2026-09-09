@@ -380,6 +380,9 @@ svg.ql-brand-mark {
 .ql-health-msg { color: var(--ink); }
 .ql-health-ids { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ink-muted); font-family: var(--font-mono); word-break: break-word; }
 
+/* Panel de biomarcadores (pestaña de barplots) */
+.ql-bm-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
 /* ---------- checklist de datos requeridos ---------- */
 .ql-checklist { display: flex; flex-direction: column; gap: 8px; }
 .ql-check-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }

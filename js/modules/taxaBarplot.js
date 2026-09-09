@@ -2,11 +2,15 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
+import { groupColor } from '../lib/groupBoxplot.js';
+import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP } from '../lib/stats.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 const OTHER_VAR = '--cat-8';
 const TOP_N_DEFAULT = 7, TOP_N_MIN = 3, TOP_N_MAX = 20;
+const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
 
 function shortTaxonName(fullTax) {
   const parts = fullTax.split(';').map((p) => p.trim()).filter(Boolean);
@@ -49,6 +53,9 @@ export function render(container) {
   let sortByGroup = true;
   let groupCol = null;
   let topN = TOP_N_DEFAULT;
+  let view = 'barplot';        // 'barplot' | 'biomarkers'
+  let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
+  let bmSort = { key: 'delta', dir: 'desc' };
   let editor = null;
 
   function paint() {
@@ -70,6 +77,19 @@ export function render(container) {
       return;
     }
 
+    // pestañas: Barplot | Biomarcadores
+    const tabs = document.createElement('div');
+    tabs.className = 'ql-tabs';
+    [['barplot', t('barplots.tabBarplot')], ['biomarkers', t('barplots.tabBiomarkers')]].forEach(([v, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-tab' + (view === v ? ' is-active' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => { if (view !== v) { view = v; paint(); } });
+      tabs.appendChild(b);
+    });
+    container.appendChild(tabs);
+
     const levels = Object.keys(state.taxaBarplot.levels).sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(b));
     if (level === null || !levels.includes(String(level))) level = levels[levels.length - 1];
     const table = state.taxaBarplot.levels[level];
@@ -80,6 +100,8 @@ export function render(container) {
       groupOptions = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
       if (!groupCol && groupOptions.length > 0) groupCol = groupOptions[0];
     }
+
+    if (view === 'biomarkers') { renderBiomarkers(table, levels, groupOptions); return; }
 
     const grid = document.createElement('div');
     grid.className = 'ql-grid-2';
@@ -392,6 +414,336 @@ export function render(container) {
     tbl.appendChild(tbody);
     scrollDiv.appendChild(tbl);
     tableCard.appendChild(scrollDiv);
+  }
+
+  // =========================================================================
+  //  VISTA BIOMARCADORES — inspirada en LEfSe, SIN LDA
+  //  Kruskal-Wallis por taxón → BH (FDR) → grupo enriquecido (mediana más
+  //  alta) → delta de Cliff one-vs-rest como tamaño de efecto (barra).
+  //  Toda la estadística está ya verificada en stats.js.
+  // =========================================================================
+  function renderBiomarkers(table, levels, groupOptions) {
+    // aviso honesto: esto NO es LEfSe
+    const disc = document.createElement('p');
+    disc.className = 'ql-panel-note';
+    disc.style.margin = '0 0 14px';
+    disc.textContent = t('barplots.bmDisclaimer');
+    container.appendChild(disc);
+
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    const chartPanel = document.createElement('section');
+    chartPanel.className = 'ql-card ql-panel';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('barplots.bmChartNote') + '</p>';
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'ql-chartwrap';
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBiomarkers') });
+    const tooltip = document.createElement('div');
+    tooltip.className = 'ql-tooltip';
+    chartWrap.appendChild(svg); chartWrap.appendChild(tooltip);
+    chartPanel.appendChild(chartWrap);
+    grid.appendChild(chartPanel);
+
+    const controls = document.createElement('aside');
+    controls.className = 'ql-card ql-panel';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+
+    // nivel taxonómico (compartido con el barplot)
+    if (levels.length > 1) {
+      const lf = document.createElement('div');
+      lf.className = 'ql-field';
+      lf.innerHTML = '<label>' + t('barplots.levelLabel') + '</label>';
+      const sel = document.createElement('select');
+      levels.forEach((lv) => {
+        const o = document.createElement('option');
+        o.value = lv;
+        o.textContent = t('barplots.level', { n: lv }) + (Number(lv) === 6 ? t('barplots.levelGenus') : Number(lv) === 2 ? t('barplots.levelPhylum') : '');
+        if (String(level) === lv) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => { level = sel.value; paint(); });
+      lf.appendChild(sel);
+      controls.appendChild(lf);
+    }
+
+    // columna de grupo
+    if (groupOptions.length > 0) {
+      const gf = document.createElement('div');
+      gf.className = 'ql-field';
+      gf.innerHTML = '<label>' + t('barplots.groupLabel') + '</label>';
+      const sel = document.createElement('select');
+      groupOptions.forEach((g) => {
+        const o = document.createElement('option'); o.value = g; o.textContent = g;
+        if (g === groupCol) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => { groupCol = sel.value; paint(); });
+      gf.appendChild(sel);
+      controls.appendChild(gf);
+    }
+
+    // umbral q
+    const qf = document.createElement('div');
+    qf.className = 'ql-field';
+    qf.innerHTML = '<label for="bmQ">' + t('barplots.bmQLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="bmQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
+      '<input type="number" id="bmQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>' +
+      '<p class="ql-field-help">' + t('barplots.bmQHelp') + '</p>';
+    controls.appendChild(qf);
+    const qR = qf.querySelector('#bmQr'), qN = qf.querySelector('#bmQ');
+    const applyQ = (v) => { const nv = Math.max(0.0001, Math.min(1, Number(v))); if (isFinite(nv) && nv !== qThresh) { qThresh = nv; paint(); } };
+    qR.addEventListener('input', () => { qN.value = qR.value; });
+    qR.addEventListener('change', () => applyQ(qR.value));
+    qN.addEventListener('change', () => applyQ(qN.value));
+
+    const method = document.createElement('p');
+    method.className = 'ql-field-help';
+    method.style.marginTop = '14px';
+    method.textContent = t('barplots.bmMethod');
+    controls.appendChild(method);
+
+    grid.appendChild(controls);
+    container.appendChild(grid);
+
+    const tableCard = document.createElement('section');
+    tableCard.className = 'ql-card ql-panel';
+    tableCard.style.marginTop = '20px';
+    tableCard.innerHTML = '<h2>' + t('barplots.bmTableTitle') + '</h2>';
+    container.appendChild(tableCard);
+
+    // --- necesitamos metadatos + ≥2 grupos ---
+    if (!state.metadata || !groupCol) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmNeedGroup') + '</p>');
+      return;
+    }
+
+    // --- abundancia relativa (%) por taxón y muestra, agrupada ---
+    const sampleKey = table.headers[0];
+    const abundHeaders = table.headers.filter((h, i) => i !== 0); // taxones + posible "Otros"
+    const taxonHeaders = abundHeaders.filter((h) => !OTHER_COL_RE.test(String(h).trim()));
+    const rowSum = (row) => abundHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
+    const resolveGroup = makeGroupResolver(state.metadata, groupCol);
+
+    const relByTaxon = {}; // taxon -> { group -> number[] }
+    const groupSet = new Set();
+    table.rows.forEach((row) => {
+      const g = resolveGroup(String(row[sampleKey]).trim());
+      if (!g) return;
+      groupSet.add(g);
+      const total = rowSum(row) || 1;
+      taxonHeaders.forEach((h) => {
+        const rel = (parseFloat(row[h]) || 0) / total * 100;
+        const byG = (relByTaxon[h] = relByTaxon[h] || {});
+        (byG[g] = byG[g] || []).push(rel);
+      });
+    });
+    const groups = [...groupSet].sort();
+
+    if (groups.length < 2) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmNeed2Groups') + '</p>');
+      return;
+    }
+
+    // --- Kruskal-Wallis por taxón (solo los presentes en TODOS los grupos) ---
+    const tested = [];
+    taxonHeaders.forEach((h) => {
+      const perGroup = groups.map((g) => relByTaxon[h][g] || []);
+      if (perGroup.some((arr) => arr.length === 0)) return;
+      const kw = kruskalWallis(perGroup);
+      if (!isFinite(kw.p)) return;
+      tested.push({ taxon: h, label: shortTaxonName(h), p: kw.p, perGroup });
+    });
+
+    // --- BH sobre TODOS los p testados ---
+    const q = benjaminiHochberg(tested.map((x) => x.p));
+    tested.forEach((x, i) => { x.q = q[i]; });
+
+    // --- significativos: grupo enriquecido (mediana más alta) + delta de Cliff ---
+    const sig = tested.filter((x) => x.q < qThresh).map((x) => {
+      const medians = x.perGroup.map((arr) => quartiles(arr.slice().sort((a, b) => a - b)).median);
+      let bi = 0;
+      for (let i = 1; i < medians.length; i++) if (medians[i] > medians[bi]) bi = i;
+      const inGroup = x.perGroup[bi];
+      const rest = x.perGroup.filter((_, i) => i !== bi).flat();
+      return { ...x, enrichedGroup: groups[bi], enrichedIdx: bi, delta: cliffsDelta(inGroup, rest) };
+    });
+    sig.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+    chartPanel.insertAdjacentHTML('beforeend',
+      '<p class="ql-field-help" style="margin-top:6px;">' +
+      t('barplots.bmCount', { n: sig.length, total: tested.length, q: qThresh }) + '</p>');
+
+    // --- gráfico: barras horizontales tipo LEfSe ---
+    drawBiomarkerBars(svg, chartPanel, chartWrap, tooltip, sig, groups);
+
+    // --- tabla ordenable ---
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    const cols = [
+      ['label', t('barplots.bmColTaxon')],
+      ['enrichedGroup', t('barplots.bmColGroup')],
+      ['delta', t('barplots.bmColDelta')],
+      ['q', t('barplots.bmColQ')],
+    ];
+    let thead = '<thead><tr>';
+    cols.forEach(([key, lbl]) => {
+      const on = bmSort.key === key;
+      thead += '<th aria-sort="' + (on ? (bmSort.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        '<button type="button" data-sort="' + key + '">' + escapeHtml(lbl) +
+        (on ? ' <span aria-hidden="true">' + (bmSort.dir === 'asc' ? '▲' : '▼') + '</span>' : '') + '</button></th>';
+    });
+    tbl.innerHTML = thead + '</tr></thead>';
+    const tb = document.createElement('tbody');
+    if (sig.length === 0) {
+      tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
+    } else {
+      const dir = bmSort.dir === 'asc' ? 1 : -1;
+      const rows = sig.slice().sort((a, b) => {
+        const av = a[bmSort.key], bv = b[bmSort.key];
+        if (bmSort.key === 'delta') return (Math.abs(av) - Math.abs(bv)) * dir;
+        if (typeof av === 'string') return av.localeCompare(bv) * dir;
+        return (av - bv) * dir;
+      });
+      rows.forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + escapeHtml(r.label) + '</td>' +
+          '<td><span class="ql-bm-swatch" style="background:' + groupColor(r.enrichedIdx) + '"></span>' + escapeHtml(r.enrichedGroup) + '</td>' +
+          '<td class="ql-num tabular">' + r.delta.toFixed(3) + '</td>' +
+          '<td class="ql-num tabular">' + formatP(r.q) + '</td>';
+        tb.appendChild(tr);
+      });
+    }
+    tbl.appendChild(tb);
+    scrollDiv.appendChild(tbl);
+    tableCard.appendChild(scrollDiv);
+    tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-sort');
+        if (bmSort.key === key) bmSort = { key, dir: bmSort.dir === 'asc' ? 'desc' : 'asc' };
+        // por defecto: nombres y q ascendente; δ (efecto) descendente
+        else bmSort = { key, dir: key === 'delta' ? 'desc' : 'asc' };
+        paint();
+      });
+    });
+  }
+
+  function drawBiomarkerBars(svg, mount, chartWrap, tooltip, sig, groups) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (sig.length === 0) {
+      svg.setAttribute('viewBox', '0 0 400 80');
+      const tx = svgEl('text', { x: 200, y: 44, 'text-anchor': 'middle', class: 'ql-axis-label', fill: 'var(--ink-muted)' });
+      tx.textContent = t('barplots.bmNone');
+      svg.appendChild(tx);
+      editor = attachChartEditor({ key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(), elements: [], onReset: () => paint() });
+      return;
+    }
+    const labelChars = Math.max(...sig.map((s) => s.label.length), 8);
+    const marginL = Math.min(240, 26 + Math.min(labelChars, 34) * 6.3);
+    const marginR = 52, marginT = 40;
+    const rowH = 24;
+    const innerW = 380;
+    const barsBottom = marginT + sig.length * rowH;
+
+    // leyenda al pie, envolviendo por filas si no cabe
+    const shown = [...new Set(sig.map((s) => s.enrichedIdx))].sort((a, b) => a - b);
+    const legItems = shown.map((gi) => ({ gi, text: t('barplots.bmEnrichedIn', { group: groups[gi] }) }));
+    const legItemW = (it) => 15 + it.text.length * 6 + 18;
+    let legRows = 1, lx = 0;
+    legItems.forEach((it) => {
+      const w = legItemW(it);
+      if (lx + w > innerW + marginR && lx > 0) { legRows++; lx = 0; }
+      it._x = lx; it._row = legRows - 1; lx += w;
+    });
+
+    const tickY = barsBottom + 15;
+    const axisY = tickY + 16;
+    const legY = axisY + 12;
+    const marginB = (legY - barsBottom) + legRows * 15 + 6;
+    const W = marginL + innerW + marginR;
+    const H = marginT + sig.length * rowH + marginB;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.style.width = '';
+    svg.style.maxWidth = '';
+
+    const maxAbs = Math.max(...sig.map((s) => Math.abs(s.delta)), 0.2);
+    const x = (d) => marginL + (Math.abs(d) / maxAbs) * innerW;
+
+    // rejilla vertical + eje
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const dv = (i / ticks) * maxAbs;
+      const xx = marginL + (i / ticks) * innerW;
+      svg.appendChild(svgEl('line', { x1: xx, x2: xx, y1: marginT - 6, y2: barsBottom, class: 'ql-gridline' }));
+      const tk = svgEl('text', { x: xx, y: tickY, class: 'ql-tick-label', 'text-anchor': 'middle' });
+      tk.textContent = dv.toFixed(2);
+      svg.appendChild(tk);
+    }
+    svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT - 6, y2: barsBottom, class: 'ql-baseline-line' }));
+
+    const axT = svgEl('text', { x: marginL + innerW / 2, y: axisY, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+    axT.textContent = t('barplots.bmAxisDelta');
+    svg.appendChild(axT);
+
+    const barsG = svgEl('g', { 'data-ce': 'bars' });
+    const labelsG = svgEl('g', { 'data-ce': 'labels' });
+    sig.forEach((s, i) => {
+      const y = marginT + i * rowH;
+      const bh = rowH - 8;
+      const w = Math.max(1.5, x(s.delta) - marginL);
+      const rect = svgEl('rect', {
+        x: marginL, y: y + 3, width: w, height: bh, rx: 2,
+        fill: groupColor(s.enrichedIdx), 'fill-opacity': 0.85,
+      });
+      rect.addEventListener('mouseenter', () => {
+        const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
+        tooltip.style.left = ((sr.left - wr.left) + (marginL + w) * (sr.width / W)) + 'px';
+        tooltip.style.top = ((sr.top - wr.top) + (y + rowH / 2) * (sr.height / H)) + 'px';
+        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(s.label) + '</div>' +
+          '<div class="ql-tt-row">' + escapeHtml(t('barplots.bmEnrichedIn', { group: s.enrichedGroup })) +
+          ' · δ = ' + s.delta.toFixed(3) + ' · q = ' + formatP(s.q) + '</div>';
+        tooltip.classList.add('is-show');
+      });
+      rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+      barsG.appendChild(rect);
+
+      const lt = svgEl('text', { x: marginL - 8, y: y + rowH / 2 + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+      lt.textContent = s.label.length > 34 ? s.label.slice(0, 33) + '…' : s.label;
+      labelsG.appendChild(lt);
+
+      const vt = svgEl('text', { x: marginL + w + 5, y: y + rowH / 2 + 3, class: 'ql-tick-label' });
+      vt.textContent = s.delta.toFixed(2);
+      barsG.appendChild(vt);
+    });
+    svg.appendChild(barsG);
+    svg.appendChild(labelsG);
+
+    // leyenda al pie: grupos que aparecen como "enriquecido"
+    const legG = svgEl('g', { 'data-ce': 'legend' });
+    legItems.forEach((it) => {
+      const xx = it._x, yy = it._row * 15;
+      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: groupColor(it.gi) }));
+      const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+      lt.textContent = it.text;
+      legG.appendChild(lt);
+    });
+    legG.setAttribute('transform', 'translate(' + marginL + ',' + legY + ')');
+    svg.appendChild(legG);
+
+    editor = attachChartEditor({
+      key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('barplots.bmTitle'), x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'labels', selector: '[data-ce="labels"]', kind: 'group' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      onReset: () => paint(),
+    });
   }
 
   function showTooltip(sampleId, taxonLabel, val, cx, cy, wrap, svgEl_, W, H, tooltipEl) {
