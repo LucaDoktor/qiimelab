@@ -1,4 +1,4 @@
-// Auditoría móvil/tablet — COMPROBACIÓN REAL. Recorre las 15 rutas a 375px
+// Auditoría móvil/tablet — COMPROBACIÓN REAL. Recorre las 16 rutas a 375px
 // (móvil) y 768px (tablet) y clasifica lo que encuentra:
 //   ROMPE     la página se ensancha más allá del viewport (scroll-x del body /
 //             zoom-out), o un control queda fuera de alcance  → FALLA (exit 1)

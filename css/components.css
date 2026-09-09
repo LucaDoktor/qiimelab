@@ -439,6 +439,22 @@ svg.ql-brand-mark {
 .ql-cmp-rm { border: none; background: none; color: var(--ink-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
 .ql-cmp-rm:hover { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
 .ql-cmp-rm:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ql-cmp-rm:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- calculadora UFC/mL ---------- */
+.ql-ufc-table td { vertical-align: middle; padding: 5px 8px 5px 0; }
+.ql-ufc-table th:first-child, .ql-ufc-table td:first-child { color: var(--ink-muted); font-variant-numeric: tabular-nums; width: 1%; }
+.ql-ufc-in {
+  width: 100%; min-width: 68px; font: inherit; font-size: 12.5px;
+  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--ink);
+}
+.ql-ufc-in:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ql-ufc-table td:nth-child(2) { min-width: 90px; }
+.ql-ufc-table td:nth-child(3), .ql-ufc-table td:nth-child(4) { min-width: 76px; max-width: 110px; }
+.ql-ufc-out { color: var(--ink); white-space: nowrap; }
+.ql-ufc-bad .ql-ufc-out { color: var(--warning); }
+.ql-ufc-bad td:nth-child(4) .ql-ufc-in { border-color: color-mix(in srgb, var(--warning) 55%, var(--border-strong)); }
 
 /* ---------- checklist de datos requeridos ---------- */
 .ql-checklist { display: flex; flex-direction: column; gap: 8px; }

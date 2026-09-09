@@ -5,9 +5,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 14 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 15.
+// 15 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 16.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/recuentos', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
+  '#/recuentos', '#/ufc', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
 
 // carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones + 2 recuentos)
 export const LOAD_ALL = `(async () => {
