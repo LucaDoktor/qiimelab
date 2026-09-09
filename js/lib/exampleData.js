@@ -46,9 +46,10 @@ export function exampleFileLinks(keys) {
       a.href = EXAMPLE_BASE + rel;
       a.download = rel.split('/').pop();
       a.className = 'ql-exdl-link';
+      const fname = rel.split('/').pop();
       a.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>' +
-        '<span>' + rel.split('/').pop() + '</span>';
-      a.title = t(spec.key);
+        '<span>' + fname + '</span>';
+      a.title = fname + ' — ' + t(spec.key);
       list.appendChild(a);
     });
   });
@@ -426,6 +427,7 @@ export function loadRealSequenceQC() {
  */
 export function mountExampleButtons(hostEl, { synthetic, real, realLabel, syntheticLabel, download } = {}) {
   const row = document.createElement('div');
+  row.className = 'ql-example-btns';
   row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;';
   const msg = document.createElement('p');
   msg.className = 'ql-field-help';

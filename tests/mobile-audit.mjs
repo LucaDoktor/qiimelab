@@ -1,12 +1,13 @@
-// Auditoría móvil/tablet — INFORMATIVO, no pasa/falla. Recorre las 14 rutas a
-// 375px (móvil) y 768px (tablet) y clasifica lo que encuentra:
+// Auditoría móvil/tablet — COMPROBACIÓN REAL. Recorre las 14 rutas a 375px
+// (móvil) y 768px (tablet) y clasifica lo que encuentra:
 //   ROMPE     la página se ensancha más allá del viewport (scroll-x del body /
-//             zoom-out), o un control queda fuera de alcance
-//   APRETADO  entra pero muy justo
+//             zoom-out), o un control queda fuera de alcance  → FALLA (exit 1)
+//   APRETADO  entra pero muy justo  → informativo, no falla
 //
 //   node tests/mobile-audit.mjs
 //
-// Siempre sale 0 (o 2 si no hay navegador). Su salida alimenta el informe.
+// El criterio de fallo es claro: ancho de layout > viewport (ratio > 1.04).
+// Sale 1 si alguna ruta ROMPE, 0 si todo cabe, 2 si no hay navegador.
 
 import { ensureServer } from './lib/server.mjs';
 import { connect } from './lib/cdp.mjs';
@@ -87,11 +88,18 @@ try {
   summary.rompe.forEach((s) => console.log('  · ' + s));
   console.log('APRETADO (' + summary.apretado.length + '):');
   summary.apretado.forEach((s) => console.log('  · ' + s));
-  console.log('\n(informativo — no cuenta como fallo del runner)');
-} catch (e) {
-  console.error('EXCEPCIÓN:', e.message);
-} finally {
+
   c.kill();
   if (server.started) server.stop();
+  if (summary.rompe.length) {
+    console.log('\n✗ ' + summary.rompe.length + ' ruta(s) desbordan el viewport');
+    process.exit(1);
+  }
+  console.log('\n✓ ninguna ruta desborda a 375px ni 768px');
+  process.exit(0);
+} catch (e) {
+  console.error('EXCEPCIÓN:', e.message);
+  c.kill();
+  if (server.started) server.stop();
+  process.exit(1);
 }
-process.exit(0);

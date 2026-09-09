@@ -117,6 +117,7 @@ export function render(container) {
       '<p class="ql-field-help" style="margin:0 0 8px;">' + t('upload.exampleIntro') + '</p>';
 
     const realRow = document.createElement('div');
+    realRow.className = 'ql-example-btns';
     realRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;';
     [
       [t('upload.exReal1'), loadRealCommunityData],
@@ -363,7 +364,10 @@ export function render(container) {
           tbody.appendChild(tr);
         });
         tbl.appendChild(tbody);
-        body.appendChild(tbl);
+        const tblScroll = document.createElement('div');
+        tblScroll.className = 'scroll-x';
+        tblScroll.appendChild(tbl);
+        body.appendChild(tblScroll);
       }
 
       if (ft.foot) {

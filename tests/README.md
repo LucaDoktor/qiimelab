@@ -39,7 +39,7 @@ los saltados no cuentan.
 | `stats/chisquare.mjs` | R base | `chiSquarePValue()` vs `pchisq(x, df, lower.tail = FALSE)`. |
 | `stats/benjaminihochberg.mjs` | R base | `benjaminiHochberg()` vs `p.adjust(p, method = "BH")`. |
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
-| `mobile-audit.mjs` | navegador · **informativo** | Recorre las 14 rutas a 375px y 768px y clasifica desbordes (ROMPE / apretado). **No** cuenta como pasa/falla; no está en `run.mjs`. Alimenta la decisión de si merece un bloque de arreglo. |
+| `mobile-audit.mjs` | navegador | Recorre las 14 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
 
 ### Modo de los tests de `stats/`
 

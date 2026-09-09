@@ -259,6 +259,13 @@ svg.ql-brand-mark {
 .ql-grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start; }
 @media (max-width: 880px) { .ql-grid-2 { grid-template-columns: 1fr; } }
 
+/* Sin esto, un contenedor de gráfico con SVG de ancho fijo (barplot, mapa de
+   calor beta, matriz del correlograma) estira el track de grid / la columna
+   principal más allá del viewport y su overflow-x:auto nunca se activa. */
+.ql-main, .ql-stack > *, .ql-grid-2 > *, .ql-card, .ql-panel { min-width: 0; }
+/* botones de "cargar ejemplo": las etiquetas largas envuelven en móvil */
+.ql-example-btns .ql-btn { white-space: normal; }
+
 /* ---------- botones y badges ---------- */
 .ql-btn {
   font: inherit;
@@ -498,6 +505,8 @@ svg.ql-brand-mark {
   border: 1px solid var(--border-strong); background: var(--surface);
   transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background-color var(--dur) var(--ease);
 }
+.ql-exdl-link { max-width: 100%; }
+.ql-exdl-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ql-exdl-link svg { color: var(--accent); flex: none; }
 .ql-exdl-link:hover { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
 .ql-exdl-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -741,11 +750,13 @@ table.ql-table td.ql-num { font-family: var(--font-mono); }
 .ql-pill-ns { background: color-mix(in srgb, var(--neutral) 22%, transparent); color: var(--ink-muted); }
 
 /* ---------- pestañas ---------- */
-.ql-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.ql-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; scrollbar-width: thin; }
 .ql-tab {
+  flex: none;
   border: none; background: none; cursor: pointer;
   font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-muted);
   padding: 9px 4px; margin-right: 18px;
+  white-space: nowrap;
   border-bottom: 2px solid transparent;
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }

@@ -36,6 +36,7 @@ const SUITE = [
   { name: 'sweep-a11y', file: 'sweep-a11y.mjs', kind: 'navegador' },
   { name: 'sweep-session', file: 'sweep-session.mjs', kind: 'navegador' },
   { name: 'sweep-routes', file: 'sweep-routes.mjs', kind: 'navegador' },
+  { name: 'mobile-audit', file: 'mobile-audit.mjs', kind: 'navegador' },
 ];
 
 const filters = process.argv.slice(2);
