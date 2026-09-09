@@ -62,6 +62,9 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
       const groups = [...document.querySelectorAll('.ql-glossary-group')];
       if (!input || entries.length < 20) return bad('filtro o entradas ausentes (' + entries.length + ')');
       if (!entries.every((d) => d.querySelector('summary') && d.querySelector('.ql-fmt-body p'))) bad('algún <details> sin summary o sin definición');
+      const miss = entries.filter((d) => /^(glosario|alpha|beta)\.[a-z]/i.test(d.querySelector('.ql-fmt-name').textContent.trim())
+        || /^(glosario|alpha|beta)\.[a-z]/i.test(d.querySelector('.ql-fmt-body p').textContent.trim()));
+      if (miss.length) bad('término(s) sin clave i18n: ' + miss.map((d) => d.id).join(', '));
       input.value = 'bray-curtis'; input.dispatchEvent(new Event('input'));
       const vis = entries.filter((d) => !d.hidden);
       if (vis.length !== 1 || vis[0].id !== 'glos-bray') bad('filtro "bray-curtis" muestra ' + vis.length + ' [' + vis.map((d) => d.id) + ']');
