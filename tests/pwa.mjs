@@ -104,23 +104,36 @@ try {
   await sleep(2500);
 
   const shell = await c.ev(`(() => ({
-    online: navigator.onLine,
     sidebar: document.querySelectorAll('#sidebar a, #sidebar .ql-nav-item').length,
     mainKids: document.getElementById('app-view').childElementCount,
     footer: !!document.querySelector('.ql-footer-inner'),
     title: document.title,
-    offlineBar: !!document.querySelector('#ql-pwa-bar.is-offline:not([hidden])'),
   }))()`);
-  check('navigator.onLine == false', shell.online === false);
   check('el shell se sirve sin red: sidebar con enlaces', shell.sidebar >= 5, shell.sidebar + ' enlaces');
   check('el shell se sirve sin red: #app-view con contenido', shell.mainKids > 0);
   check('el shell se sirve sin red: footer presente', shell.footer);
   check('document.title correcto', /QiimeLab/.test(shell.title || ''), shell.title);
-  check('aparece el banner "sin conexión"', shell.offlineBar);
 
   const newProblems = c.problems.slice(problemsBefore)
     .filter((p) => !/Failed to load resource|net::ERR|fonts\.(googleapis|gstatic)/.test(p));
   check('sin errores de consola nuevos en la carga offline', newProblems.length === 0, newProblems.join('; '));
+
+  // El banner "sin conexión" reacciona al evento 'offline' del navegador. La
+  // emulación de red de CDP no siempre lo dispara (ni actualiza
+  // navigator.onLine) en headless, así que lo lanzamos a mano y comprobamos
+  // que js/lib/pwa.js reacciona — que es lo que de verdad se quiere verificar.
+  const banner = await c.ev(`(() => {
+    window.dispatchEvent(new Event('offline'));
+    const el = document.querySelector('#ql-pwa-bar.is-offline');
+    return { shown: !!(el && !el.hidden), text: el ? el.textContent : '' };
+  })()`);
+  check('el evento "offline" muestra el banner "sin conexión"', banner.shown, JSON.stringify(banner.text.slice(0, 40)));
+  const hidden = await c.ev(`(() => {
+    window.dispatchEvent(new Event('online'));
+    const el = document.querySelector('#ql-pwa-bar');
+    return !el || el.hidden || !el.classList.contains('is-offline');
+  })()`);
+  check('el evento "online" oculta el banner', hidden);
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;
