@@ -75,12 +75,29 @@ try {
   c.setLabel('exportar + limpiar + importar');
   const imp = await c.ev(`(async () => {
     const { clearAllState, state } = await import('/js/state.js');
-    const { exportSession, importSession } = await import('/js/lib/session.js');
-    const json = JSON.stringify(exportSession());
+    const { exportSession, importSession, describeSession, SCHEMA_VERSION } = await import('/js/lib/session.js');
+    const sess = exportSession();
+    const json = JSON.stringify(sess);
     clearAllState();
     const cleared = { files: state.files.length, taxaCounts: !!state.taxaCounts, diffComparisons: (state.diffComparisons || []).length, microbialCounts: (state.microbialCounts || []).length };
     const res = importSession(JSON.parse(json));
-    return { cleared, res, bytes: json.length };
+
+    // --- versionado del esquema ---
+    const schema = {
+      hasSchemaVersion: sess.schemaVersion === SCHEMA_VERSION,
+      // una sesión SIN campo de versión = esquema 1 heredado, se importa igual
+      noVersionOk: importSession(JSON.parse(JSON.stringify({ ...JSON.parse(json), schemaVersion: undefined, sessionFormat: undefined }))).ok,
+      // una sesión de una versión FUTURA: se importa best-effort + avisa
+      tooNew: (() => {
+        const r = importSession({ ...JSON.parse(json), schemaVersion: 999 });
+        return r.ok && r.warnings.some((w) => /nueva|newer|999/.test(w));
+      })(),
+      describeMigrate: describeSession({ ...JSON.parse(json), schemaVersion: 999 }).tooNew === true,
+    };
+    // dejar el estado como debe quedar (con la sesión buena)
+    clearAllState();
+    importSession(JSON.parse(json));
+    return { cleared, res, bytes: json.length, schema };
   })()`);
   await sleep(600);
 
@@ -98,9 +115,11 @@ try {
   console.log('canarios          :', diffs.length === 0 ? 'idénticos bit a bit' : 'DIFIEREN');
   diffs.forEach((k) => console.log(`  ✗ ${k}: ${JSON.stringify(before[k])} → ${JSON.stringify(after[k])}`));
   console.log('sourceFileId colgados:', after.dangling.length, after.dangling.join(' ') || '');
+  console.log('esquema de sesión :', JSON.stringify(imp.schema));
   console.log('errores de consola  :', c.problems.length ? c.problems.join('\n  ') : '(ninguno)');
 
-  failed = diffs.length > 0 || after.dangling.length > 0 || imp.cleared.taxaCounts || imp.cleared.microbialCounts > 0 || !imp.res.ok || c.problems.length > 0;
+  const schemaOk = imp.schema.hasSchemaVersion && imp.schema.noVersionOk && imp.schema.tooNew && imp.schema.describeMigrate;
+  failed = diffs.length > 0 || after.dangling.length > 0 || imp.cleared.taxaCounts || imp.cleared.microbialCounts > 0 || !imp.res.ok || !schemaOk || c.problems.length > 0;
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;

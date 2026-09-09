@@ -2,7 +2,7 @@ import { state, subscribe, registerFile, removeFile } from '../state.js';
 import { t } from '../lib/i18n.js';
 import { ingestFile } from '../lib/ingest.js';
 import { routeResultToState } from '../lib/route.js';
-import { exportSession, importSession, describeSession, sessionFilename } from '../lib/session.js';
+import { exportSession, importSession, describeSession, sessionFilename, SCHEMA_VERSION } from '../lib/session.js';
 import { openConfirm } from '../lib/modal.js';
 import { checkDataHealth } from '../lib/dataHealth.js';
 import {
@@ -270,8 +270,11 @@ export function render(container) {
       try { parsed = JSON.parse(await file.text()); }
       catch (e) { lastWarnings = [t('session.badFile')]; paint(); return; }
       const info = describeSession(parsed);
+      let fmtNote = '';
+      if (info.tooNew) fmtNote = t('session.confirmTooNew', { fmt: escapeHtml(String(info.schemaVersion)) });
+      else if (info.willMigrate) fmtNote = t('session.confirmMigrate', { fmt: escapeHtml(String(info.schemaVersion)), cur: SCHEMA_VERSION });
       const bodyHtml = '<p>' + t('session.confirmBody', { files: info.files, slots: info.slots }) + '</p>' +
-        (info.formatMismatch ? '<p class="ql-field-help">' + t('session.confirmFormat', { fmt: escapeHtml(String(info.format)) }) + '</p>' : '');
+        (fmtNote ? '<p class="ql-field-help">' + fmtNote + '</p>' : '');
       const go = await openConfirm({
         title: t('session.confirmTitle'),
         bodyHtml,

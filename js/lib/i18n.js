@@ -302,6 +302,8 @@ const DICTS = {
       confirmTitle: 'Cargar sesión',
       confirmBody: 'Esto reemplaza por completo la sesión actual: {files} archivo(s) y {slots} módulo(s) con datos. Lo que tengas cargado ahora se pierde.',
       confirmFormat: 'La sesión está en formato {fmt} y esta versión usa otro; se restaurará lo que case por nombre.',
+      confirmMigrate: 'La sesión es de un esquema anterior (v{fmt}); se migrará al actual (v{cur}) al cargarla.',
+      confirmTooNew: 'La sesión es de una versión de QiimeLab más nueva (esquema v{fmt}); se restaurará lo que case por nombre.',
       confirmYes: 'Reemplazar sesión',
     },
     exdl: {
@@ -1101,6 +1103,8 @@ const DICTS = {
       confirmTitle: 'Load session',
       confirmBody: 'This fully replaces the current session: {files} file(s) and {slots} module(s) with data. Whatever you have loaded now is lost.',
       confirmFormat: 'The session is in format {fmt} and this version uses a different one; what matches by name will be restored.',
+      confirmMigrate: 'The session uses an older schema (v{fmt}); it will be migrated to the current one (v{cur}) on load.',
+      confirmTooNew: 'The session is from a newer QiimeLab version (schema v{fmt}); what matches by name will be restored.',
       confirmYes: 'Replace session',
     },
     exdl: {
