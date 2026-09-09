@@ -368,6 +368,18 @@ svg.ql-brand-mark {
 .ql-file-row button { border: none; background: none; color: var(--ink-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; }
 .ql-file-row button:hover { color: var(--critical); }
 
+/* Salud de los datos (tarjeta de #/cargar) */
+.ql-health-ok { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--ink-2); }
+.ql-health-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+.ql-health-item { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; line-height: 1.5; }
+.ql-health-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: var(--ink-muted); }
+.ql-health-dot.is-good { background: var(--good); }
+.ql-health-dot.is-error { background: var(--critical); }
+.ql-health-dot.is-warning { background: var(--warning); }
+.ql-health-dot.is-info { background: var(--ink-muted); }
+.ql-health-msg { color: var(--ink); }
+.ql-health-ids { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ink-muted); font-family: var(--font-mono); word-break: break-word; }
+
 /* ---------- checklist de datos requeridos ---------- */
 .ql-checklist { display: flex; flex-direction: column; gap: 8px; }
 .ql-check-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
