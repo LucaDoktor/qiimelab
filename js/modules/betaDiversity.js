@@ -1,6 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { upgma, leafOrder } from '../lib/stats.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 
@@ -50,21 +51,6 @@ function metricExplainEl(name) {
   p.className = 'ql-metric-explain';
   p.innerHTML = '<strong>' + escapeHtml(String(name)) + '.</strong> ' + escapeHtml(txt);
   return p;
-}
-
-// muestra → grupo, tolerante a sufijos (A-1 ↔ A-1-16S-…)
-function groupResolver(meta, groupCol) {
-  const map = {};
-  meta.rows.forEach((r) => {
-    const id = String(r[meta.sampleIdKey] ?? '').trim();
-    const g = String(r[groupCol] ?? '').trim();
-    if (id && g) map[id] = g;
-  });
-  return (sid) => {
-    if (map[sid] != null) return map[sid];
-    const hit = Object.keys(map).find((k) => sid.startsWith(k) || k.startsWith(sid));
-    return hit ? map[hit] : null;
-  };
 }
 
 export function render(container) {
@@ -333,7 +319,7 @@ export function render(container) {
 
     const groupOptions = state.metadata ? state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey) : [];
     if (state.metadata && (!pcoaGroupCol || !groupOptions.includes(pcoaGroupCol))) pcoaGroupCol = groupOptions[0] || null;
-    const resolve = (state.metadata && pcoaGroupCol) ? groupResolver(state.metadata, pcoaGroupCol) : null;
+    const resolve = (state.metadata && pcoaGroupCol) ? makeGroupResolver(state.metadata, pcoaGroupCol) : null;
 
     const groupOf = {};
     ord.sampleIds.forEach((s) => { groupOf[s] = resolve ? resolve(s) : null; });

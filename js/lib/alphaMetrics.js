@@ -15,6 +15,7 @@
 
 import { state } from '../state.js';
 import { t } from './i18n.js';
+import { makeGroupResolver } from './sampleMatch.js';
 import {
   shannonIndex, simpsonIndex, pielouEvenness, observedRichness, chao1,
   incidenceRichnessEstimators,
@@ -127,21 +128,6 @@ export function collectAlphaMetrics() {
   return list;
 }
 
-// muestra → grupo, tolerante a sufijos en los IDs (A-1 ↔ A-1-16S-…)
-function groupResolver(meta, groupCol) {
-  const map = {};
-  meta.rows.forEach((r) => {
-    const id = String(r[meta.sampleIdKey] ?? '').trim();
-    const g = String(r[groupCol] ?? '').trim();
-    if (id && g) map[id] = g;
-  });
-  return (sid) => {
-    if (map[sid] != null) return map[sid];
-    const hit = Object.keys(map).find((k) => sid.startsWith(k) || k.startsWith(sid));
-    return hit ? map[hit] : null;
-  };
-}
-
 export const RICHNESS_ESTIMATORS = [
   { key: 'sObs', label: 'S obs.', ex: 'alpha.exSobsGroup' },
   { key: 'chao2', se: 'chao2SE', label: 'Chao2', ex: 'alpha.exChao2' },
@@ -162,7 +148,7 @@ export function groupRichnessEstimators(groupCol) {
   // matriz taxón-mayor: taxa[t][s]
   const taxa = tc.rows.map((r) => sampleCols.map((s) => parseFloat(r[s]) || 0));
 
-  const resolve = groupResolver(state.metadata, groupCol);
+  const resolve = makeGroupResolver(state.metadata, groupCol);
   const groups = {};
   sampleCols.forEach((s, si) => {
     const g = resolve(s);

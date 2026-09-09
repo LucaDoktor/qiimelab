@@ -14,6 +14,7 @@ import { t, getLang } from '../lib/i18n.js';
 import { formatP } from '../lib/stats.js';
 import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealFunctionalWithMeta, mountExampleButtons, exampleDownloadBlock } from '../lib/exampleData.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 
@@ -26,21 +27,6 @@ function svgEl(tag, attrs) {
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-// muestra → grupo, tolerante a sufijos en los IDs
-function groupResolver(meta, groupCol) {
-  const map = {};
-  meta.rows.forEach((r) => {
-    const id = String(r[meta.sampleIdKey] ?? '').trim();
-    const g = String(r[groupCol] ?? '').trim();
-    if (id && g) map[id] = g;
-  });
-  return (sid) => {
-    if (map[sid] != null) return map[sid];
-    const hit = Object.keys(map).find((k) => sid.startsWith(k) || k.startsWith(sid));
-    return hit ? map[hit] : null;
-  };
 }
 
 // { moduleNames, scoresByModule: { [mod]: { [sample]: pct } }, kosInTable: { [mod]: string[] }, moduleKOs: { [mod]: string[] } }
@@ -262,7 +248,7 @@ export function render(container) {
 
     // ---- construir grupos ----
     const scores = scoresByModule[moduleName];
-    const resolve = groupResolver(state.metadata, groupCol);
+    const resolve = makeGroupResolver(state.metadata, groupCol);
     const groupNames = [];
     const groupData = {};
     const perSample = [];

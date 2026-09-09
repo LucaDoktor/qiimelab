@@ -2,6 +2,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP, rarefactionCurve } from '../lib/stats.js';
 import { drawGroupBoxplot, groupColor } from '../lib/groupBoxplot.js';
+import { matchSampleId, makeGroupResolver } from '../lib/sampleMatch.js';
 import {
   collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS, countVectors,
 } from '../lib/alphaMetrics.js';
@@ -183,9 +184,8 @@ export function render(container) {
     // resolutor tolerante a sufijos (A-1 ↔ A-1-16S-…)
     const metaKeys = Object.keys(metaByKey);
     const resolveMeta = (sid) => {
-      if (metaByKey[sid]) return metaByKey[sid];
-      const hit = metaKeys.find((k) => sid.startsWith(k) || k.startsWith(sid));
-      return hit ? metaByKey[hit] : undefined;
+      const k = matchSampleId(metaKeys, sid);
+      return k == null ? undefined : metaByKey[k];
     };
 
     const groupNames = [];
@@ -329,18 +329,9 @@ export function render(container) {
     if (state.metadata && (!groupCol || !groupOptions.includes(groupCol))) groupCol = groupOptions[0] || null;
 
     // muestra → grupo (tolerante a sufijos)
-    let resolveGroup = () => null;
-    if (state.metadata && groupCol) {
-      const map = {};
-      state.metadata.rows.forEach((r) => {
-        const id = String(r[state.metadata.sampleIdKey] ?? '').trim();
-        const g = String(r[groupCol] ?? '').trim();
-        if (id && g) map[id] = g;
-      });
-      const keys = Object.keys(map);
-      resolveGroup = (sid) => (map[sid] != null ? map[sid]
-        : (keys.find((k) => sid.startsWith(k) || k.startsWith(sid)) ? map[keys.find((k) => sid.startsWith(k) || k.startsWith(sid))] : null));
-    }
+    const resolveGroup = (state.metadata && groupCol)
+      ? makeGroupResolver(state.metadata, groupCol)
+      : () => null;
 
     const { sampleIds, vectors } = countVectors(state.taxaCounts);
     const curves = sampleIds

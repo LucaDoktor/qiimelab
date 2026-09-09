@@ -6,6 +6,7 @@
 
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealCounts, loadExampleCounts, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 
@@ -172,19 +173,8 @@ export function render(container) {
       return;
     }
 
-    // --- muestra → grupo ---
-    const sampleGroup = {};
-    meta.rows.forEach((r) => {
-      const id = String(r[meta.sampleIdKey] ?? '').trim();
-      const g = String(r[groupCol] ?? '').trim();
-      if (id && g) sampleGroup[id] = g;
-    });
-    // emparejado tolerante a sufijos (A-1 ↔ A-1-16S-…)
-    const resolveGroup = (sampleId) => {
-      if (sampleGroup[sampleId] != null) return sampleGroup[sampleId];
-      const hit = Object.keys(sampleGroup).find((k) => sampleId.startsWith(k) || k.startsWith(sampleId));
-      return hit ? sampleGroup[hit] : null;
-    };
+    // --- muestra → grupo (emparejado tolerante a sufijos: A-1 ↔ A-1-16S-…) ---
+    const resolveGroup = makeGroupResolver(meta, groupCol);
 
     const groupOf = {};
     let matched = 0;

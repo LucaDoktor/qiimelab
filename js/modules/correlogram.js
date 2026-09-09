@@ -16,6 +16,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
+import { matchSampleId } from '../lib/sampleMatch.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
@@ -42,11 +43,8 @@ const OTHER_RE = /^(others?|otros?|resto)$/i;
 
 // muestra → valor, tolerante a sufijos en los IDs (A-1 ↔ A-1-16S-…)
 function resolve(vmap, sid) {
-  if (vmap.has(sid)) return vmap.get(sid);
-  for (const k of vmap.keys()) {
-    if (sid.startsWith(k) || k.startsWith(sid)) return vmap.get(k);
-  }
-  return undefined;
+  const k = matchSampleId(vmap.keys(), sid);
+  return k == null ? undefined : vmap.get(k);
 }
 
 // --- recolectar variables numéricas de lo que haya en el estado ---
