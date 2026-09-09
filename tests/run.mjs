@@ -30,6 +30,7 @@ const SUITE = [
   { name: 'stats/chisquare', file: 'stats/chisquare.mjs', kind: 'R' },
   { name: 'stats/benjaminihochberg', file: 'stats/benjaminihochberg.mjs', kind: 'R' },
   { name: 'stats/cliffsdelta', file: 'stats/cliffsdelta.mjs', kind: 'R' },
+  { name: 'stats/countsummary', file: 'stats/countsummary.mjs', kind: 'R' },
   { name: 'keyboard-editor', file: 'keyboard-editor.mjs', kind: 'navegador' },
   { name: 'session-ui', file: 'session-ui.mjs', kind: 'navegador' },
   { name: 'compare-overlap', file: 'compare-overlap.mjs', kind: 'navegador' },

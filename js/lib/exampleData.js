@@ -32,6 +32,8 @@ export const EXAMPLE_FILES = {
   kolist: { paths: ['funcional-picrust2/KOlist.csv'], key: 'exdl.kolist' },
   koabund: { paths: ['funcional-picrust2/KO_pred_metagenome_unstrat.tsv.gz'], key: 'exdl.koabund' },
   fastq: { paths: ['qc/muestra_ejemplo_R1.fastq.gz', 'qc/muestra_ejemplo_R2.fastq.gz'], key: 'exdl.fastq' },
+  recuentosPlaca: { paths: ['recuentos/recuento_placa_ejemplo.csv'], key: 'exdl.recuentosPlaca' },
+  recuentosNMP: { paths: ['recuentos/recuento_nmp_ejemplo.csv'], key: 'exdl.recuentosNMP' },
 };
 
 /** Solo la lista de enlaces de descarga (sin encabezado ni borde). */
@@ -408,6 +410,26 @@ export function loadExampleCounts() {
 /** Coordenadas PCoA ya calculadas (ordination.txt de scikit-bio). */
 export function loadRealOrdination() {
   return ingestMany([['pcoa/bray_curtis_ordination.txt', 'Ejemplo real — PCoA Bray-Curtis (ordination.txt)']]);
+}
+
+// ---- recuento microbiano (SINTÉTICO: cifras y nombres 100% inventados,
+//      mulberry32 con semilla fija; ver datos-ejemplo/recuentos/) ----
+
+/** Recuento en placa: 3 organismos (UFC/mL), 3 puntos × 2 grupos × 2 tiempos ×
+ *  3 réplicas. Trae una celda #NUM! a propósito (fórmula rota) para ver el
+ *  aviso de valores descartados. */
+export function loadExampleMicrobialCountsPlate() {
+  return ingestMany([
+    ['recuentos/recuento_placa_ejemplo.csv', 'Ejemplo sintético — recuento en placa (UFC/mL, réplicas en filas)'],
+  ]);
+}
+
+/** Recuento por NMP: coliformes y E. coli (NMP/mL ya resuelto por el
+ *  "laboratorio"). A un grupo le falta una réplica (tubo perdido). */
+export function loadExampleMicrobialCountsMPN() {
+  return ingestMany([
+    ['recuentos/recuento_nmp_ejemplo.csv', 'Ejemplo sintético — recuento por NMP (NMP/mL, réplicas en filas)'],
+  ]);
 }
 
 /** Par de FASTQ 16S reales (submuestra anonimizada, R1 + R2) para el módulo de QC. */

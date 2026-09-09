@@ -5,11 +5,11 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 13 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 14.
+// 14 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 15.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
+  '#/recuentos', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
 
-// carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones)
+// carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones + 2 recuentos)
 export const LOAD_ALL = `(async () => {
   const m = await import('/js/lib/exampleData.js');
   await m.loadRealCommunityData();
@@ -18,6 +18,8 @@ export const LOAD_ALL = `(async () => {
   await m.loadRealSequenceQC();
   m.loadExampleCounts && m.loadExampleCounts();
   if (m.loadRealDiffComparisons) await m.loadRealDiffComparisons();
+  if (m.loadExampleMicrobialCountsPlate) await m.loadExampleMicrobialCountsPlate();
+  if (m.loadExampleMicrobialCountsMPN) await m.loadExampleMicrobialCountsMPN();
 })()`;
 
 export async function waitQC(c) {
@@ -36,6 +38,7 @@ const TABS_FOR = {
   '#/barplots': ['Biomarc', 'Barplot'],
   '#/diferencial': ['Comparar', 'Lollipop', 'calor', 'Volcano', 'Individual'],
   '#/correlograma': ['Red', 'Matriz'],
+  '#/recuentos': ['Coliformes', 'Aerobios'],
 };
 
 export async function walkRoute(c, route, { report = false, onInfo = () => {} } = {}) {

@@ -41,6 +41,7 @@ barra lateral).
 | **Diversidad alfa** | vector de diversidad alfa + metadatos | Boxplot por grupo + test de Kruskal-Wallis |
 | **Diversidad beta** | matriz de distancias (`.qza` o `.tsv`) | Mapa de calor ordenado por dendrograma UPGMA |
 | **Abundancia diferencial** | tabla tipo DESeq2 / ANCOM-BC | Volcano plot interactivo + generador de script de R |
+| **Recuentos microbianos** | recuento de laboratorio (placa UFC/mL, NMP/mL) con réplicas en filas | Agrupa réplicas, promedia en log10, barras con barra de error ±SD / ±SE |
 | **Venn / UpSet** | tabla de conteos taxón × muestra + metadatos | Taxones compartidos y exclusivos entre grupos (Venn hasta 4 grupos, UpSet 5+) |
 | **Control de calidad (FASTQ)** | `.fastq` / `.fq` / `.fastq.gz` / `.fq.gz` | Informe estilo FastQC: calidad por posición, composición de bases, %GC, duplicación, sobrerrepresentadas, adaptadores, tabla comparativa multi-muestra |
 
@@ -139,14 +140,15 @@ qiimelab/
     │   ├── chartEditor.js       # personalizar/arrastrar textos + exportar SVG/PNG
     │   ├── groupBoxplot.js      # boxplot por grupo + Kruskal-Wallis (alfa y funcional)
     │   ├── motif.js             # motivo SVG del hero (dendrograma + puntos)
+    │   ├── countStats.js        # recuento microbiano: media/SD/SE en log10 por grupo
     │   └── exampleData.js       # cargadores de ejemplo (sintéticos y reales)
     ├── workers/
     │   ├── fastqWorker.js       # análisis FASTQ fuera del hilo de la UI
     │   └── statsWorker.js       # UPGMA + curvas de rarefacción fuera del hilo de la UI
     └── modules/                 # un archivo por módulo (shell, home, upload,
         │                        # taxaBarplot, alphaDiversity, betaDiversity,
-        │                        # differentialAbundance, venn, correlogram,
-        │                        # functional, sequenceQC, recursos)
+        │                        # differentialAbundance, microbialCounts, venn,
+        │                        # correlogram, functional, sequenceQC, recursos)
 ```
 
 ## Recursos (`recursos/`)

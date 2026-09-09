@@ -36,7 +36,7 @@ for (const dark of [false, true]) {
 
     console.log(`\n===== ${themeName} =====`);
     if (findings.length === 0 && c.problems.length === 0) {
-      console.log('  0 hallazgos de accesibilidad en las 13 rutas');
+      console.log('  0 hallazgos de accesibilidad en las 14 rutas');
     } else {
       failed = true;
       findings.forEach(([r, b]) => console.log('  ' + r + ':\n    - ' + b.join('\n    - ')));

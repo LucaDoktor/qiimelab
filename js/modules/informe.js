@@ -24,6 +24,7 @@ const REPORT_MODULES = [
   { id: 'alfa', file: 'alphaDiversity.js', navKey: 'nav.alpha', has: () => (!!state.alphaDiversity || !!state.taxaCounts) && !!state.metadata },
   { id: 'beta', file: 'betaDiversity.js', navKey: 'nav.beta', has: () => !!state.betaDiversity || !!state.ordination },
   { id: 'diferencial', file: 'differentialAbundance.js', navKey: 'nav.differential', has: () => !!state.differentialAbundance },
+  { id: 'recuentos', file: 'microbialCounts.js', navKey: 'nav.recuentos', has: () => Array.isArray(state.microbialCounts) && state.microbialCounts.length > 0 },
   { id: 'venn', file: 'venn.js', navKey: 'nav.venn', has: () => !!state.taxaCounts && !!state.metadata },
   { id: 'correlograma', file: 'correlogram.js', navKey: 'nav.correlograma', has: () => !!state.metadata && (!!state.taxaBarplot || !!state.taxaCounts || !!state.alphaDiversity) },
   { id: 'funcional', file: 'functional.js', navKey: 'nav.funcional', has: () => !!state.functionalKO && !!state.functionalCategories && !!state.metadata },

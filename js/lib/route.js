@@ -3,13 +3,14 @@
 // de ejemplo (exampleData.js), para que ambos caminos hagan exactamente lo
 // mismo con cada tipo de archivo.
 
-import { state, setSlot, addAlphaMetric, addBetaMetric, addTaxaBarplotLevel, addSequenceQC } from '../state.js';
+import { state, setSlot, addAlphaMetric, addBetaMetric, addTaxaBarplotLevel, addSequenceQC, addMicrobialCountSeries } from '../state.js';
 
 export const KIND_LABELS = {
   metadata: 'Metadatos',
   taxonomy: 'Taxonomía',
   taxaBarplotLevel: 'Barplot taxonómico',
   taxaCounts: 'Conteos taxón × muestra',
+  microbialCounts: 'Recuento microbiano (placa / NMP)',
   alphaDiversity: 'Diversidad alfa',
   betaDiversity: 'Diversidad beta',
   differentialAbundance: 'Abundancia diferencial',
@@ -73,6 +74,34 @@ export function routeResultToState(fileId, result) {
     case 'taxaCounts':
       setSlot('taxaCounts', { sourceFileId: fileId, headers: result.headers, rows: result.rows, taxonKey: result.taxonKey });
       return 'Conteos taxón × muestra (' + result.rows.length + ' taxones × ' + (result.headers.length - 1) + ' muestras)';
+
+    case 'microbialCounts': {
+      // una serie por columna de valor (varios organismos en la misma tabla)
+      const fileEntry = state.files.find((f) => f.id === fileId);
+      const fbase = (fileEntry && fileEntry.name ? fileEntry.name : 'recuento').replace(/\.[^.]+$/, '');
+      const cols = (result.valueCols && result.valueCols.length) ? result.valueCols : [result.valueCol];
+      const generic = /^(valor|value|count|counts|recuento|log|log10|dato|resultado)$/i;
+      cols.forEach((vc, k) => {
+        const rawLabel = String(result.headers[vc] || '').trim();
+        const label = (!rawLabel || generic.test(rawLabel.replace(/[^a-z0-9]/gi, '')))
+          ? (cols.length > 1 ? fbase + ' — ' + (rawLabel || ('serie ' + (k + 1))) : fbase)
+          : rawLabel;
+        addMicrobialCountSeries({
+          label,
+          sourceFileId: fileId,
+          headers: result.headers,
+          rows: result.rows,
+          mapping: {
+            groupCols: (result.groupCols || []).slice(),
+            valueCol: vc,
+            dilutionCol: result.dilutionCol != null ? result.dilutionCol : null,
+            alreadyLog: !!result.alreadyLog,
+          },
+        });
+      });
+      return 'Recuento microbiano — ' + cols.length + (cols.length === 1 ? ' organismo' : ' organismos') +
+        ' × ' + result.rows.length + ' filas';
+    }
 
     case 'functionalKO':
       setSlot('functionalKO', { sourceFileId: fileId, headers: result.headers, rows: result.rows, koKey: result.koKey });

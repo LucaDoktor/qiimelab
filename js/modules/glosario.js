@@ -67,6 +67,14 @@ const GLOSSARY = [
     terms: [
       { id: 'kruskal', def: 'alpha.kwHelp' },
       { id: 'cliff', route: 'barplots' },
+      { id: 'sdvsse', route: 'recuentos' },
+    ],
+  },
+  {
+    title: 'glosario.g5',
+    terms: [
+      { id: 'microbialCounts', route: 'recuentos' },
+      { id: 'mpn', route: 'recuentos' },
     ],
   },
 ];
@@ -74,7 +82,7 @@ const GLOSSARY = [
 const ROUTE_NAV = {
   barplots: 'nav.barplots', alfa: 'nav.alpha', beta: 'nav.beta',
   diferencial: 'nav.differential', venn: 'nav.venn', correlograma: 'nav.correlograma',
-  funcional: 'nav.funcional', qc: 'nav.qc', cargar: 'nav.upload',
+  funcional: 'nav.funcional', qc: 'nav.qc', cargar: 'nav.upload', recuentos: 'nav.recuentos',
 };
 
 // normaliza para el filtro: minúsculas y sin diacríticos

@@ -15,6 +15,7 @@ export const SLOT_LABELS = {
   functionalCategories: 'Lista de KOs por módulo funcional',
   ordination: 'Ordenación PCoA (ordination.txt)',
   sequenceQC: 'Archivos FASTQ para control de calidad',
+  microbialCounts: 'Recuentos microbianos (placa / NMP)',
 };
 
 export const state = {
@@ -31,6 +32,7 @@ export const state = {
   ordination: null, // { sourceFileId, metricName, sampleIds, coords: number[][], proportionExplained: number[], eigvals: number[] }
   sequenceQC: [], // [{ sourceFileId, name, report }] — informes de calidad FASTQ (varios archivos)
   diffComparisons: [], // [{ id, label, sourceFileId, headers, rows, mapping:{taxon,lfc,padj}, entityType }] — varias tablas de abundancia diferencial a la vez (vista "Comparar varias"); NO toca el slot único differentialAbundance
+  microbialCounts: [], // [{ id, label, sourceFileId, headers, rows, mapping:{groupCols:[], valueCol, dilutionCol, alreadyLog} }] — series de recuento microbiano (placa/NMP); una serie por organismo (columna de valor) o por archivo
 };
 
 const listeners = new Set();
@@ -69,6 +71,7 @@ export function clearAllState() {
   SLOT_KEYS.forEach((k) => { state[k] = null; });
   state.sequenceQC = [];
   state.diffComparisons = [];
+  state.microbialCounts = [];
   nextFileId = 1;
   // sin notify() — quien llama decide cuándo avisar
 }
@@ -90,6 +93,9 @@ export function removeFile(id) {
   }
   if (Array.isArray(state.diffComparisons)) {
     state.diffComparisons = state.diffComparisons.filter((cmp) => cmp.sourceFileId !== id);
+  }
+  if (Array.isArray(state.microbialCounts)) {
+    state.microbialCounts = state.microbialCounts.filter((s) => s.sourceFileId !== id);
   }
   if (state.alphaDiversity) {
     for (const key of Object.keys(state.alphaDiversity.metrics)) {
@@ -151,5 +157,21 @@ export function updateDiffComparison(id, patch) {
 }
 export function removeDiffComparison(id) {
   state.diffComparisons = (state.diffComparisons || []).filter((c) => c.id !== id);
+  notify();
+}
+
+let nextSeriesId = 1;
+/** Añade una serie de recuento microbiano (un organismo). */
+export function addMicrobialCountSeries(entry) {
+  if (!Array.isArray(state.microbialCounts)) state.microbialCounts = [];
+  state.microbialCounts.push({ id: 'mc' + nextSeriesId++, ...entry });
+  notify();
+}
+export function updateMicrobialCountSeries(id, patch) {
+  state.microbialCounts = (state.microbialCounts || []).map((s) => (s.id === id ? { ...s, ...patch } : s));
+  notify();
+}
+export function removeMicrobialCountSeries(id) {
+  state.microbialCounts = (state.microbialCounts || []).filter((s) => s.id !== id);
   notify();
 }

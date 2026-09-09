@@ -12,6 +12,7 @@ const MODULES_INFO = [
   { route: 'alfa', qKey: 'home.q.alfa', nameKey: 'nav.alpha', descKey: 'modules.alpha.desc', glos: 'alphaDiv' },
   { route: 'beta', qKey: 'home.q.beta', nameKey: 'nav.beta', descKey: 'modules.beta.desc', glos: 'betaDiv' },
   { route: 'diferencial', qKey: 'home.q.diferencial', nameKey: 'nav.differential', descKey: 'modules.differential.desc', glos: 'diffAbund' },
+  { route: 'recuentos', qKey: 'home.q.recuentos', nameKey: 'nav.recuentos', descKey: 'modules.recuentos.desc', glos: 'sd' },
   { route: 'venn', qKey: 'home.q.venn', nameKey: 'nav.venn', descKey: 'modules.venn.desc', glos: 'venn' },
   { route: 'correlograma', qKey: 'home.q.correlograma', nameKey: 'nav.correlograma', descKey: 'modules.correlograma.desc', glos: 'correlation' },
   { route: 'funcional', qKey: 'home.q.funcional', nameKey: 'nav.funcional', descKey: 'modules.funcional.desc', glos: 'kegg' },
@@ -52,7 +53,8 @@ export function render(container) {
     cta.className = 'ql-card ql-panel';
     const anyData = state.metadata || state.taxonomy || state.taxaBarplot || state.alphaDiversity ||
       state.betaDiversity || state.differentialAbundance || state.taxaCounts ||
-      (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0);
+      (Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0) ||
+      (Array.isArray(state.microbialCounts) && state.microbialCounts.length > 0);
     cta.innerHTML = anyData
       ? '<h2>' + t('home.ctaLoadedTitle') + '</h2><p class="ql-panel-note">' + t('home.ctaLoadedNote') + '</p>'
       : '<h2>' + t('home.ctaEmptyTitle') + '</h2><p class="ql-panel-note">' + t('home.ctaEmptyNote') + '</p>';

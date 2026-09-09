@@ -17,6 +17,18 @@ const LFC_KEYS = ['log2foldchange', 'log2fc', 'lfc', 'logfc', 'log2foldchg', 'fo
 const PADJ_KEYS = ['padj', 'pvaladj', 'qvalue', 'qval', 'fdr', 'adjpval', 'adjustedpvalue', 'padjusted', 'pvaladjusted'];
 // cabeceras que marcan la columna "resto agregado" de una tabla de abundancia relativa
 const OTHERS_HEADER_KEYS = ['others', 'otros', 'other', 'resto'];
+// --- recuento microbiano (placa / NMP) ---
+// nombre de columna que deja claro que es un recuento de microorganismos. Solo
+// términos de MÉTODO o de GRUPO FUNCIONAL (UFC, NMP, aerobios, coliformes,
+// mohos…) — NADA de nombres de género/familia (Clostridium, Lactobacillus…),
+// que aparecen como columnas en un barplot taxonómico.
+const MICROBIAL_COUNT_STRONG = /(ufc|cfu|nmp|mpn|aerobi|coliform|mesofil|psicrofil|termofil|mohos|levadur|colonyforming|platecount|viablecount|numeromasprobable|mostprobablenumber|recuento)/;
+// nombre genérico de "columna de valor" — solo cuenta como recuento con más pistas
+const MICROBIAL_COUNT_WEAK = ['count', 'counts', 'valor', 'value', 'log', 'log10', 'logufc', 'logcfu', 'lognmp', 'recuento'];
+// columna de factor de dilución (para el par Recuento + Dilución)
+const DILUTION_RE = /^(factor)?(de)?diluc|dilution|^fd$/;
+// columna que solo marca el número de réplica (NO es una variable de agrupación)
+const REPLICATE_RE = /^(replica|replicas|repeticion|repeticiones|replicate|replicates|rep|reps|repl)$/;
 // nombres de nivel taxonómico (QIIME2 numera: 1=reino … 7=especie)
 const LEVEL_NAME_TO_NUMBER = [
   [/(^|[^a-z])(dominio|domain|reino|kingdom)([^a-z]|$)/, 1],
@@ -104,6 +116,13 @@ export function classifyTable(headers, rows, fileNameHint) {
     // "feature" falso.
     return { kind: 'taxonomy', headers, rows: stripQ2TypesRow(headers, rows) };
   }
+
+  // --- recuento microbiano (placa UFC/mL, NMP/mL): columnas de agrupación +
+  //     columna(s) de valor con nombre de recuento, o par Recuento + Dilución.
+  //     Antes que "diversidad alfa" para que una tabla «Grupo, UFC/mL» no se
+  //     lea como un vector de alfa. ---
+  const microbial = classifyMicrobialCounts(headers, rows);
+  if (microbial) return microbial;
 
   // --- diversidad alfa: 2 columnas, primera vacía/id, segunda numérica ---
   if (headers.length === 2) {
@@ -272,6 +291,12 @@ export function diagnoseTable(headers, rows, fileNameHint) {
     }
   }
 
+  // 4b. recuento microbiano: cabecera de recuento pero sin nada categórico
+  //     por lo que agrupar (o todo numérico)
+  if (norm.some((h) => MICROBIAL_COUNT_STRONG.test(h))) {
+    return 'Tiene una columna con pinta de recuento microbiano (UFC / NMP / aerobios…), pero no encuentro ninguna columna de agrupación (granja, punto, grupo, tiempo…). Un recuento para #/recuentos necesita al menos una columna categórica por la que promediar las réplicas y una columna de valor.';
+  }
+
   // 5. KOs de PICRUSt2: la primera columna tiene algunos códigos KEGG
   if (headers.length >= 2 && nRows > 0) {
     const k0 = headers[0];
@@ -297,11 +322,71 @@ export function diagnoseTable(headers, rows, fileNameHint) {
     [/kolist|ko.?list|functional.?module|modulo.?funcional/, 'la lista de KOs por módulo funcional para #/funcional'],
     [/barplot|taxa.?bar|rel.?abund|abundancia.?relativa|top\d+/, 'un barplot taxonómico para #/barplots (muestras en filas, taxones en columnas)'],
     [/conteos|counts|feature.?table|otu.?table|asv.?table/, 'una tabla de conteos taxón × muestra para #/venn (etiquetas de texto + columnas numéricas por muestra)'],
+    [/ufc|cfu|\bnmp\b|\bmpn\b|recuento|placa|aerobi|coliform|mesofil/, 'un recuento microbiano para #/recuentos (columnas de agrupación + una o varias columnas de valor UFC/NMP, réplicas en filas)'],
   ];
   for (const [re, what] of byName) {
     if (re.test(name)) return `Por el nombre parece ${what}. Comprueba que las columnas casan con ese formato (ver la guía de #/cargar).`;
   }
   return null;
+}
+
+/** ¿la columna `h` es numérica en (casi) todas las filas? */
+function columnIsNumeric(rows, h) {
+  if (rows.length === 0) return false;
+  const ok = rows.filter((r) => isNumericStrict(r[h])).length;
+  return ok >= Math.max(1, rows.length * 0.85);
+}
+
+/**
+ * Recuento microbiano (placa: UFC/mL; NMP: NMP/mL). Patrón de fondo: varias
+ * filas de réplica que comparten las columnas de agrupación (granja, punto,
+ * grupo, tiempo…) + una o varias columnas de valor por organismo, o un par
+ * Recuento + Dilución.
+ *
+ * Heurística deliberadamente laxa (como el resto de ingest.js) — el mapeo de
+ * columnas en el módulo es la red de seguridad.
+ */
+function classifyMicrobialCounts(headers, rows) {
+  if (headers.length < 2 || rows.length < 2) return null;
+  const norm = headers.map(normalizeHeader);
+
+  const numeric = headers.filter((h) => columnIsNumeric(rows, h));
+  const numericSet = new Set(numeric);
+  const dilutionCol = headers.find((h, i) => DILUTION_RE.test(norm[i]));
+  const categorical = headers.filter((h) => !numericSet.has(h) && h !== dilutionCol);
+
+  // columnas de valor: numéricas cuyo nombre grita "recuento" (fuertes)…
+  let valueCols = headers.filter((h, i) => numericSet.has(h) && h !== dilutionCol && MICROBIAL_COUNT_STRONG.test(norm[i]));
+  let strong = valueCols.length > 0;
+  // …o el par Recuento/valor + Dilución …
+  if (!strong && dilutionCol) {
+    valueCols = headers.filter((h, i) => numericSet.has(h) && h !== dilutionCol &&
+      (MICROBIAL_COUNT_WEAK.includes(norm[i]) || MICROBIAL_COUNT_STRONG.test(norm[i])));
+    if (valueCols.length === 0) valueCols = numeric.filter((h) => h !== dilutionCol);
+  }
+  // …o una columna de valor genérica ("valor"/"count"/"log") con ≥2 columnas de agrupación
+  if (valueCols.length === 0 && categorical.length >= 2) {
+    valueCols = headers.filter((h, i) => numericSet.has(h) && MICROBIAL_COUNT_WEAK.includes(norm[i]));
+  }
+  if (valueCols.length === 0) return null;
+  if (categorical.length === 0 && !dilutionCol) return null; // sin nada por lo que agrupar
+
+  // columnas de agrupación por defecto: las categóricas que NO son un índice de réplica
+  const groupColHeaders = categorical.filter((h) => !REPLICATE_RE.test(normalizeHeader(h)));
+  const groupCols = (groupColHeaders.length ? groupColHeaders : categorical).map((h) => headers.indexOf(h));
+
+  const idxOf = (h) => headers.indexOf(h);
+  return {
+    kind: 'microbialCounts',
+    headers,
+    rows,
+    groupCols,
+    valueCols: valueCols.map(idxOf),
+    dilutionCol: dilutionCol != null ? idxOf(dilutionCol) : null,
+    // por defecto: NO re-loguear si la cabecera ya dice "log"; sí si son crudos
+    alreadyLog: valueCols.some((h) => /\blog/.test(normalizeHeader(h))),
+    strong,
+  };
 }
 
 function guessTaxonomyLevel(headers) {

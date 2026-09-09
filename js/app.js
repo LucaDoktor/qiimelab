@@ -33,6 +33,7 @@ const moduleLoaders = {
   alfa: () => import('./modules/alphaDiversity.js'),
   beta: () => import('./modules/betaDiversity.js'),
   diferencial: () => import('./modules/differentialAbundance.js'),
+  recuentos: () => import('./modules/microbialCounts.js'),
   venn: () => import('./modules/venn.js'),
   correlograma: () => import('./modules/correlogram.js'),
   funcional: () => import('./modules/functional.js'),

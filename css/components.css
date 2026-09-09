@@ -495,6 +495,28 @@ svg.ql-brand-mark {
 .ql-fmt-note { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-muted); font-style: italic; white-space: normal; }
 .ql-fmt-dl .ql-exdl-list { justify-content: flex-start; }
 
+/* tabla de "ejemplo mínimo" (filas de datos concretas) */
+.ql-fmt-sample { margin-top: 4px; }
+.ql-fmt-sample th, .ql-fmt-sample td {
+  text-align: left; padding: 5px 12px 5px 0; white-space: nowrap;
+  text-transform: none; letter-spacing: 0; color: var(--ink-2);
+}
+.ql-fmt-sample th { font-size: 10.5px; }
+.ql-fmt-sample td { font-size: 11px; }
+.ql-fmt-sample td:first-child, .ql-fmt-sample td:last-child { color: var(--ink-2); }
+.ql-fmt-pre {
+  margin: 4px 0 0; padding: 10px 12px; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  background: var(--page); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--ink-2); white-space: pre;
+}
+
+/* gestor de series de recuento microbiano */
+.ql-mc-series { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ql-mc-series:last-of-type { border-bottom: none; }
+.ql-mc-series .ql-mapping-grid { margin-top: 10px; }
+.ql-mc-series .ql-field { margin-top: 10px; }
+
 /* ---------- estado vacío ---------- */
 .ql-empty {
   position: relative;

@@ -39,6 +39,7 @@ const SNAP = `(async () => {
   ['metadata','taxonomy','taxaBarplot','alphaDiversity','betaDiversity','differentialAbundance','taxaCounts','functionalKO','functionalCategories','ordination'].forEach(s => walk(state[s], s));
   walk(state.sequenceQC, 'sequenceQC');
   walk(state.diffComparisons, 'diffComparisons');
+  walk(state.microbialCounts, 'microbialCounts');
   return {
     nTaxa: tc.rows.length, nSamplesCounts: tc.headers.length - 1, minN,
     pv0: state.ordination ? state.ordination.proportionExplained[0] : null,
@@ -46,6 +47,7 @@ const SNAP = `(async () => {
     lang: localStorage.getItem('qiimelab.lang'),
     diffRows: state.differentialAbundance.rows.length,
     diffComparisons: (state.diffComparisons || []).map(c => c.rows.length),
+    microbialCounts: (state.microbialCounts || []).map(s => s.label + ':' + s.rows.length + ':' + (s.mapping.groupCols || []).join('-') + ':' + s.mapping.valueCol),
     betaMetrics: Object.keys(state.betaDiversity.metrics).sort(),
     qcReports: state.sequenceQC.filter(e => e.report).length,
     dangling,
@@ -76,7 +78,7 @@ try {
     const { exportSession, importSession } = await import('/js/lib/session.js');
     const json = JSON.stringify(exportSession());
     clearAllState();
-    const cleared = { files: state.files.length, taxaCounts: !!state.taxaCounts, diffComparisons: (state.diffComparisons || []).length };
+    const cleared = { files: state.files.length, taxaCounts: !!state.taxaCounts, diffComparisons: (state.diffComparisons || []).length, microbialCounts: (state.microbialCounts || []).length };
     const res = importSession(JSON.parse(json));
     return { cleared, res, bytes: json.length };
   })()`);
@@ -88,7 +90,7 @@ try {
   c.setLabel('canary-despues');
   const after = await c.ev(SNAP);
 
-  const keys = ['nTaxa', 'nSamplesCounts', 'minN', 'pv0', 'kwH', 'kwP', 'files', 'csN', 'lang', 'diffRows', 'diffComparisons', 'betaMetrics', 'qcReports'];
+  const keys = ['nTaxa', 'nSamplesCounts', 'minN', 'pv0', 'kwH', 'kwP', 'files', 'csN', 'lang', 'diffRows', 'diffComparisons', 'microbialCounts', 'betaMetrics', 'qcReports'];
   const diffs = keys.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
 
   console.log('sesión exportada :', imp.bytes, 'bytes');
@@ -98,7 +100,7 @@ try {
   console.log('sourceFileId colgados:', after.dangling.length, after.dangling.join(' ') || '');
   console.log('errores de consola  :', c.problems.length ? c.problems.join('\n  ') : '(ninguno)');
 
-  failed = diffs.length > 0 || after.dangling.length > 0 || imp.cleared.taxaCounts || !imp.res.ok || c.problems.length > 0;
+  failed = diffs.length > 0 || after.dangling.length > 0 || imp.cleared.taxaCounts || imp.cleared.microbialCounts > 0 || !imp.res.ok || c.problems.length > 0;
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;

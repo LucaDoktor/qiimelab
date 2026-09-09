@@ -14,6 +14,13 @@ export function stdDev(arr) {
   return Math.sqrt(v);
 }
 
+/** Error estándar de la media = desviación típica muestral / √n. 0 si n < 2.
+ *  (idéntico a `sd(x)/sqrt(length(x))` en R.) */
+export function standardError(arr) {
+  if (arr.length < 2) return 0;
+  return stdDev(arr) / Math.sqrt(arr.length);
+}
+
 export function quartiles(sortedArr) {
   // método "exclusivo" de percentiles (el habitual en boxplots de ggplot2/Tukey)
   const n = sortedArr.length;

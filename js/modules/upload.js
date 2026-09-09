@@ -33,44 +33,86 @@ function fileTypes() {
     { key: 'metadata', slotKey: 'metadata', exdl: ['metadata'], cols: [
       { role: T('role.sampleId'), names: ['sample-id', 'sampleid', '#SampleID', 'id', 'sample'], req: 'yes', note: T('firstColOnly') },
       { role: T('role.variables'), desc: T('anyName'), req: 'yes' },
-    ] },
+    ], sample: {
+      headers: ['sample-id', 'grupo', 'pH'],
+      rows: [['M1', 'Control', '7.2'], ['M2', 'Tratamiento', '6.8'], ['M3', 'Tratamiento', '6.9']],
+    } },
     { key: 'taxonomy', slotKey: 'taxonomy', exdl: ['taxonomy'], cols: [
       { role: T('role.featureId'), names: ['Feature ID', 'id'], req: 'yes' },
       { role: T('role.lineage'), names: ['Taxon', 'Taxonomy'], req: 'yes', note: 'd__…;p__…;c__…;o__…;f__…;g__…;s__…' },
       { role: T('role.confidence'), names: ['Confidence'], req: 'opt' },
-    ] },
+    ], sample: {
+      headers: ['Feature ID', 'Taxon', 'Confidence'],
+      rows: [['asv1', 'd__Bacteria;p__Firmicutes;…;g__Blautia', '0.99'], ['asv2', 'd__Bacteria;p__Bacteroidota;…;g__Prevotella', '0.97']],
+    } },
     { key: 'taxaBarplot', slotKey: 'taxaBarplot', exdl: ['barplot'], foot: T('levelHint'), cols: [
       { role: T('role.sampleId'), desc: T('anyFirst'), req: 'yes' },
       { role: T('role.taxonCols'), desc: T('taxonColsHint'), req: 'yes' },
       { role: T('role.othersCol'), names: ['Others', 'Otros', 'Other', 'resto'], req: 'form' },
-    ] },
+    ], sample: {
+      headers: ['index', 'g__Blautia', 'g__Prevotella', 'Others'],
+      rows: [['M1', '0.42', '0.31', '0.27'], ['M2', '0.28', '0.44', '0.28']],
+    } },
     { key: 'taxaCounts', slotKey: 'taxaCounts', exdl: ['counts'], cols: [
       { role: T('role.taxonLabel'), names: ['taxon', 'feature', 'OTU', 'ASV', 'id', '#OTU ID'], req: 'yes', note: T('firstColOnly') },
       { role: T('role.sampleCols'), desc: T('anyName'), req: 'yes' },
-    ] },
+    ], sample: {
+      headers: ['taxon', 'M1', 'M2', 'M3'],
+      rows: [['g__Blautia', '120', '0', '45'], ['g__Prevotella', '88', '210', '17']],
+    } },
+    { key: 'microbialCounts', slotKey: 'microbialCounts', exdl: ['recuentosPlaca', 'recuentosNMP'], foot: T('mcHint'), cols: [
+      { role: T('role.groupCol'), desc: T('mcGroupHint'), req: 'yes' },
+      { role: T('role.countValue'), names: ['UFC/mL', 'CFU/g', 'NMP/mL', 'MPN', 'Recuento', 'Count', 'Aerobios', 'Coliformes', 'log10 UFC'], req: 'yes' },
+      { role: T('role.dilution'), names: ['Dilución', 'Dilution', 'Factor de dilución'], req: 'form' },
+    ], sample: {
+      headers: ['Punto', 'Grupo', 'Tiempo', 'Réplica', 'UFC/mL'],
+      rows: [
+        ['Balsa', 'Tratamiento', 'T0', '1', '1211912'],
+        ['Balsa', 'Tratamiento', 'T0', '2', '1148356'],
+        ['Balsa', 'Tratamiento', 'T0', '3', '945458'],
+        ['Balsa', 'Control', 'T0', '1', '4313684'],
+      ],
+    } },
     { key: 'alpha', slotKey: 'alphaDiversity', exdl: ['shannon', 'observed'], cols: [
       { role: T('role.sampleId'), desc: T('anyFirst'), req: 'yes' },
       { role: T('role.metricValue'), names: ['shannon_entropy', 'observed_features', 'faith_pd', 'pielou_evenness'], req: 'yes' },
-    ] },
+    ], sample: {
+      headers: ['sample-id', 'shannon_entropy'],
+      rows: [['M1', '3.42'], ['M2', '2.91'], ['M3', '3.15']],
+    } },
     { key: 'beta', slotKey: 'betaDiversity', exdl: ['betaqza'], cols: [
       { role: T('role.distRowId'), desc: T('anyName'), req: 'yes' },
       { role: T('role.sampleCols'), desc: T('distCellsHint'), req: 'yes' },
-    ] },
-    { key: 'ordination', slotKey: 'ordination', exdl: ['pcoa'], freeform: T('free.ordination') },
+    ], sample: {
+      headers: ['', 'M1', 'M2', 'M3'],
+      rows: [['M1', '0', '0.42', '0.55'], ['M2', '0.42', '0', '0.38'], ['M3', '0.55', '0.38', '0']],
+    } },
+    { key: 'ordination', slotKey: 'ordination', exdl: ['pcoa'], freeform: T('free.ordination'),
+      sampleText: "Eigvals\\t3\\n0.71\\t0.22\\t0.07\\n\\nProportion explained\\t3\\n0.71\\t0.22\\t0.07\\n\\nSite\\t3\\t3\\nM1\\t0.34\\t-0.12\\t0.02\\nM2\\t-0.28\\t0.19\\t-0.05" },
     { key: 'differential', slotKey: 'differentialAbundance', exdl: ['deseq2'], cols: [
       { role: T('role.taxonLabel'), names: ['taxon', 'genus', 'feature', 'name'], req: 'yes' },
       { role: T('role.lfc'), names: ['log2FoldChange', 'log2FC', 'lfc', 'logFC', 'foldChange'], req: 'yes' },
       { role: T('role.padj'), names: ['padj', 'pvalAdj', 'qvalue', 'FDR', 'adjPval'], req: 'yes' },
-    ] },
+    ], sample: {
+      headers: ['taxon', 'log2FoldChange', 'padj'],
+      rows: [['g__Escherichia-Shigella', '2.41', '0.0008'], ['g__Blautia', '-1.83', '0.031']],
+    } },
     { key: 'functionalCategories', slotKey: 'functionalCategories', exdl: ['kolist'], cols: [
       { role: T('role.module'), names: ['Functional Module', 'module', 'moduloFuncional', 'pathway'], req: 'yes' },
       { role: T('role.ko'), names: ['KO', 'KO ID', 'orthology', 'keggKO'], req: 'yes' },
-    ] },
+    ], sample: {
+      headers: ['Functional Module', 'KO'],
+      rows: [['Butyrate production', 'K00929'], ['Butyrate production', 'K01034'], ['Sulfate reduction', 'K00958']],
+    } },
     { key: 'functionalKO', slotKey: 'functionalKO', exdl: ['koabund'], cols: [
       { role: T('role.keggId'), names: ['K00001', 'K12345'], req: 'yes', note: T('keggIdNote') },
       { role: T('role.sampleCols'), desc: T('anyName'), req: 'yes' },
-    ] },
-    { key: 'fastq', slotKey: 'sequenceQC', exdl: ['fastq'], freeform: T('free.fastq') },
+    ], sample: {
+      headers: ['function', 'M1', 'M2', 'M3'],
+      rows: [['K00929', '1240.5', '980.0', '1105.2'], ['K01034', '77.0', '64.1', '80.3']],
+    } },
+    { key: 'fastq', slotKey: 'sequenceQC', exdl: ['fastq'], freeform: T('free.fastq'),
+      sampleText: '@M01234:16:000000000/1\\nACGTACGTACGTTGCA…\\n+\\nIIIIIIIHHHHGGGGF…' },
   ];
 }
 
@@ -368,6 +410,36 @@ export function render(container) {
         tblScroll.className = 'scroll-x';
         tblScroll.appendChild(tbl);
         body.appendChild(tblScroll);
+      }
+
+      // ejemplo mínimo concreto (unas filas de datos con esa forma)
+      if (ft.sample) {
+        const cap = document.createElement('p');
+        cap.className = 'ql-fmt-note';
+        cap.textContent = t('fmt.exampleRows');
+        body.appendChild(cap);
+        const ex = document.createElement('table');
+        ex.className = 'ql-fmt-table ql-fmt-sample';
+        ex.innerHTML = '<thead><tr>' + ft.sample.headers
+          .map((h) => '<th>' + (h ? escapeHtml(h) : '&nbsp;') + '</th>').join('') + '</tr></thead>';
+        const eb = document.createElement('tbody');
+        ft.sample.rows.forEach((r) => {
+          eb.innerHTML += '<tr>' + r.map((c) => '<td class="mono">' + escapeHtml(c) + '</td>').join('') + '</tr>';
+        });
+        ex.appendChild(eb);
+        const exScroll = document.createElement('div');
+        exScroll.className = 'scroll-x';
+        exScroll.appendChild(ex);
+        body.appendChild(exScroll);
+      } else if (ft.sampleText) {
+        const cap = document.createElement('p');
+        cap.className = 'ql-fmt-note';
+        cap.textContent = t('fmt.exampleRows');
+        body.appendChild(cap);
+        const pre = document.createElement('pre');
+        pre.className = 'ql-fmt-pre';
+        pre.textContent = ft.sampleText.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+        body.appendChild(pre);
       }
 
       if (ft.foot) {
