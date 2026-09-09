@@ -2,15 +2,26 @@ import { state, subscribe } from '../state.js';
 import { t } from '../lib/i18n.js';
 import { domainMotif } from '../lib/motif.js';
 import { getProfileName } from '../lib/profile.js';
+import { slotFilled } from './shell.js';
 
-// route = fragmento de ruta; los rótulos y descripciones salen de i18n.
+// route = fragmento de ruta; qKey = pregunta en lenguaje llano (texto principal);
+// nameKey/descKey = rótulo y descripción técnicos (secundarios); glos = id del
+// término de glosario más relevante (#/glosario?t=<glos>).
 const MODULES_INFO = [
-  { route: 'barplots', nameKey: 'nav.barplots', descKey: 'modules.barplots.desc' },
-  { route: 'alfa', nameKey: 'nav.alpha', descKey: 'modules.alpha.desc' },
-  { route: 'beta', nameKey: 'nav.beta', descKey: 'modules.beta.desc' },
-  { route: 'diferencial', nameKey: 'nav.differential', descKey: 'modules.differential.desc' },
-  { route: 'venn', nameKey: 'nav.venn', descKey: 'modules.venn.desc' },
-  { route: 'qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc' },
+  { route: 'barplots', qKey: 'home.q.barplots', nameKey: 'nav.barplots', descKey: 'modules.barplots.desc', glos: 'relAbund' },
+  { route: 'alfa', qKey: 'home.q.alfa', nameKey: 'nav.alpha', descKey: 'modules.alpha.desc', glos: 'alphaDiv' },
+  { route: 'beta', qKey: 'home.q.beta', nameKey: 'nav.beta', descKey: 'modules.beta.desc', glos: 'betaDiv' },
+  { route: 'diferencial', qKey: 'home.q.diferencial', nameKey: 'nav.differential', descKey: 'modules.differential.desc', glos: 'diffAbund' },
+  { route: 'venn', qKey: 'home.q.venn', nameKey: 'nav.venn', descKey: 'modules.venn.desc', glos: 'venn' },
+  { route: 'correlograma', qKey: 'home.q.correlograma', nameKey: 'nav.correlograma', descKey: 'modules.correlograma.desc', glos: 'correlation' },
+  { route: 'funcional', qKey: 'home.q.funcional', nameKey: 'nav.funcional', descKey: 'modules.funcional.desc', glos: 'kegg' },
+  { route: 'qc', qKey: 'home.q.qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc', glos: 'qc' },
+];
+
+const MORE_LINKS = [
+  { route: 'informe', navKey: 'nav.informe' },
+  { route: 'recursos', navKey: 'nav.recursos' },
+  { route: 'glosario', navKey: 'nav.glosario' },
 ];
 
 function escapeHtml(s) {
@@ -78,25 +89,42 @@ export function render(container) {
     summary.appendChild(stats);
     stack.appendChild(summary);
 
-    // módulos
+    // módulos — como asistente de "qué quiero saber"
     const modsSection = document.createElement('section');
     modsSection.className = 'ql-card ql-panel';
     modsSection.innerHTML = '<h2>' + t('home.modulesTitle') + '</h2><p class="ql-panel-note">' + t('home.modulesNote') + '</p>';
     const grid = document.createElement('div');
     grid.className = 'ql-modgrid';
     MODULES_INFO.forEach((m) => {
+      const has = slotFilled(m.route);
+      const cell = document.createElement('div');
+      cell.className = 'ql-modcell';
       const card = document.createElement('a');
       card.href = '#/' + m.route;
-      card.className = 'ql-modcard';
+      card.className = 'ql-modcard ql-modcard-q';
       card.innerHTML =
         '<div class="ql-modcard-head">' +
-        '<strong>' + t(m.nameKey) + '</strong>' +
-        '<span class="ql-badge ql-badge-good">' + t('common.available') + '</span></div>' +
-        '<p>' + t(m.descKey) + '</p>' +
+        '<strong>' + t(m.qKey) + '</strong>' +
+        '<span class="ql-badge ' + (has ? 'ql-badge-good' : 'ql-badge-muted') + '">' +
+        t(has ? 'home.modHas' : 'home.modNo') + '</span></div>' +
+        '<p class="ql-modcard-name">' + t(m.nameKey) + ' · ' + t(m.descKey) + '</p>' +
         '<span class="ql-modcard-go" aria-hidden="true">→</span>';
-      grid.appendChild(card);
+      cell.appendChild(card);
+      const glosA = document.createElement('a');
+      glosA.className = 'ql-modcard-glos';
+      glosA.href = '#/glosario?t=' + m.glos;
+      glosA.textContent = t('home.glosLink');
+      cell.appendChild(glosA);
+      grid.appendChild(cell);
     });
     modsSection.appendChild(grid);
+
+    const more = document.createElement('p');
+    more.className = 'ql-modmore';
+    more.innerHTML = t('home.moreLinks') + ' ' + MORE_LINKS
+      .map((l) => '<a href="#/' + l.route + '">' + t(l.navKey) + '</a>')
+      .join(' · ');
+    modsSection.appendChild(more);
     stack.appendChild(modsSection);
 
     container.appendChild(stack);

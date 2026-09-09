@@ -19,7 +19,7 @@ los saltados no cuentan.
 
 | archivo | tipo | qué comprueba |
 |---|---|---|
-| `sweep-routes.mjs` | navegador | Las 13 rutas/subvistas (12 módulos + subvistas de alfa/barplots/diferencial/correlograma) en **claro y oscuro**, con todos los ejemplos cargados. Falla ante cualquier `console.error` / excepción. |
+| `sweep-routes.mjs` | navegador | Las 14 rutas/subvistas (13 módulos + la subvista "Red" del correlograma) en **claro y oscuro**, con todos los ejemplos cargados. Incluye `#/glosario` con su filtro de texto y sus `<details>`. Falla ante cualquier `console.error` / excepción. |
 | `sweep-session.mjs` | navegador | Ciclo `exportSession()` → `clearAllState()` → `importSession()` → re-barrido. Canarios numéricos (nº taxa, KW H/p, % var PCoA, profundidad mín. de rarefacción, nº comparaciones…) **idénticos bit a bit** y **0** referencias `sourceFileId` colgadas. |
 | `sweep-a11y.mjs` | navegador | Heurísticas por ruta × tema: nombre accesible en cada `button`/`a`, etiqueta en cada `input`/`select`, `aria-label` en cada `svg[role=img]`, una `<main tabindex=-1>`, enlace “saltar al contenido”, `<nav aria-label>`, `aria-current` en la navegación activa. |
 | `keyboard-editor.mjs` | navegador | El editor de gráficos con **solo teclado**: foco en el tirador, flechas mueven (Shift = paso mayor), Intro abre el panel (el foco entra), Escape cierra y devuelve el foco, la posición persiste en `localStorage`. |
@@ -39,7 +39,7 @@ los saltados no cuentan.
 | `stats/chisquare.mjs` | R base | `chiSquarePValue()` vs `pchisq(x, df, lower.tail = FALSE)`. |
 | `stats/benjaminihochberg.mjs` | R base | `benjaminiHochberg()` vs `p.adjust(p, method = "BH")`. |
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
-| `mobile-audit.mjs` | navegador · **informativo** | Recorre las 13 rutas a 375px y 768px y clasifica desbordes (ROMPE / apretado). **No** cuenta como pasa/falla; no está en `run.mjs`. Alimenta la decisión de si merece un bloque de arreglo. |
+| `mobile-audit.mjs` | navegador · **informativo** | Recorre las 14 rutas a 375px y 768px y clasifica desbordes (ROMPE / apretado). **No** cuenta como pasa/falla; no está en `run.mjs`. Alimenta la decisión de si merece un bloque de arreglo. |
 
 ### Modo de los tests de `stats/`
 

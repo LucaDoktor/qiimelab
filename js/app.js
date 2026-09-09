@@ -38,13 +38,15 @@ const moduleLoaders = {
   qc: () => import('./modules/sequenceQC.js'),
   informe: () => import('./modules/informe.js'),
   recursos: () => import('./modules/recursos.js'),
+  glosario: () => import('./modules/glosario.js'),
 };
 
 let routeId = '';
 let cleanupCurrentModule = null;
 
 function currentRouteId() {
-  const hash = location.hash.replace(/^#\/?/, '');
+  // #/glosario?t=shannon → "glosario" (se ignora subruta y query)
+  const hash = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
   return hash in moduleLoaders ? hash : '';
 }
 

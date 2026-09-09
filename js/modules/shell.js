@@ -21,6 +21,7 @@ const ICONS = {
   functional: ic('<path d="M4 19h16"/><rect x="5.5" y="12" width="3.4" height="7" rx="0.8"/><rect x="10.3" y="7" width="3.4" height="12" rx="0.8"/><rect x="15.1" y="10" width="3.4" height="9" rx="0.8"/><path d="M4.5 5.5c2-2 3.5 2 5.5 0s3.5 2 5.5 0 3.5 2 4 1.5"/>'),
   recursos: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M10 13.5 8.5 15 10 16.5M14 13.5 15.5 15 14 16.5"/>'),
   informe: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>'),
+  glosario: ic('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 10.5h4"/>'),
 };
 
 // Logomark: dendrograma (agrupamiento) reducido a 3 hojas y 2 nodos, sobre
@@ -47,9 +48,12 @@ export const ROUTES = [
   { id: 'qc', navKey: 'nav.qc', icon: 'qc' },
   { id: 'informe', navKey: 'nav.informe', icon: 'informe' },
   { id: 'recursos', navKey: 'nav.recursos', icon: 'recursos' },
+  { id: 'glosario', navKey: 'nav.glosario', icon: 'glosario' },
 ];
 
-function slotFilled(routeId) {
+/** ¿Tiene ESE módulo los datos que necesita, ahora mismo? Lo usa la barra
+ *  lateral (insignia "sin datos") y la portada (home.js). */
+export function slotFilled(routeId) {
   switch (routeId) {
     case 'barplots': return !!state.taxaBarplot;
     case 'alfa': return !!state.alphaDiversity;

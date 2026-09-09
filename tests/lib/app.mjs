@@ -5,9 +5,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 12 rutas de módulo + la subvista "Red" del correlograma = las 13 del enunciado.
+// 13 rutas de módulo (#/…#/glosario) + la subvista "Red" del correlograma = 14.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos'];
+  '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe', '#/recursos', '#/glosario'];
 
 // carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones)
 export const LOAD_ALL = `(async () => {
@@ -51,6 +51,27 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
   if (route === '#/correlograma') {
     await c.ev(`(() => { const n = document.querySelector('#clR'); if (n) { n.value = '0.1'; n.dispatchEvent(new Event('change')); } })()`);
     await sleep(400);
+  }
+  if (route === '#/glosario') {
+    // el <details> ya lo abre la línea de arriba; aquí comprobamos el filtro.
+    // Los fallos van por console.error → los recoge c.problems, como el resto.
+    await c.ev(`(() => {
+      const bad = (m) => console.error('glosario: ' + m);
+      const input = document.querySelector('#glosFilter');
+      const entries = [...document.querySelectorAll('.ql-glossary-entry')];
+      const groups = [...document.querySelectorAll('.ql-glossary-group')];
+      if (!input || entries.length < 20) return bad('filtro o entradas ausentes (' + entries.length + ')');
+      if (!entries.every((d) => d.querySelector('summary') && d.querySelector('.ql-fmt-body p'))) bad('algún <details> sin summary o sin definición');
+      input.value = 'bray-curtis'; input.dispatchEvent(new Event('input'));
+      const vis = entries.filter((d) => !d.hidden);
+      if (vis.length !== 1 || vis[0].id !== 'glos-bray') bad('filtro "bray-curtis" muestra ' + vis.length + ' [' + vis.map((d) => d.id) + ']');
+      if (groups.filter((s) => !s.hidden).length !== 1) bad('el filtro no oculta los grupos vacíos');
+      input.value = 'xyzzy-nada'; input.dispatchEvent(new Event('input'));
+      if (entries.some((d) => !d.hidden)) bad('un filtro sin coincidencias deja entradas visibles');
+      input.value = ''; input.dispatchEvent(new Event('input'));
+      if (entries.filter((d) => !d.hidden).length !== entries.length) bad('limpiar el filtro no restaura todo');
+    })()`);
+    await sleep(200);
   }
   if (route === '#/informe' && report) {
     await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.indexOf('Generar') > -1 || x.textContent.indexOf('Generate') > -1); if (b) b.click(); })()`);

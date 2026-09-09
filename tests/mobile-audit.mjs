@@ -1,4 +1,4 @@
-// Auditoría móvil/tablet — INFORMATIVO, no pasa/falla. Recorre las 13 rutas a
+// Auditoría móvil/tablet — INFORMATIVO, no pasa/falla. Recorre las 14 rutas a
 // 375px (móvil) y 768px (tablet) y clasifica lo que encuentra:
 //   ROMPE     la página se ensancha más allá del viewport (scroll-x del body /
 //             zoom-out), o un control queda fuera de alcance
