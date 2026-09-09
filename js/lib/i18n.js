@@ -351,6 +351,9 @@ const DICTS = {
       tableTrunc: 'Tabla recortada a {n} filas — tabla completa en la app.',
       print: 'Imprimir / Guardar PDF',
       downloadHtml: 'Descargar HTML',
+      includeMethods: 'Incluir un párrafo de «Métodos»',
+      methodsHeading: 'Métodos',
+      methodsDisclaimer: 'Texto generado por plantilla a partir de los parámetros de esta sesión. Revísalo y complétalo (versiones de software, referencias, umbrales exactos) antes de usarlo en una publicación.',
     },
     recursos: {
       eyebrow: 'Plantillas de análisis',
@@ -1241,6 +1244,9 @@ const DICTS = {
       tableTrunc: 'Table trimmed to {n} rows — full table in the app.',
       print: 'Print / Save PDF',
       downloadHtml: 'Download HTML',
+      includeMethods: 'Include a "Methods" paragraph',
+      methodsHeading: 'Methods',
+      methodsDisclaimer: 'Template-generated text from this session\'s parameters. Review and complete it (software versions, references, exact thresholds) before using it in a publication.',
     },
     recursos: {
       eyebrow: 'Analysis templates',

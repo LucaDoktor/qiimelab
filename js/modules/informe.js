@@ -15,6 +15,7 @@
 import { state } from '../state.js';
 import { t, getLang, LANGS } from '../lib/i18n.js';
 import { getProfileName } from '../lib/profile.js';
+import { methodsText } from '../lib/methodsText.js';
 
 const MAX_TABLE_ROWS = 25;   // tablas largas (abundancia diferencial, QC) se recortan
 
@@ -144,6 +145,7 @@ function download(name, text, mime) {
 export function render(container) {
   // por defecto: todos los módulos con datos, marcados
   let selected = null; // Set de ids
+  let includeMethods = true;
 
   function paint() {
     container.innerHTML = '';
@@ -190,6 +192,17 @@ export function render(container) {
     });
     controls.appendChild(list);
 
+    const methodsRow = document.createElement('label');
+    methodsRow.className = 'ql-checkrow';
+    methodsRow.style.marginBottom = '14px';
+    const mcb = document.createElement('input');
+    mcb.type = 'checkbox';
+    mcb.checked = includeMethods;
+    mcb.addEventListener('change', () => { includeMethods = mcb.checked; });
+    methodsRow.appendChild(mcb);
+    methodsRow.appendChild(document.createTextNode(' ' + t('informe.includeMethods')));
+    controls.appendChild(methodsRow);
+
     const genBtn = document.createElement('button');
     genBtn.type = 'button';
     genBtn.className = 'ql-btn ql-btn-primary';
@@ -235,6 +248,30 @@ export function render(container) {
 
       if (sections.length === 0) {
         report.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('informe.nothing') + '</p>');
+      }
+
+      // --- sección "Métodos" (plantilla, a partir de los parámetros reales) ---
+      if (includeMethods && sections.length > 0) {
+        const mt = methodsText(selected);
+        if (mt.paragraphs.length) {
+          const sec = document.createElement('section');
+          sec.className = 'ql-report-section ql-report-methods';
+          const h2 = document.createElement('h2');
+          h2.textContent = mt.heading;
+          sec.appendChild(h2);
+          const warn = document.createElement('p');
+          warn.className = 'ql-field-help';
+          warn.style.fontStyle = 'italic';
+          warn.textContent = mt.disclaimer;
+          sec.appendChild(warn);
+          mt.paragraphs.forEach((p) => {
+            const el = document.createElement('p');
+            el.style.cssText = 'margin:8px 0;font-size:13.5px;line-height:1.6;';
+            el.textContent = p;
+            sec.appendChild(el);
+          });
+          report.appendChild(sec);
+        }
       }
 
       sections.forEach((s) => {
