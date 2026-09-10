@@ -21,6 +21,7 @@ const SUITE = [
   { name: 'cvd', file: 'cvd.mjs', kind: 'estático' },
   { name: 'forcelayout', file: 'forcelayout.mjs', kind: 'estático' },
   { name: 'datahealth', file: 'datahealth.mjs', kind: 'estático' },
+  { name: 'primerdimers', file: 'primerdimers.mjs', kind: 'estático' },
   { name: 'stats/diversity', file: 'stats/diversity.mjs', kind: 'R' },
   { name: 'stats/rarefaction', file: 'stats/rarefaction.mjs', kind: 'R' },
   { name: 'stats/richness', file: 'stats/richness.mjs', kind: 'R' },
