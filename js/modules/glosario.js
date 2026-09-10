@@ -77,12 +77,21 @@ const GLOSSARY = [
       { id: 'mpn', route: 'recuentos' },
     ],
   },
+  {
+    title: 'glosario.g6',
+    terms: [
+      { id: 'iupacDegenerate', route: 'primers' },
+      { id: 'primerTm', route: 'primers' },
+      { id: 'gcClamp', route: 'primers' },
+    ],
+  },
 ];
 
 const ROUTE_NAV = {
   barplots: 'nav.barplots', alfa: 'nav.alpha', beta: 'nav.beta',
   diferencial: 'nav.differential', venn: 'nav.venn', correlograma: 'nav.correlograma',
   funcional: 'nav.funcional', qc: 'nav.qc', cargar: 'nav.upload', recuentos: 'nav.recuentos',
+  primers: 'nav.primers',
 };
 
 // normaliza para el filtro: minúsculas y sin diacríticos

@@ -374,6 +374,7 @@ svg.ql-brand-mark {
 .ql-badge.ql-badge-muted { background: color-mix(in srgb, var(--ink-muted) 20%, transparent); color: var(--ink-2); }
 .ql-badge.ql-badge-good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
 .ql-badge.ql-badge-warn { background: color-mix(in srgb, var(--warning) 22%, transparent); color: #8a5a00; }
+.ql-badge.ql-badge-crit { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
 
 /* ---------- dropzone ---------- */
 .ql-dropzone {
@@ -712,6 +713,9 @@ svg.ql-brand-mark {
 .ql-kegg-link:hover { background: var(--accent-soft); border-color: var(--accent); }
 .ql-kegg-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ql-cell-muted { color: var(--ink-muted); font-size: 12px; }
+
+/* ---------- primers: bases IUPAC degeneradas ---------- */
+.ql-primer-degenerate { color: var(--accent); font-weight: 700; text-decoration: underline dotted; text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 
 /* ---------- Venn / UpSet: región seleccionable ---------- */
 .vn-region text { transition: fill var(--dur) var(--ease); }

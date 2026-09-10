@@ -17,6 +17,7 @@ const ICONS = {
   volcano: ic('<path d="M4 20h16"/><path d="M12 20V5" stroke-dasharray="2.4 2.6"/><circle cx="7" cy="10" r="1.35" fill="currentColor" stroke="none"/><circle cx="9.3" cy="14.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12.6" cy="16.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="15.4" cy="12.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.3" cy="8" r="1.35" fill="currentColor" stroke="none"/>'),
   recuentos: ic('<path d="M4 20h16"/><rect x="6" y="11" width="4" height="9" rx="1"/><rect x="14" y="7" width="4" height="13" rx="1"/><path d="M8 11V8.5M16 7V4.5" /><path d="M6.7 8.5h2.6M14.7 4.5h2.6"/>'),
   ufc: ic('<rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/><circle cx="15.5" cy="16" r="1.4" fill="currentColor" stroke="none"/>'),
+  primers: ic('<path d="M3 12h6M21 12h-6"/><path d="M7 9l2 3-2 3M17 9l-2 3 2 3"/>'),
   venn: ic('<circle cx="9.5" cy="12" r="6"/><circle cx="14.5" cy="12" r="6"/>'),
   qc: ic('<path d="M4 20h16"/><path d="M6.5 20V9M11 20V7.5M15.5 20V10.5M20 20V15"/>'),
   correlogram: ic('<rect x="4" y="4" width="16" height="16" rx="1.6"/><path d="M4 9.33h16M4 14.66h16M9.33 4v16M14.66 4v16"/><circle cx="6.7" cy="6.7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="17.3" cy="17.3" r="1" fill="currentColor" stroke="none"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor" stroke="none"/>'),
@@ -47,6 +48,7 @@ export const ROUTES = [
   { id: 'diferencial', navKey: 'nav.differential', icon: 'volcano' },
   { id: 'recuentos', navKey: 'nav.recuentos', icon: 'recuentos' },
   { id: 'ufc', navKey: 'nav.ufc', icon: 'ufc' },
+  { id: 'primers', navKey: 'nav.primers', icon: 'primers' },
   { id: 'venn', navKey: 'nav.venn', icon: 'venn' },
   { id: 'correlograma', navKey: 'nav.correlograma', icon: 'correlogram' },
   { id: 'funcional', navKey: 'nav.funcional', icon: 'functional' },
@@ -57,11 +59,21 @@ export const ROUTES = [
   { id: 'validacion', navKey: 'nav.validacion', icon: 'validacion' },
 ];
 
+// primers.js persiste en localStorage (no es una salida de QIIME2, no usa
+// state) — lectura mínima para la insignia, sin importar el módulo entero.
+function primersHaveData() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('qiimelab.primers') || 'null');
+    return !!(raw && Array.isArray(raw.primers) && raw.primers.some((p) => String(p.raw || '').trim().length >= 4));
+  } catch (e) { return false; }
+}
+
 /** ¿Tiene ESE módulo los datos que necesita, ahora mismo? Lo usa la barra
  *  lateral (insignia "sin datos") y la portada (home.js). */
 export function slotFilled(routeId) {
   switch (routeId) {
     case 'barplots': return !!state.taxaBarplot;
+    case 'primers': return primersHaveData();
     case 'alfa': return !!state.alphaDiversity;
     case 'beta': return !!state.betaDiversity;
     case 'diferencial': return !!state.differentialAbundance || (Array.isArray(state.diffComparisons) && state.diffComparisons.length > 0);
