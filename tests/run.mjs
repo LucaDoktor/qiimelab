@@ -24,6 +24,7 @@ const SUITE = [
   { name: 'primerdimers', file: 'primerdimers.mjs', kind: 'estático' },
   { name: 'primertemplate', file: 'primertemplate.mjs', kind: 'estático' },
   { name: 'primercoverage', file: 'primercoverage.mjs', kind: 'estático' },
+  { name: 'palettes', file: 'palettes.mjs', kind: 'estático' },
   { name: 'stats/diversity', file: 'stats/diversity.mjs', kind: 'R' },
   { name: 'stats/rarefaction', file: 'stats/rarefaction.mjs', kind: 'R' },
   { name: 'stats/richness', file: 'stats/richness.mjs', kind: 'R' },
