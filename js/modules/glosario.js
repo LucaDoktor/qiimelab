@@ -85,6 +85,7 @@ const GLOSSARY = [
       { id: 'gcClamp', route: 'primers' },
       { id: 'primerDimer', route: 'primers' },
       { id: 'hairpinTerm', route: 'primers' },
+      { id: 'ampliconTerm', route: 'primers' },
     ],
   },
 ];

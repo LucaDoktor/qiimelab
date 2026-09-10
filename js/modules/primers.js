@@ -12,15 +12,24 @@ import {
   molecularWeight, extinctionCoefficient, meltingTemp,
 } from '../lib/primerAnalysis.js';
 import { buildDimerMatrix, getHetero, classifyDimer, classifyHairpin } from '../lib/primerDimers.js';
+import { parseFasta, findPrimerSites, findAmplicons, CRITICAL_3PRIME_ZONE } from '../lib/primerTemplate.js';
+import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/primerCoverage.js';
+import { parseTable } from '../lib/csv.js';
 
 const STORE_KEY = 'qiimelab.primers';
 const MIN_PRIMER_LEN = 4;
+const EXAMPLE_REF_FASTA_URL = 'datos-ejemplo/primers/referencia_ejemplo.fasta';
+const EXAMPLE_TAX_URL = 'datos-ejemplo/primers/taxonomia_ejemplo.tsv';
+const NONE = '__none__'; // "(ninguno)" explícito, distinto de '' (= "todavía sin elegir")
+const RANK_DEPTHS = [null, 2, 3, 4, 5, 6, 7]; // null = completa; 2..7 = filo..especie (convención QIIME2)
 
-// pestañas ya implementadas — se amplía en próximos commits (plantilla,
-// cobertura, lote). Con 1 sola pestaña no se muestra la barra.
+// pestañas ya implementadas — se amplía en el próximo commit (lote). Con 1
+// sola pestaña no se muestra la barra.
 const TABS = [
   { id: 'primers', labelKey: 'primers.tabPrimers' },
   { id: 'dimers', labelKey: 'primers.tabDimers' },
+  { id: 'template', labelKey: 'primers.tabTemplate' },
+  { id: 'coverage', labelKey: 'primers.tabCoverage' },
 ];
 
 function escapeHtml(s) {
@@ -39,6 +48,11 @@ function defaultState() {
     primers: [{ id: 'pr1', name: '', raw: '' }, { id: 'pr2', name: '', raw: '' }],
     salt: 50,     // mM Na+
     conc: 500,    // nM primer
+    templateText: '',
+    templateTol: 1,
+    templateA: '', templateB: '',
+    covRefText: '', covTaxText: '',
+    covTol: 1, covA: '', covB: '', covRankIdx: 6, // índice en RANK_DEPTHS ("Género" por defecto)
   };
 }
 
@@ -52,6 +66,16 @@ function load() {
           .filter((p) => p.id),
         salt: Number.isFinite(+raw.salt) && +raw.salt > 0 ? +raw.salt : 50,
         conc: Number.isFinite(+raw.conc) && +raw.conc > 0 ? +raw.conc : 500,
+        templateText: typeof raw.templateText === 'string' ? raw.templateText : '',
+        templateTol: Number.isFinite(+raw.templateTol) && +raw.templateTol >= 0 ? +raw.templateTol : 1,
+        templateA: typeof raw.templateA === 'string' ? raw.templateA : '',
+        templateB: typeof raw.templateB === 'string' ? raw.templateB : '',
+        covRefText: typeof raw.covRefText === 'string' ? raw.covRefText : '',
+        covTaxText: typeof raw.covTaxText === 'string' ? raw.covTaxText : '',
+        covTol: Number.isFinite(+raw.covTol) && +raw.covTol >= 0 ? +raw.covTol : 1,
+        covA: typeof raw.covA === 'string' ? raw.covA : '',
+        covB: typeof raw.covB === 'string' ? raw.covB : '',
+        covRankIdx: Number.isInteger(raw.covRankIdx) && raw.covRankIdx >= 0 && raw.covRankIdx < RANK_DEPTHS.length ? raw.covRankIdx : 6,
       };
     }
   } catch (e) { /* localStorage puede fallar */ }
@@ -110,6 +134,8 @@ export function render(container) {
     }
 
     if (s.tab === 'dimers') renderDimersTab();
+    else if (s.tab === 'template') renderTemplateTab();
+    else if (s.tab === 'coverage') renderCoverageTab();
     else renderPrimersTab();
   }
 
@@ -209,6 +235,444 @@ export function render(container) {
     hScroll.appendChild(hTbl);
     hpCard.appendChild(hScroll);
     container.appendChild(hpCard);
+  }
+
+  // primer 5'→3' con las posiciones que no encajan en rojo (fuerte si además
+  // caen en la zona 3' crítica) y la propia zona 3' subrayada aunque encaje.
+  function renderPrimerColored(seq, mismatches) {
+    const critStart = seq.length - CRITICAL_3PRIME_ZONE;
+    const bad = new Map(mismatches.map((m) => [m.primerIdx, m]));
+    return [...seq].map((c, idx) => {
+      const isCrit = idx >= critStart;
+      const isBad = bad.has(idx);
+      const cls = isBad ? (isCrit ? 'ql-primer-mm-crit' : 'ql-primer-mm') : (isCrit ? 'ql-primer-3prime' : '');
+      return cls ? '<span class="' + cls + '">' + escapeHtml(c) + '</span>' : escapeHtml(c);
+    }).join('');
+  }
+
+  function renderHitsTable(primerSeq, hits) {
+    if (!hits.length) return '<p class="ql-field-help">' + t('primers.noHits') + '</p>';
+    const scroll = document.createElement('div');
+    scroll.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    tbl.innerHTML = '<thead><tr>' +
+      ['primers.colStrandTemplate', 'primers.colPosRange', 'primers.colMismatchCount', 'primers.col3crit', 'primers.colSeq']
+        .map((k) => '<th>' + t(k) + '</th>').join('') + '</tr></thead>';
+    const tb = document.createElement('tbody');
+    hits.forEach((h) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + (h.strand === '+' ? t('primers.strandFwd') : t('primers.strandRev')) + '</td>' +
+        '<td class="ql-num tabular">' + (h.pos + 1) + '–' + h.end + '</td>' +
+        '<td class="ql-num tabular">' + h.mismatchCount + '</td>' +
+        '<td>' + (h.has3PrimeMismatch ? '<span class="ql-badge ql-badge-crit">✓</span>' : '<span class="ql-cell-muted">—</span>') + '</td>' +
+        '<td class="mono">' + renderPrimerColored(primerSeq, h.mismatches) + '</td>';
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    scroll.appendChild(tbl);
+    return scroll.outerHTML;
+  }
+
+  function renderTemplateTab() {
+    const valid = derivePrimers().filter((p) => p.valid).map((p, i) => ({ ...p, label: primerLabel(p, i) }));
+
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    // ---- carga de la plantilla ----
+    const loadCard = document.createElement('section');
+    loadCard.className = 'ql-card ql-panel';
+    loadCard.innerHTML = '<h2>' + t('primers.templateTitle') + '</h2><p class="ql-panel-note">' +
+      t('primers.templateNote', { n: CRITICAL_3PRIME_ZONE }) + '</p>';
+
+    const dz = document.createElement('div');
+    dz.className = 'ql-dropzone';
+    dz.tabIndex = 0;
+    dz.setAttribute('role', 'button');
+    dz.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
+      '<div><div class="ql-dz-text"><b>' + t('primers.templateDropLabel') + '</b></div><div class="ql-dz-sub">' + t('primers.templateDropSub') + '</div></div>';
+    const fileIn = document.createElement('input');
+    fileIn.type = 'file'; fileIn.accept = '.fasta,.fa,.fna,.txt';
+    dz.appendChild(fileIn);
+    loadCard.appendChild(dz);
+    dz.addEventListener('click', () => fileIn.click());
+    dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
+    const applyFile = async (file) => { if (file) { s.templateText = await file.text(); paint(); } };
+    dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('is-drag'); applyFile(e.dataTransfer.files[0]); });
+    fileIn.addEventListener('change', () => applyFile(fileIn.files[0]));
+
+    const pasteField = document.createElement('div');
+    pasteField.className = 'ql-field';
+    pasteField.style.marginTop = '14px';
+    pasteField.innerHTML = '<label for="primers-template-paste">' + t('primers.templateOr') + '</label>';
+    const pasteTa = document.createElement('textarea');
+    pasteTa.id = 'primers-template-paste';
+    pasteTa.rows = 4; pasteTa.className = 'mono'; pasteTa.spellcheck = false;
+    pasteTa.placeholder = t('primers.templatePastePh');
+    pasteTa.value = s.templateText;
+    pasteTa.addEventListener('change', () => { s.templateText = pasteTa.value; paint(); });
+    pasteField.appendChild(pasteTa);
+    loadCard.appendChild(pasteField);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;';
+    const exBtn = document.createElement('button');
+    exBtn.type = 'button'; exBtn.className = 'ql-btn';
+    exBtn.textContent = t('primers.templateLoadExample');
+    exBtn.addEventListener('click', async () => {
+      exBtn.disabled = true;
+      try {
+        const res = await fetch(EXAMPLE_REF_FASTA_URL);
+        s.templateText = await res.text();
+      } catch (e) { /* si falla, no se cambia nada */ }
+      exBtn.disabled = false;
+      paint();
+    });
+    btnRow.appendChild(exBtn);
+    if (s.templateText) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button'; clearBtn.className = 'ql-btn';
+      clearBtn.textContent = t('primers.templateClear');
+      clearBtn.addEventListener('click', () => { s.templateText = ''; paint(); });
+      btnRow.appendChild(clearBtn);
+    }
+    loadCard.appendChild(btnRow);
+    grid.appendChild(loadCard);
+
+    // ---- controles: qué primers, qué tolerancia ----
+    const ctrl = document.createElement('aside');
+    ctrl.className = 'ql-card ql-panel';
+    ctrl.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+    if (!valid.length) {
+      ctrl.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.dimersEmpty') + '</p>');
+    } else {
+      if (!s.templateA || !valid.some((p) => p.id === s.templateA)) s.templateA = valid[0].id;
+      // '' = todavía no se ha elegido nada -> se autorrellena con el 2º primer si hay;
+      // NONE es un valor explícito distinto de '' para que "(ninguno)" elegido a mano no
+      // se vuelva a sobrescribir en el siguiente repintado.
+      if (!s.templateB) s.templateB = valid.length > 1 && valid[1].id !== s.templateA ? valid[1].id : NONE;
+      else if (s.templateB !== NONE && !valid.some((p) => p.id === s.templateB)) s.templateB = NONE;
+      const mkSelect = (labelKey, value, onChange, allowNone) => {
+        const f = document.createElement('div');
+        f.className = 'ql-field';
+        const selId = 'primers-tpl-' + labelKey.replace(/\W/g, '');
+        f.innerHTML = '<label for="' + selId + '">' + t(labelKey) + '</label>';
+        const sel = document.createElement('select');
+        sel.id = selId;
+        if (allowNone) sel.insertAdjacentHTML('beforeend', '<option value="' + NONE + '"' + (value === NONE ? ' selected' : '') + '>' + t('primers.noneOption') + '</option>');
+        valid.forEach((p) => sel.insertAdjacentHTML('beforeend', '<option value="' + p.id + '"' + (p.id === value ? ' selected' : '') + '>' + escapeHtml(p.label) + '</option>'));
+        sel.addEventListener('change', () => { onChange(sel.value); paint(); });
+        f.appendChild(sel);
+        return f;
+      };
+      ctrl.appendChild(mkSelect('primers.primerASelect', s.templateA, (v) => { s.templateA = v; }, false));
+      ctrl.appendChild(mkSelect('primers.primerBSelect', s.templateB, (v) => { s.templateB = v; }, true));
+    }
+    const tolF = document.createElement('div');
+    tolF.className = 'ql-field';
+    tolF.innerHTML = '<label for="primers-tpl-tol">' + t('primers.toleranceLabel') + '</label>';
+    const tolIn = document.createElement('input');
+    tolIn.type = 'number'; tolIn.id = 'primers-tpl-tol'; tolIn.className = 'tabular';
+    tolIn.min = '0'; tolIn.max = '10'; tolIn.step = '1'; tolIn.value = String(s.templateTol);
+    tolIn.addEventListener('change', () => {
+      const v = parseInt(tolIn.value, 10);
+      if (Number.isFinite(v) && v >= 0) { s.templateTol = v; paint(); }
+    });
+    tolF.appendChild(tolIn);
+    tolF.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.toleranceHelp') + '</p>');
+    ctrl.appendChild(tolF);
+    ctrl.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:6px;">' + t('primers.alignmentLegend', { n: CRITICAL_3PRIME_ZONE }) + '</p>');
+    grid.appendChild(ctrl);
+    container.appendChild(grid);
+
+    // ---- resultados por secuencia de la plantilla ----
+    const records = parseFasta(s.templateText);
+    const resultsCard = document.createElement('section');
+    resultsCard.className = 'ql-card ql-panel';
+    resultsCard.style.marginTop = '20px';
+
+    if (!s.templateText.trim()) {
+      resultsCard.innerHTML = '<div class="ql-empty"><h3>' + t('primers.templateEmptyTitle') + '</h3><p>' + t('primers.templateEmptyNote') + '</p></div>';
+      container.appendChild(resultsCard);
+      return;
+    }
+    if (!records.length) {
+      resultsCard.innerHTML = '<p class="ql-field-help">' + t('primers.templateNoRecords') + '</p>';
+      container.appendChild(resultsCard);
+      return;
+    }
+    if (!valid.length) {
+      resultsCard.innerHTML = '<p class="ql-field-help">' + t('primers.dimersEmpty') + '</p>';
+      container.appendChild(resultsCard);
+      return;
+    }
+
+    resultsCard.innerHTML = '<h2>' + t('primers.resultsTitle') + '</h2>';
+    const primerA = valid.find((p) => p.id === s.templateA);
+    const primerB = (s.templateB && s.templateB !== NONE) ? valid.find((p) => p.id === s.templateB) : null;
+
+    records.forEach((rec) => {
+      const det = document.createElement('details');
+      det.className = 'ql-fmt-card';
+      det.style.marginTop = '10px';
+      det.open = records.length <= 3;
+      const summary = document.createElement('summary');
+      summary.innerHTML = '<span class="ql-fmt-name mono">' + escapeHtml(t('primers.recordLabel', { id: rec.id, len: rec.seq.length })) + '</span>' +
+        (rec.description ? '<span class="ql-fmt-see">' + escapeHtml(rec.description) + '</span>' : '');
+      det.appendChild(summary);
+      const body = document.createElement('div');
+      body.className = 'ql-fmt-body';
+
+      const hitsA = findPrimerSites(rec.seq, primerA.seq, { maxMismatches: s.templateTol });
+      body.insertAdjacentHTML('beforeend', '<h3 style="margin-top:0;">' + t('primers.hitsTitle') + ' — ' + escapeHtml(primerA.label) + '</h3>');
+      body.insertAdjacentHTML('beforeend', renderHitsTable(primerA.seq, hitsA));
+
+      if (primerB) {
+        const hitsB = findPrimerSites(rec.seq, primerB.seq, { maxMismatches: s.templateTol });
+        body.insertAdjacentHTML('beforeend', '<h3>' + t('primers.hitsTitle') + ' — ' + escapeHtml(primerB.label) + '</h3>');
+        body.insertAdjacentHTML('beforeend', renderHitsTable(primerB.seq, hitsB));
+
+        const { amplicons } = findAmplicons(rec.seq, primerA.seq, primerB.seq, { maxMismatches: s.templateTol });
+        body.insertAdjacentHTML('beforeend', '<h3>' + t('primers.ampliconTitle') + '</h3><p class="ql-field-help">' + t('primers.ampliconNote') + '</p>');
+        if (!amplicons.length) {
+          body.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.noAmplicon') + '</p>');
+        } else {
+          const list = document.createElement('ul');
+          list.style.cssText = 'margin:0;padding-left:18px;';
+          amplicons.forEach((am) => {
+            const fLabel = am.forward.primer === 'A' ? primerA.label : primerB.label;
+            const rLabel = am.reverse.primer === 'A' ? primerA.label : primerB.label;
+            const li = document.createElement('li');
+            li.innerHTML = t('primers.ampliconRow', { a: escapeHtml(fLabel), b: escapeHtml(rLabel), start: am.start + 1, end: am.end, size: am.size });
+            list.appendChild(li);
+          });
+          body.appendChild(list);
+        }
+      }
+
+      det.appendChild(body);
+      resultsCard.appendChild(det);
+    });
+    container.appendChild(resultsCard);
+  }
+
+  function rankLabel(depth) {
+    if (!depth) return t('primers.rankFull');
+    return t('primers.rankDepth' + depth);
+  }
+
+  function renderCoverageTab() {
+    const valid = derivePrimers().filter((p) => p.valid).map((p, i) => ({ ...p, label: primerLabel(p, i) }));
+
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    // ---- carga de la referencia + taxonomía opcional ----
+    const loadCard = document.createElement('section');
+    loadCard.className = 'ql-card ql-panel';
+    loadCard.innerHTML = '<h2>' + t('primers.coverageTitle') + '</h2><p class="ql-panel-note">' + t('primers.coverageNote') + '</p>' +
+      '<p class="ql-field-help" style="font-style:italic;">' + t('primers.coverageDisclaimer') + '</p>';
+
+    const mkDropzone = (labelKey, subKey, onText) => {
+      const dz = document.createElement('div');
+      dz.className = 'ql-dropzone';
+      dz.tabIndex = 0;
+      dz.setAttribute('role', 'button');
+      dz.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
+        '<div><div class="ql-dz-text"><b>' + t(labelKey) + '</b></div><div class="ql-dz-sub">' + t(subKey) + '</div></div>';
+      const input = document.createElement('input');
+      input.type = 'file';
+      dz.appendChild(input);
+      const apply = async (file) => { if (file) { onText(await file.text()); paint(); } };
+      dz.addEventListener('click', () => input.click());
+      dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
+      dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('is-drag'); apply(e.dataTransfer.files[0]); });
+      input.addEventListener('change', () => apply(input.files[0]));
+      return dz;
+    };
+
+    loadCard.appendChild(mkDropzone('primers.covRefDropLabel', 'primers.templateDropSub', (txt) => { s.covRefText = txt; }));
+
+    const taxDz = mkDropzone('primers.covTaxDropLabel', 'primers.covTaxDropSub', (txt) => { s.covTaxText = txt; });
+    taxDz.style.marginTop = '10px';
+    loadCard.appendChild(taxDz);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;';
+    const exBtn = document.createElement('button');
+    exBtn.type = 'button'; exBtn.className = 'ql-btn';
+    exBtn.textContent = t('primers.covLoadExample');
+    exBtn.addEventListener('click', async () => {
+      exBtn.disabled = true;
+      try {
+        const [refRes, taxRes] = await Promise.all([fetch(EXAMPLE_REF_FASTA_URL), fetch(EXAMPLE_TAX_URL)]);
+        s.covRefText = await refRes.text();
+        s.covTaxText = await taxRes.text();
+      } catch (e) { /* si falla, no se cambia nada */ }
+      exBtn.disabled = false;
+      paint();
+    });
+    btnRow.appendChild(exBtn);
+    if (s.covRefText || s.covTaxText) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button'; clearBtn.className = 'ql-btn';
+      clearBtn.textContent = t('primers.templateClear');
+      clearBtn.addEventListener('click', () => { s.covRefText = ''; s.covTaxText = ''; paint(); });
+      btnRow.appendChild(clearBtn);
+    }
+    loadCard.appendChild(btnRow);
+    grid.appendChild(loadCard);
+
+    // ---- controles ----
+    const ctrl = document.createElement('aside');
+    ctrl.className = 'ql-card ql-panel';
+    ctrl.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+    if (!valid.length) {
+      ctrl.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.dimersEmpty') + '</p>');
+    } else {
+      if (!s.covA || !valid.some((p) => p.id === s.covA)) s.covA = valid[0].id;
+      if (!s.covB) s.covB = valid.length > 1 && valid[1].id !== s.covA ? valid[1].id : NONE;
+      else if (s.covB !== NONE && !valid.some((p) => p.id === s.covB)) s.covB = NONE;
+      const mkSelect = (labelKey, value, onChange, allowNone) => {
+        const f = document.createElement('div');
+        f.className = 'ql-field';
+        const selId = 'primers-cov-' + labelKey.replace(/\W/g, '');
+        f.innerHTML = '<label for="' + selId + '">' + t(labelKey) + '</label>';
+        const sel = document.createElement('select');
+        sel.id = selId;
+        if (allowNone) sel.insertAdjacentHTML('beforeend', '<option value="' + NONE + '"' + (value === NONE ? ' selected' : '') + '>' + t('primers.noneOption') + '</option>');
+        valid.forEach((p) => sel.insertAdjacentHTML('beforeend', '<option value="' + p.id + '"' + (p.id === value ? ' selected' : '') + '>' + escapeHtml(p.label) + '</option>'));
+        sel.addEventListener('change', () => { onChange(sel.value); paint(); });
+        f.appendChild(sel);
+        return f;
+      };
+      ctrl.appendChild(mkSelect('primers.primerASelect', s.covA, (v) => { s.covA = v; }, false));
+      ctrl.appendChild(mkSelect('primers.primerBSelect', s.covB, (v) => { s.covB = v; }, true));
+    }
+    const tolF = document.createElement('div');
+    tolF.className = 'ql-field';
+    tolF.innerHTML = '<label for="primers-cov-tol">' + t('primers.toleranceLabel') + '</label>';
+    const tolIn = document.createElement('input');
+    tolIn.type = 'number'; tolIn.id = 'primers-cov-tol'; tolIn.className = 'tabular';
+    tolIn.min = '0'; tolIn.max = '10'; tolIn.step = '1'; tolIn.value = String(s.covTol);
+    tolIn.addEventListener('change', () => {
+      const v = parseInt(tolIn.value, 10);
+      if (Number.isFinite(v) && v >= 0) { s.covTol = v; paint(); }
+    });
+    tolF.appendChild(tolIn);
+    tolF.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.toleranceHelp') + '</p>');
+    ctrl.appendChild(tolF);
+
+    if (s.covTaxText.trim()) {
+      const rankF = document.createElement('div');
+      rankF.className = 'ql-field';
+      rankF.innerHTML = '<label for="primers-cov-rank">' + t('primers.rankLabel') + '</label>';
+      const rankSel = document.createElement('select');
+      rankSel.id = 'primers-cov-rank';
+      RANK_DEPTHS.forEach((d, i) => rankSel.insertAdjacentHTML('beforeend', '<option value="' + i + '"' + (i === s.covRankIdx ? ' selected' : '') + '>' + rankLabel(d) + '</option>'));
+      rankSel.addEventListener('change', () => { s.covRankIdx = parseInt(rankSel.value, 10); paint(); });
+      rankF.appendChild(rankSel);
+      ctrl.appendChild(rankF);
+    }
+    grid.appendChild(ctrl);
+    container.appendChild(grid);
+
+    // ---- resultados ----
+    const resultsCard = document.createElement('section');
+    resultsCard.className = 'ql-card ql-panel';
+    resultsCard.style.marginTop = '20px';
+
+    if (!s.covRefText.trim()) {
+      resultsCard.innerHTML = '<div class="ql-empty"><h3>' + t('primers.covEmptyTitle') + '</h3><p>' + t('primers.covEmptyNote') + '</p></div>';
+      container.appendChild(resultsCard);
+      return;
+    }
+    const refs = parseFasta(s.covRefText);
+    if (!refs.length) {
+      resultsCard.innerHTML = '<p class="ql-field-help">' + t('primers.templateNoRecords') + '</p>';
+      container.appendChild(resultsCard);
+      return;
+    }
+    if (!valid.length) {
+      resultsCard.innerHTML = '<p class="ql-field-help">' + t('primers.dimersEmpty') + '</p>';
+      container.appendChild(resultsCard);
+      return;
+    }
+
+    const primerA = valid.find((p) => p.id === s.covA);
+    const primerB = (s.covB && s.covB !== NONE) ? valid.find((p) => p.id === s.covB) : null;
+    const query = primerB ? { forward: primerA.seq, reverse: primerB.seq } : primerA.seq;
+    const cov = computeCoverage(refs, query, { maxMismatches: s.covTol });
+
+    resultsCard.innerHTML = '<h2>' + t('primers.covResultsTitle', {
+      label: primerB ? (primerA.label + ' + ' + primerB.label) : primerA.label,
+    }) + '</h2>';
+
+    const stats = document.createElement('div');
+    stats.className = 'ql-stats';
+    [
+      [t('primers.covStatTotal'), String(cov.total)],
+      [t('primers.covStatCovered'), String(cov.covered)],
+      [t('primers.covStatPct'), fmt1(cov.pct) + '%'],
+    ].forEach(([lbl, val]) => {
+      const tile = document.createElement('div');
+      tile.className = 'ql-stat';
+      tile.innerHTML = '<div class="ql-stat-label">' + lbl + '</div><div class="ql-stat-value" style="font-size:20px;">' + val + '</div>';
+      stats.appendChild(tile);
+    });
+    resultsCard.appendChild(stats);
+
+    if (cov.uncovered.length) {
+      resultsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' +
+        t('primers.covUncoveredList', { n: cov.uncovered.length }) + ' ' +
+        cov.uncovered.slice(0, 40).map((id) => '<span class="mono">' + escapeHtml(id) + '</span>').join(', ') +
+        (cov.uncovered.length > 40 ? '…' : '') + '</p>');
+    }
+
+    // ---- agrupado por taxón, si hay taxonomía ----
+    const taxText = s.covTaxText.trim();
+    if (taxText) {
+      const { headers, rows } = parseTable(taxText);
+      const { map: taxMap, idCol, taxCol } = buildTaxonomyMap(headers, rows);
+      if (!idCol || !taxCol) {
+        resultsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:12px;color:var(--warning);">' + t('primers.covTaxNotRecognised') + '</p>');
+      } else {
+        const grouped = groupCoverageByTaxon(cov, taxMap, RANK_DEPTHS[s.covRankIdx]);
+        const scroll = document.createElement('div');
+        scroll.className = 'ql-table-scroll scroll-x';
+        scroll.style.marginTop = '14px';
+        const tbl = document.createElement('table');
+        tbl.className = 'ql-table';
+        tbl.innerHTML = '<thead><tr>' +
+          ['primers.covColTaxon', 'primers.covStatTotal', 'primers.covStatCovered', 'primers.covStatPct']
+            .map((k) => '<th>' + t(k) + '</th>').join('') + '</tr></thead>';
+        const tb = document.createElement('tbody');
+        grouped.forEach((g) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td class="mono" style="font-size:12px;">' + escapeHtml(g.label) + '</td>' +
+            '<td class="ql-num tabular">' + g.total + '</td>' +
+            '<td class="ql-num tabular">' + g.covered + '</td>' +
+            '<td class="ql-num tabular">' + fmt1(g.pct) + '%</td>';
+          tb.appendChild(tr);
+        });
+        tbl.appendChild(tb);
+        scroll.appendChild(tbl);
+        const groupCard = document.createElement('div');
+        groupCard.style.marginTop = '18px';
+        groupCard.innerHTML = '<h3>' + t('primers.covByTaxonTitle') + '</h3>';
+        groupCard.appendChild(scroll);
+        resultsCard.appendChild(groupCard);
+      }
+    }
+
+    container.appendChild(resultsCard);
   }
 
   function renderPrimersTab() {

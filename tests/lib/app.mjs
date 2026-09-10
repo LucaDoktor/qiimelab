@@ -40,7 +40,7 @@ const TABS_FOR = {
   '#/diferencial': ['Comparar', 'Lollipop', 'calor', 'Volcano', 'Individual'],
   '#/correlograma': ['Red', 'Matriz'],
   '#/recuentos': ['Coliformes', 'Aerobios'],
-  '#/primers': ['Dímeros', 'Primers'],
+  '#/primers': ['Dímeros', 'Plantilla', 'Cobertura', 'Primers'],
 };
 
 export async function walkRoute(c, route, { report = false, onInfo = () => {} } = {}) {

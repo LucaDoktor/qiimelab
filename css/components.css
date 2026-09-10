@@ -719,6 +719,9 @@ svg.ql-brand-mark {
 .ql-dimer-matrix td.is-diag { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .ql-dimer-matrix td, .ql-dimer-matrix th { text-align: center; }
 .ql-dimer-matrix th[scope="row"] { text-align: right; }
+.ql-primer-mm { color: var(--critical); font-weight: 700; }
+.ql-primer-mm-crit { color: #fff; background: var(--critical); border-radius: 2px; padding: 0 1px; font-weight: 700; }
+.ql-primer-3prime { text-decoration: underline; text-decoration-color: var(--ink-muted); text-decoration-thickness: 1.5px; }
 
 /* ---------- Venn / UpSet: región seleccionable ---------- */
 .vn-region text { transition: fill var(--dur) var(--ease); }
