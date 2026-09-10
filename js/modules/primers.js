@@ -15,16 +15,19 @@ import { buildDimerMatrix, getHetero, classifyDimer, classifyHairpin, scanDimer,
 import { parseFasta, findPrimerSites, findAmplicons, CRITICAL_3PRIME_ZONE } from '../lib/primerTemplate.js';
 import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/primerCoverage.js';
 import { parseTable } from '../lib/csv.js';
+import { designPrimers, MODES as DESIGN_MODES } from '../lib/primerDesign.js';
 
 const STORE_KEY = 'qiimelab.primers';
 const MIN_PRIMER_LEN = 4;
 const EXAMPLE_REF_FASTA_URL = 'datos-ejemplo/primers/referencia_ejemplo.fasta';
 const EXAMPLE_TAX_URL = 'datos-ejemplo/primers/taxonomia_ejemplo.tsv';
+const EXAMPLE_GEN_FASTA_URL = 'datos-ejemplo/primers/gen_ejemplo.fasta';
 const NONE = '__none__'; // "(ninguno)" explícito, distinto de '' (= "todavía sin elegir")
 const RANK_DEPTHS = [null, 2, 3, 4, 5, 6, 7]; // null = completa; 2..7 = filo..especie (convención QIIME2)
 
 const TABS = [
   { id: 'primers', labelKey: 'primers.tabPrimers' },
+  { id: 'design', labelKey: 'primers.tabDesign' },
   { id: 'dimers', labelKey: 'primers.tabDimers' },
   { id: 'template', labelKey: 'primers.tabTemplate' },
   { id: 'coverage', labelKey: 'primers.tabCoverage' },
@@ -53,6 +56,9 @@ function defaultState() {
     covRefText: '', covTaxText: '',
     covTol: 1, covA: '', covB: '', covRankIdx: 6, // índice en RANK_DEPTHS ("Género" por defecto)
     batchPairs: [],
+    designText: '', designMode: 'qpcr',
+    designOverrides: { standard: {}, qpcr: {} }, // cambios a mano sobre MODES.<modo>
+    designTargetStart: '', designTargetEnd: '',
   };
 }
 
@@ -79,6 +85,14 @@ function load() {
         batchPairs: Array.isArray(raw.batchPairs)
           ? raw.batchPairs.map((bp) => ({ id: String(bp.id || ''), label: String(bp.label || ''), a: String(bp.a || ''), b: String(bp.b || '') })).filter((bp) => bp.id)
           : [],
+        designText: typeof raw.designText === 'string' ? raw.designText : '',
+        designMode: raw.designMode === 'standard' ? 'standard' : 'qpcr',
+        designOverrides: {
+          standard: (raw.designOverrides && raw.designOverrides.standard) || {},
+          qpcr: (raw.designOverrides && raw.designOverrides.qpcr) || {},
+        },
+        designTargetStart: typeof raw.designTargetStart === 'string' ? raw.designTargetStart : '',
+        designTargetEnd: typeof raw.designTargetEnd === 'string' ? raw.designTargetEnd : '',
       };
     }
   } catch (e) { /* localStorage puede fallar */ }
@@ -96,6 +110,7 @@ export function render(container) {
   const s = load();
   let nextIdNum = 1 + s.primers.reduce((m, p) => Math.max(m, parseInt(String(p.id).replace(/\D/g, ''), 10) || 0), 0);
   let nextBatchIdNum = 1 + s.batchPairs.reduce((m, bp) => Math.max(m, parseInt(String(bp.id).replace(/\D/g, ''), 10) || 0), 0);
+  let designResult = null; // resultado del último "Diseñar" — no se persiste (se recalcula al pulsar)
 
   function derivePrimers() {
     return s.primers.map((p) => {
@@ -137,7 +152,8 @@ export function render(container) {
       container.appendChild(tabsEl);
     }
 
-    if (s.tab === 'dimers') renderDimersTab();
+    if (s.tab === 'design') renderDesignTab();
+    else if (s.tab === 'dimers') renderDimersTab();
     else if (s.tab === 'template') renderTemplateTab();
     else if (s.tab === 'coverage') renderCoverageTab();
     else if (s.tab === 'batch') renderBatchTab();
@@ -164,6 +180,269 @@ export function render(container) {
       a: nameA, aStart: cand.aStart + 1, aEnd: cand.aEnd,
       b: nameB, bStart: cand.bStart + 1, bEnd: cand.bEnd, dg: fmt1(cand.dG),
     });
+  }
+
+  function extractDesignTemplate(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return '';
+    if (trimmed[0] === '>') {
+      const recs = parseFasta(trimmed);
+      return recs[0] ? recs[0].seq : '';
+    }
+    return cleanPrimerSeq(trimmed).seq;
+  }
+
+  function renderDesignTab() {
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    // ---- entrada: FASTA (o secuencia sin cabecera) del gen ----
+    const loadCard = document.createElement('section');
+    loadCard.className = 'ql-card ql-panel';
+    loadCard.innerHTML = '<h2>' + t('primers.designTitle') + '</h2><p class="ql-panel-note">' + t('primers.designNote') + '</p>';
+
+    const dz = document.createElement('div');
+    dz.className = 'ql-dropzone';
+    dz.tabIndex = 0;
+    dz.setAttribute('role', 'button');
+    dz.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
+      '<div><div class="ql-dz-text"><b>' + t('primers.templateDropLabel') + '</b></div><div class="ql-dz-sub">' + t('primers.templateDropSub') + '</div></div>';
+    const fileIn = document.createElement('input');
+    fileIn.type = 'file'; fileIn.accept = '.fasta,.fa,.fna,.txt';
+    dz.appendChild(fileIn);
+    loadCard.appendChild(dz);
+    dz.addEventListener('click', () => fileIn.click());
+    dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
+    const applyFile = async (file) => { if (file) { s.designText = await file.text(); designResult = null; paint(); } };
+    dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('is-drag'); applyFile(e.dataTransfer.files[0]); });
+    fileIn.addEventListener('change', () => applyFile(fileIn.files[0]));
+
+    const pasteField = document.createElement('div');
+    pasteField.className = 'ql-field';
+    pasteField.style.marginTop = '14px';
+    pasteField.innerHTML = '<label for="primers-design-paste">' + t('primers.templateOr') + '</label>';
+    const pasteTa = document.createElement('textarea');
+    pasteTa.id = 'primers-design-paste';
+    pasteTa.rows = 4; pasteTa.className = 'mono'; pasteTa.spellcheck = false;
+    pasteTa.placeholder = t('primers.designPastePh');
+    pasteTa.value = s.designText;
+    pasteTa.addEventListener('change', () => { s.designText = pasteTa.value; designResult = null; paint(); });
+    pasteField.appendChild(pasteTa);
+    loadCard.appendChild(pasteField);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;';
+    const exBtn = document.createElement('button');
+    exBtn.type = 'button'; exBtn.className = 'ql-btn';
+    exBtn.textContent = t('primers.designLoadExample');
+    exBtn.addEventListener('click', async () => {
+      exBtn.disabled = true;
+      try {
+        const res = await fetch(EXAMPLE_GEN_FASTA_URL);
+        s.designText = await res.text();
+      } catch (e) { /* si falla, no se cambia nada */ }
+      exBtn.disabled = false;
+      designResult = null;
+      paint();
+    });
+    btnRow.appendChild(exBtn);
+    if (s.designText) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button'; clearBtn.className = 'ql-btn';
+      clearBtn.textContent = t('primers.templateClear');
+      clearBtn.addEventListener('click', () => { s.designText = ''; designResult = null; paint(); });
+      btnRow.appendChild(clearBtn);
+    }
+    loadCard.appendChild(btnRow);
+
+    const excl = document.createElement('div');
+    excl.style.marginTop = '14px';
+    excl.innerHTML = '<p class="ql-field-help"><strong>' + t('primers.designExcludedTitle') + '</strong></p>' +
+      '<p class="ql-field-help">• ' + t('primers.designExcludedTaqman') + '</p>' +
+      '<p class="ql-field-help">• ' + t('primers.designExcludedGenome') + '</p>';
+    loadCard.appendChild(excl);
+    grid.appendChild(loadCard);
+
+    // ---- controles: modo + parámetros editables ----
+    const ctrl = document.createElement('aside');
+    ctrl.className = 'ql-card ql-panel';
+    ctrl.innerHTML = '<h2>' + t('primers.designModeTitle') + '</h2>';
+
+    const modeField = document.createElement('div');
+    modeField.className = 'ql-field';
+    const seg = document.createElement('div');
+    seg.className = 'ql-segmented';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', t('primers.designModeTitle'));
+    [['standard', t('primers.designModeStandard')], ['qpcr', t('primers.designModeQpcr')]].forEach(([m, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (s.designMode === m ? ' is-on' : '');
+      if (s.designMode === m) b.setAttribute('aria-pressed', 'true');
+      b.textContent = label;
+      b.addEventListener('click', () => { if (s.designMode !== m) { s.designMode = m; designResult = null; paint(); } });
+      seg.appendChild(b);
+    });
+    modeField.appendChild(seg);
+    ctrl.appendChild(modeField);
+
+    const mode = { ...DESIGN_MODES[s.designMode], ...s.designOverrides[s.designMode] };
+    const setOverride = (key, val) => { s.designOverrides[s.designMode][key] = val; designResult = null; paint(); };
+
+    function rangeRow(labelKey, minKey, maxKey) {
+      const row = document.createElement('div');
+      row.className = 'ql-field';
+      row.innerHTML = '<label>' + t(labelKey) + '</label>';
+      const wrap = document.createElement('div');
+      wrap.className = 'ql-inputrow';
+      [[minKey, t('primers.designMin')], [maxKey, t('primers.designMax')]].forEach(([key, ph]) => {
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.className = 'ql-num-small tabular';
+        inp.value = String(mode[key]);
+        inp.setAttribute('aria-label', t(labelKey) + ' — ' + ph);
+        inp.placeholder = ph;
+        inp.addEventListener('change', () => {
+          const v = parseFloat(inp.value);
+          if (Number.isFinite(v)) setOverride(key, v);
+        });
+        wrap.appendChild(inp);
+      });
+      row.appendChild(wrap);
+      return row;
+    }
+    ctrl.appendChild(rangeRow('primers.designAmpliconRange', 'ampliconMin', 'ampliconMax'));
+    ctrl.appendChild(rangeRow('primers.designTmRange', 'tmMin', 'tmMax'));
+    ctrl.appendChild(rangeRow('primers.designGcRange', 'gcMin', 'gcMax'));
+
+    const deltaRow = document.createElement('div');
+    deltaRow.className = 'ql-field';
+    deltaRow.innerHTML = '<label>' + t('primers.designMaxDeltaTm') + '</label>';
+    const deltaWrap = document.createElement('div');
+    deltaWrap.className = 'ql-inputrow';
+    const deltaChk = document.createElement('input');
+    deltaChk.type = 'checkbox'; deltaChk.checked = mode.maxDeltaTm != null;
+    deltaChk.setAttribute('aria-label', t('primers.designMaxDeltaTmOn'));
+    const deltaInp = document.createElement('input');
+    deltaInp.type = 'number'; deltaInp.className = 'ql-num-small tabular'; deltaInp.min = '0'; deltaInp.step = '0.5';
+    deltaInp.value = mode.maxDeltaTm != null ? String(mode.maxDeltaTm) : '5';
+    deltaInp.disabled = !deltaChk.checked;
+    deltaInp.setAttribute('aria-label', t('primers.designMaxDeltaTm'));
+    deltaChk.addEventListener('change', () => {
+      setOverride('maxDeltaTm', deltaChk.checked ? (parseFloat(deltaInp.value) || 5) : null);
+    });
+    deltaInp.addEventListener('change', () => {
+      const v = parseFloat(deltaInp.value);
+      if (deltaChk.checked && Number.isFinite(v)) setOverride('maxDeltaTm', v);
+    });
+    deltaWrap.appendChild(deltaChk);
+    deltaWrap.appendChild(deltaInp);
+    deltaRow.appendChild(deltaWrap);
+    deltaRow.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.designMaxDeltaTmHelp') + '</p>');
+    ctrl.appendChild(deltaRow);
+
+    const targetRow = document.createElement('div');
+    targetRow.className = 'ql-field';
+    targetRow.innerHTML = '<label>' + t('primers.designTargetRegion') + '</label>';
+    const targetWrap = document.createElement('div');
+    targetWrap.className = 'ql-inputrow';
+    const startInp = document.createElement('input');
+    startInp.type = 'number'; startInp.min = '1'; startInp.className = 'ql-num-small tabular';
+    startInp.placeholder = t('primers.designTargetStart');
+    startInp.setAttribute('aria-label', t('primers.designTargetStart'));
+    startInp.value = s.designTargetStart;
+    startInp.addEventListener('change', () => { s.designTargetStart = startInp.value.trim(); designResult = null; paint(); });
+    const endInp = document.createElement('input');
+    endInp.type = 'number'; endInp.min = '1'; endInp.className = 'ql-num-small tabular';
+    endInp.placeholder = t('primers.designTargetEnd');
+    endInp.setAttribute('aria-label', t('primers.designTargetEnd'));
+    endInp.value = s.designTargetEnd;
+    endInp.addEventListener('change', () => { s.designTargetEnd = endInp.value.trim(); designResult = null; paint(); });
+    targetWrap.appendChild(startInp);
+    targetWrap.appendChild(endInp);
+    targetRow.appendChild(targetWrap);
+    targetRow.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.designTargetHelp') + '</p>');
+    ctrl.appendChild(targetRow);
+
+    const templateSeq = extractDesignTemplate(s.designText);
+    const runBtn = document.createElement('button');
+    runBtn.type = 'button'; runBtn.className = 'ql-btn ql-btn-primary'; runBtn.style.marginTop = '8px';
+    runBtn.textContent = t('primers.designRun');
+    runBtn.disabled = templateSeq.length < 40;
+    runBtn.addEventListener('click', () => {
+      const start = parseInt(s.designTargetStart, 10), end = parseInt(s.designTargetEnd, 10);
+      const targetRegion = (Number.isFinite(start) && Number.isFinite(end) && end > start)
+        ? { start: start - 1, end } : null;
+      designResult = designPrimers(templateSeq, s.designMode, {
+        modeOverrides: s.designOverrides[s.designMode], targetRegion, topN: 10,
+      });
+      paint();
+    });
+    ctrl.appendChild(runBtn);
+    if (templateSeq.length > 0 && templateSeq.length < 40) {
+      ctrl.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="color:var(--critical);">' + t('primers.designTooShort') + '</p>');
+    }
+    grid.appendChild(ctrl);
+    container.appendChild(grid);
+
+    // ---- resultados ----
+    if (!designResult) return;
+    const resultsCard = document.createElement('section');
+    resultsCard.className = 'ql-card ql-panel';
+    resultsCard.style.marginTop = '20px';
+    resultsCard.innerHTML = '<h2>' + t('primers.designResultsTitle') + '</h2><p class="ql-panel-note">' +
+      t('primers.designEvaluatedNote', { n: designResult.candidatesEvaluated }) + '</p>';
+
+    if (!designResult.pairs.length) {
+      resultsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.designNoResults') + '</p>');
+      container.appendChild(resultsCard);
+      return;
+    }
+
+    const scroll = document.createElement('div');
+    scroll.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    tbl.innerHTML = '<thead><tr>' +
+      ['#', 'primers.designColTmF', 'primers.designColTmR', 'primers.colDeltaTm', 'primers.designColGcF', 'primers.designColGcR',
+        'primers.designColSize', 'primers.designColHetero', 'primers.designColPenalty', '']
+        .map((k) => '<th>' + (k.includes('.') ? t(k) : k) + '</th>').join('') + '</tr></thead>';
+    const tb = document.createElement('tbody');
+    designResult.pairs.forEach((p, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="ql-num tabular">' + (i + 1) + '</td>' +
+        '<td class="ql-num tabular mono">' + fmt1(p.forward.tm) + '</td>' +
+        '<td class="ql-num tabular mono">' + fmt1(p.reverse.tm) + '</td>' +
+        '<td class="ql-num tabular">' + fmt1(p.deltaTm) + '</td>' +
+        '<td class="ql-num tabular">' + fmt1(p.forward.gc) + '%</td>' +
+        '<td class="ql-num tabular">' + fmt1(p.reverse.gc) + '%</td>' +
+        '<td class="ql-num tabular">' + fmtN(p.size) + '</td>' +
+        '<td>' + riskBadge(p.heteroLevel) + '</td>' +
+        '<td class="ql-num tabular">' + fmt1(p.penalty, 2) + '</td>' +
+        '<td></td>';
+      const useBtn = document.createElement('button');
+      useBtn.type = 'button'; useBtn.className = 'ql-btn';
+      useBtn.textContent = t('primers.designUseButton');
+      useBtn.addEventListener('click', () => {
+        const label = t('primers.designPairLabel', { n: i + 1 });
+        const fId = 'pr' + nextIdNum++, rId = 'pr' + nextIdNum++;
+        s.primers.push({ id: fId, name: label + '-F', raw: p.forward.seq });
+        s.primers.push({ id: rId, name: label + '-R', raw: p.reverse.seq });
+        if (!s.templateText.trim()) s.templateText = '>' + t('primers.designTitle') + '\n' + templateSeq;
+        s.templateA = fId; s.templateB = rId;
+        s.covA = fId; s.covB = rId;
+        s.tab = 'dimers';
+        paint();
+      });
+      tr.lastElementChild.appendChild(useBtn);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    scroll.appendChild(tbl);
+    resultsCard.appendChild(scroll);
+    container.appendChild(resultsCard);
   }
 
   function renderDimersTab() {

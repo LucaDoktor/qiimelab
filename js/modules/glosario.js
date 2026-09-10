@@ -86,6 +86,8 @@ const GLOSSARY = [
       { id: 'primerDimer', route: 'primers' },
       { id: 'hairpinTerm', route: 'primers' },
       { id: 'ampliconTerm', route: 'primers' },
+      { id: 'primerDesignTerm', route: 'primers' },
+      { id: 'qpcrTerm', route: 'primers' },
     ],
   },
 ];
