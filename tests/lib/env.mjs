@@ -63,5 +63,31 @@ export function rJson(script) {
   return JSON.parse(start === Infinity ? out : out.slice(start));
 }
 
+let _py;
+export function hasPython() {
+  if (_py !== undefined) return _py;
+  try { execFileSync('python3', ['--version'], { stdio: 'ignore' }); _py = true; }
+  catch { _py = false; }
+  return _py;
+}
+
+let _biopython;
+export function hasBiopython() {
+  if (!hasPython()) return false;
+  if (_biopython !== undefined) return _biopython;
+  try {
+    execFileSync('python3', ['-c', 'import Bio'], { stdio: 'ignore' });
+    _biopython = true;
+  } catch { _biopython = false; }
+  return _biopython;
+}
+
+/** Ejecuta un script de Python 3 y devuelve su stdout (string). */
+export function pyRun(script) {
+  return execFileSync('python3', ['-c', script], {
+    encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+}
+
 export const SKIP = 2;
 export function skip(msg) { console.log('SKIP: ' + msg); process.exit(SKIP); }

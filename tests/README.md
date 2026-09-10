@@ -2,7 +2,8 @@
 
 Verificación de QiimeLab. Todo es Node ESM sin dependencias de `npm`
 (`node ≥ 20`). Los tests de navegador usan Chrome/Chromium headless vía CDP;
-los de estadística comparan contra R cuando está disponible.
+los de estadística comparan contra R cuando está disponible (`stats/primertm.mjs`
+compara contra Biopython en vez de R, mismo patrón GOLDEN + recálculo en vivo).
 
 ```
 node tests/run.mjs              # todo, con resumen final
@@ -12,8 +13,8 @@ node tests/<archivo>.mjs        # un test suelto
 ```
 
 Cada test sale con **0** (pasa), **1** (falla) o **2** (se salta: falta
-Chrome, R, o un paquete de R). El runner sale ≠ 0 solo si algo **falla**;
-los saltados no cuentan.
+Chrome, R, un paquete de R, o Biopython). El runner sale ≠ 0 solo si algo
+**falla**; los saltados no cuentan.
 
 ## Qué cubre cada archivo
 
@@ -41,6 +42,7 @@ los saltados no cuentan.
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
 | `stats/countsummary.mjs` | R base | `summariseCountSeries()` (recuento microbiano): media/SD/SE en log10 por grupo vs. `mean()` / `sd()` / `sd()/sqrt(n)`; además comprueba la exclusión de celdas `#NUM!` / 0 y la vía "el valor ya viene en log10". |
 | `stats/permanova.mjs` | R (`vegan`) | `permanova()` (PERMANOVA de un factor): Df, sumas de cuadrados, pseudo-F y R² **exactos** vs `vegan::adonis2`; el p-valor (estocástico) se comprueba por rango + determinismo. |
+| `stats/primertm.mjs` | Biopython | `tmNN()`/`meltingTemp()` (`js/lib/primerAnalysis.js`, Tm de vecino más próximo SantaLucia 1998) vs `Bio.SeqUtils.MeltingTemp.Tm_NN` (`nn_table=DNA_NN3`, `saltcorr=5`) — 10 casos (secuencias concretas, sal/concentración de primer variadas) + el primer degenerado 515F (4 resoluciones IUPAC → min/max/media). |
 | `mobile-audit.mjs` | navegador | Recorre las 17 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
 | `pwa.mjs` | estático + navegador | `manifest.json` es JSON válido con los campos obligatorios y sus iconos existen; `index.html` enlaza el manifest. Con navegador: el service worker registra, activa y controla la página tras la 1ª carga; con la red simulada offline por CDP una 2ª navegación sigue sirviendo el shell (sidebar + main + footer) desde caché sin errores; y el evento `offline`/`online` muestra/oculta el banner "sin conexión" de `js/lib/pwa.js`. |
 | `perf-stress.mjs` | navegador | Genera un dataset de estrés (260 muestras × 2800 taxones, semilla fija, **no** en `datos-ejemplo/`) y cronometra las 4 operaciones pesadas midiendo el "jank" (hueco máximo entre frames de `requestAnimationFrame`). **Falla** si la ruta migrada a Web Worker (`js/lib/heavyStats.js`: UPGMA de matrices grandes + curvas de rarefacción) vuelve a bloquear el hilo principal (> 120 ms). El resto solo se informa. |

@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { findChrome, hasR } from './lib/env.mjs';
+import { findChrome, hasR, hasBiopython } from './lib/env.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +32,7 @@ const SUITE = [
   { name: 'stats/cliffsdelta', file: 'stats/cliffsdelta.mjs', kind: 'R' },
   { name: 'stats/countsummary', file: 'stats/countsummary.mjs', kind: 'R' },
   { name: 'stats/permanova', file: 'stats/permanova.mjs', kind: 'R' },
+  { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },
   { name: 'keyboard-editor', file: 'keyboard-editor.mjs', kind: 'navegador' },
   { name: 'session-ui', file: 'session-ui.mjs', kind: 'navegador' },
   { name: 'compare-overlap', file: 'compare-overlap.mjs', kind: 'navegador' },
@@ -51,6 +52,7 @@ const picked = filters.length
 // avisos de entorno
 if (!findChrome()) console.log('· sin Chrome/Chromium → los tests de navegador se SALTAN\n');
 if (!hasR()) console.log('· sin Rscript → los tests de stats corren en modo GOLDEN (referencia R embebida)\n');
+if (!hasBiopython()) console.log('· sin Biopython → stats/primertm corre en modo GOLDEN (referencia Biopython embebida)\n');
 
 function runOne(spec) {
   return new Promise((resolve) => {
