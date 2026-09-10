@@ -83,6 +83,8 @@ const GLOSSARY = [
       { id: 'iupacDegenerate', route: 'primers' },
       { id: 'primerTm', route: 'primers' },
       { id: 'gcClamp', route: 'primers' },
+      { id: 'primerDimer', route: 'primers' },
+      { id: 'hairpinTerm', route: 'primers' },
     ],
   },
 ];

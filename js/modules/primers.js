@@ -11,14 +11,16 @@ import {
   cleanPrimerSeq, baseComposition, gcPercent, gcClamp,
   molecularWeight, extinctionCoefficient, meltingTemp,
 } from '../lib/primerAnalysis.js';
+import { buildDimerMatrix, getHetero, classifyDimer, classifyHairpin } from '../lib/primerDimers.js';
 
 const STORE_KEY = 'qiimelab.primers';
 const MIN_PRIMER_LEN = 4;
 
-// pestañas ya implementadas — se amplía en próximos commits (dímeros,
-// plantilla, cobertura, lote). Con 1 sola pestaña no se muestra la barra.
+// pestañas ya implementadas — se amplía en próximos commits (plantilla,
+// cobertura, lote). Con 1 sola pestaña no se muestra la barra.
 const TABS = [
   { id: 'primers', labelKey: 'primers.tabPrimers' },
+  { id: 'dimers', labelKey: 'primers.tabDimers' },
 ];
 
 function escapeHtml(s) {
@@ -107,7 +109,106 @@ export function render(container) {
       container.appendChild(tabsEl);
     }
 
-    renderPrimersTab();
+    if (s.tab === 'dimers') renderDimersTab();
+    else renderPrimersTab();
+  }
+
+  function primerLabel(p, i) { return p.name || t('primers.namePh', { n: i + 1 }); }
+
+  function riskBadge(level) {
+    const cls = level === 'crit' ? 'ql-badge-crit' : level === 'warn' ? 'ql-badge-warn' : 'ql-badge-good';
+    const key = level === 'crit' ? 'primers.riskCrit' : level === 'warn' ? 'primers.riskWarn' : 'primers.riskOk';
+    return '<span class="ql-badge ' + cls + '">' + t(key) + '</span>';
+  }
+
+  function dimerCellHtml(cand, level) {
+    if (!cand) return '<span class="ql-cell-muted">—</span>';
+    return riskBadge(level) + '<div class="ql-field-help" style="margin-top:2px;">' +
+      t('primers.dimerCellNote', { len: cand.len, dg: fmt1(cand.dG) }) + '</div>';
+  }
+
+  function dimerTooltip(cand, nameA, nameB) {
+    if (!cand) return '';
+    return t('primers.dimerTooltip', {
+      a: nameA, aStart: cand.aStart + 1, aEnd: cand.aEnd,
+      b: nameB, bStart: cand.bStart + 1, bEnd: cand.bEnd, dg: fmt1(cand.dG),
+    });
+  }
+
+  function renderDimersTab() {
+    const valid = derivePrimers().filter((p) => p.valid);
+    const named = valid.map((p, i) => ({ ...p, label: primerLabel(p, i) }));
+
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+    card.innerHTML = '<h2>' + t('primers.dimersTitle') + '</h2><p class="ql-panel-note">' + t('primers.dimersNote') + '</p>';
+
+    if (!named.length) {
+      card.insertAdjacentHTML('beforeend', '<div class="ql-empty"><h3>' + t('primers.emptyTitle') + '</h3><p>' + t('primers.dimersEmpty') + '</p></div>');
+      container.appendChild(card);
+      return;
+    }
+
+    const matrix = buildDimerMatrix(named.map((p) => ({ id: p.id, seq: p.seq })));
+
+    const scroll = document.createElement('div');
+    scroll.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table ql-dimer-matrix';
+    let thead = '<thead><tr><th></th>';
+    named.forEach((p) => { thead += '<th scope="col">' + escapeHtml(p.label) + '</th>'; });
+    thead += '</tr></thead>';
+    let tbody = '<tbody>';
+    named.forEach((pi) => {
+      tbody += '<tr><th scope="row">' + escapeHtml(pi.label) + '</th>';
+      named.forEach((pj) => {
+        const cand = getHetero(matrix, pi.id, pj.id);
+        const level = classifyDimer(cand);
+        const title = dimerTooltip(cand, pi.label, pj.label);
+        tbody += '<td class="' + (pi.id === pj.id ? 'is-diag' : '') + '"' + (title ? ' title="' + escapeHtml(title) + '"' : '') + '>' +
+          dimerCellHtml(cand, level) + '</td>';
+      });
+      tbody += '</tr>';
+    });
+    tbody += '</tbody>';
+    tbl.innerHTML = thead + tbody;
+    scroll.appendChild(tbl);
+    card.appendChild(scroll);
+    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.dimersLegend') + '</p>');
+    container.appendChild(card);
+
+    // ---- horquillas: una por primer, no es una matriz ----
+    const hpCard = document.createElement('section');
+    hpCard.className = 'ql-card ql-panel';
+    hpCard.style.marginTop = '20px';
+    hpCard.innerHTML = '<h2>' + t('primers.hairpinTitle') + '</h2><p class="ql-panel-note">' + t('primers.hairpinNote') + '</p>';
+    const hScroll = document.createElement('div');
+    hScroll.className = 'ql-table-scroll scroll-x';
+    const hTbl = document.createElement('table');
+    hTbl.className = 'ql-table';
+    hTbl.innerHTML = '<thead><tr>' +
+      ['primers.colName', 'primers.colStem', 'primers.colLoop', 'primers.colDG', 'primers.colRisk', 'primers.colPosition']
+        .map((k) => '<th>' + t(k) + '</th>').join('') + '</tr></thead>';
+    const hTb = document.createElement('tbody');
+    named.forEach((p) => {
+      const hp = matrix.hairpin[p.id];
+      const level = classifyHairpin(hp);
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(p.label) + '</td>' +
+        '<td class="ql-num tabular">' + (hp ? hp.stem : '—') + '</td>' +
+        '<td class="ql-num tabular">' + (hp ? (hp.loopEnd - hp.loopStart) : '—') + '</td>' +
+        '<td class="ql-num tabular">' + (hp ? fmt1(hp.dG) : '—') + '</td>' +
+        '<td>' + riskBadge(level) + '</td>' +
+        '<td class="mono" style="font-size:12px;">' + (hp
+          ? escapeHtml((hp.armStart + 1) + '–' + hp.armEnd + ' · ' + t('primers.loopWord') + ' ' + (hp.loopStart + 1) + '–' + hp.loopEnd + ' · ' + (hp.stem2Start + 1) + '–' + hp.stem2End)
+          : '<span class="ql-cell-muted">—</span>') + '</td>';
+      hTb.appendChild(tr);
+    });
+    hTbl.appendChild(hTb);
+    hScroll.appendChild(hTbl);
+    hpCard.appendChild(hScroll);
+    container.appendChild(hpCard);
   }
 
   function renderPrimersTab() {

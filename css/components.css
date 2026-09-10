@@ -714,8 +714,11 @@ svg.ql-brand-mark {
 .ql-kegg-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ql-cell-muted { color: var(--ink-muted); font-size: 12px; }
 
-/* ---------- primers: bases IUPAC degeneradas ---------- */
+/* ---------- primers: bases IUPAC degeneradas + matriz de dímeros ---------- */
 .ql-primer-degenerate { color: var(--accent); font-weight: 700; text-decoration: underline dotted; text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ql-dimer-matrix td.is-diag { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ql-dimer-matrix td, .ql-dimer-matrix th { text-align: center; }
+.ql-dimer-matrix th[scope="row"] { text-align: right; }
 
 /* ---------- Venn / UpSet: región seleccionable ---------- */
 .vn-region text { transition: fill var(--dur) var(--ease); }
