@@ -36,6 +36,11 @@ export const CATEGORICAL_SCATTER_MAX = 4;
  */
 export const SEQUENTIAL = ['#e4f0ff', '#a9c4e8', '#7099d0', '#366eb6', '#00429c'];
 
+/** Los 2 extremos de la rampa secuencial — para gradientes CONTINUOS de 2
+ *  polos (mapa de calor de distancias: color-mix entre "cerca" y "lejos"),
+ *  donde no tiene sentido pedir las 5 paradas discretas. */
+export const SEQUENTIAL_POLES = [SEQUENTIAL[0], SEQUENTIAL[SEQUENTIAL.length - 1]];
+
 /**
  * Divergente — dos tonos + centro gris neutro, para volcano plots y
  * correlogramas (signo +/−). pos/neg son los mismos hex que --depleted/
@@ -48,10 +53,17 @@ export const DIVERGENT = { neg: '#e34948', mid: '#a6a49c', pos: '#2a78d6' };
 /** Paleta de degradado como array de 3 paradas (para pintarla como rampa). */
 export const DIVERGENT_STOPS = [DIVERGENT.neg, DIVERGENT.mid, DIVERGENT.pos];
 
+/** Solo los 2 polos (sin el centro neutro) — para series discretas de 2
+ *  valores que ya tienen su propio "sin dato" fijo (p. ej. "ns" en un
+ *  volcano plot, que se queda gris y no entra en la paleta). */
+export const DIVERGENT_POLES = [DIVERGENT.neg, DIVERGENT.pos];
+
 export const PALETTES = {
   categorical: { colors: CATEGORICAL, scatterMax: CATEGORICAL_SCATTER_MAX },
   sequential: { colors: SEQUENTIAL },
+  sequentialPoles: { colors: SEQUENTIAL_POLES },
   divergent: { colors: DIVERGENT_STOPS },
+  divergentPoles: { colors: DIVERGENT_POLES },
 };
 
 /** Color de la serie `i` de una paleta con tope opcional (scatter). Cicla

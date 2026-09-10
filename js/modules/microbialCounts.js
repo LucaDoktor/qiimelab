@@ -445,6 +445,7 @@ export function render(container) {
       const rect = svgEl('rect', {
         x: cx - barW / 2, y: yTop, width: barW, height: Math.max(1, yBase - yTop),
         fill: col, 'fill-opacity': 0.22, stroke: col, 'stroke-width': 1.5, rx: 3,
+        'data-ce-series-fill': 's' + gi, 'data-ce-series-stroke': 's' + gi,
       });
       rect.addEventListener('mouseenter', () => {
         const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
@@ -511,6 +512,8 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g.key })),
+      paletteType: 'categorical',
       onReset: () => paint(),
     });
   }

@@ -13,10 +13,38 @@
 //  - "Descargar SVG": exporta la figura tal cual se ve, con los estilos
 //    inline resueltos (sin depender de la hoja de estilos de la app).
 //
+//  - Paleta de color para las SERIES de datos (no solo el texto): botones de
+//    paleta completa (categórica/secuencial/divergente) + una fila por serie
+//    con swatch nativo + campo de texto #RRGGBB, con aviso suave (no
+//    bloqueante) si el color chocaría con otro de la misma figura. Dos
+//    mecanismos según el tipo de gráfico (ver cfg.paletteSeries más abajo):
+//    directo por atributo `data-ce-series-fill/-stroke="<id>"` en los nodos
+//    ya dibujados (sin repintar — la mayoría de gráficos: barras, cajas,
+//    puntos, dímeros…), o lectura de `getPaletteOverrides(key)` ANTES de
+//    calcular colores, para las figuras con degradado continuo (mapas de
+//    calor, matriz de correlación) que sí necesitan repintar al cambiar.
+//
 // Sin dependencias, sin build step. No toca datos ni escalas.
+
+import { PALETTES, paletteColorAt } from './palettes.js';
+import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const STYLE_ID = 'ce-styles';
+const CHARTSTYLE_PREFIX = 'qiimelab.chartStyle.';
+
+function readChartStyleRaw(key) {
+  try { return JSON.parse(localStorage.getItem(CHARTSTYLE_PREFIX + key)) || {}; }
+  catch (e) { return {}; }
+}
+
+/** Los overrides de paleta persistidos para `key` — { seriesId: '#hex' }.
+ *  Función pura, sin DOM: para que los módulos con degradado continuo
+ *  (mapas de calor, matriz de correlación) puedan leerla ANTES de calcular
+ *  sus colores, sin esperar a que exista el <svg>. */
+export function getPaletteOverrides(key) {
+  return readChartStyleRaw(key).__palette || {};
+}
 
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
@@ -31,13 +59,21 @@ const I18N = {
   es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG',
         hint: 'Arrastra los textos (o enfócalos con el tabulador y muévelos con las flechas). Haz clic o pulsa Intro para cambiar su estilo.',
         lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala en SVG o PNG.',
-        text: 'Texto', color: 'Color', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar',
-        handle: (name) => name + ', elemento arrastrable: muévelo con las flechas (Mayús = paso mayor), Intro para editar su estilo' },
+        text: 'Texto', color: 'Color', hex: 'Hex', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar',
+        handle: (name) => name + ', elemento arrastrable: muévelo con las flechas (Mayús = paso mayor), Intro para editar su estilo',
+        paletteTitle: 'Paleta de la figura', paletteCategorical: 'Categórica', paletteSequential: 'Secuencial', paletteDivergent: 'Divergente',
+        paletteWarnClash: (name) => 'parecido a "' + name + '" para algunos tipos de daltonismo',
+        paletteWarnContrast: 'poco contraste sobre el fondo de la figura',
+        paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
-        text: 'Text', color: 'Colour', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close',
-        handle: (name) => name + ', draggable element: move it with the arrow keys (Shift = larger step), Enter to edit its style' },
+        text: 'Text', color: 'Colour', hex: 'Hex', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close',
+        handle: (name) => name + ', draggable element: move it with the arrow keys (Shift = larger step), Enter to edit its style',
+        paletteTitle: 'Figure palette', paletteCategorical: 'Categorical', paletteSequential: 'Sequential', paletteDivergent: 'Divergent',
+        paletteWarnClash: (name) => 'similar to "' + name + '" for some kinds of colour blindness',
+        paletteWarnContrast: 'low contrast against the figure background',
+        paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -92,6 +128,20 @@ svg.ce-editing .ce-hit:focus-visible { outline:2px solid var(--accent); outline-
 .ce-toggles button.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 .ce-toolbar .ce-on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600; fill:var(--ink); }
+.ce-hexfield { width:76px; font-family:var(--font-mono); text-transform:uppercase; }
+.ce-palette { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-palette h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-pal-btns { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.ce-pal-btns button { border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-2); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; display:flex; align-items:center; gap:6px; }
+.ce-pal-btns button:hover { border-color:var(--accent); color:var(--ink); }
+.ce-pal-swatchbar { display:flex; }
+.ce-pal-swatchbar span { display:block; width:8px; height:14px; }
+.ce-pal-rows { display:flex; flex-direction:column; gap:6px; max-width:420px; }
+.ce-pal-row { display:flex; align-items:center; gap:8px; }
+.ce-pal-row label { flex:0 0 auto; min-width:90px; font-size:12px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ce-pal-row input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
+.ce-pal-row input[type=text] { flex:0 0 84px; }
+.ce-pal-warn { font-size:11px; color:#8a5a00; flex:1 1 100%; margin:0; }
 `;
   document.head.appendChild(s);
 }
@@ -112,6 +162,9 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 export function attachChartEditor(cfg) {
   injectStyles();
   const { key, svg, mount, filename = 'figura', elements = [] } = cfg;
+  const paletteSeries = cfg.paletteSeries || []; // [{ id, label }] — series de datos recoloreables
+  const paletteType = cfg.paletteType || 'categorical'; // qué botones de paleta ofrecer
+  const paletteMax = cfg.paletteMax; // tope de tonos simultáneos (scatter/red: 3-4, no los 8)
   const lang = cfg.lang || 'es';
   const T = tr(lang);
   const LSKEY = 'qiimelab.chartStyle.' + key;
@@ -136,6 +189,54 @@ export function attachChartEditor(cfg) {
     renderToolbar();
   }
   function st(id) { return (store[id] = store[id] || {}); }
+
+  // ---- paleta de series de datos ----
+  // store.__palette = { seriesId: '#hex' } — solo las series con un color
+  // elegido a mano o por un botón de paleta; las demás siguen el var() por
+  // defecto del propio módulo (fill/stroke tal como lo dibujó).
+  function paletteOverrides() { return store.__palette || {}; }
+
+  /** Color efectivo actual de una serie: el override si existe, si no el
+   *  que ya está dibujado en el propio SVG (resuelto por el navegador, así
+   *  que respeta el tema claro/oscuro), y si no hay ningún nodo (gráficos de
+   *  degradado continuo, que no taggean nodos) el que le tocaría por orden
+   *  dentro de la paleta activa — solo como referencia para el aviso de choque. */
+  function effectiveSeriesColor(id, idx) {
+    const ov = paletteOverrides()[id];
+    if (ov) return ov;
+    const node = svg.querySelector('[data-ce-series-fill="' + id + '"], [data-ce-series-stroke="' + id + '"]');
+    if (node) {
+      const prop = node.hasAttribute('data-ce-series-fill') ? 'fill' : 'stroke';
+      return toHex(getComputedStyle(node)[prop]);
+    }
+    return paletteColorAt(paletteType, idx, { max: paletteMax }) || '#888888';
+  }
+
+  /** Aplica (o revierte, si no hay override) el color de cada serie
+   *  configurada a los nodos ya dibujados — sin repintar el gráfico. */
+  function applyPalette() {
+    const ov = paletteOverrides();
+    paletteSeries.forEach((s) => {
+      const hex = ov[s.id] || '';
+      svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => { n.style.fill = hex; });
+      svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => { n.style.stroke = hex; });
+    });
+  }
+
+  function setSeriesColor(id, hex) {
+    const pal = (store.__palette = store.__palette || {});
+    if (hex) pal[id] = hex; else delete pal[id];
+    if (!Object.keys(pal).length) delete store.__palette;
+    applyPalette();
+    writeStore();
+  }
+
+  function applyPresetPalette(name) {
+    const pal = (store.__palette = store.__palette || {});
+    paletteSeries.forEach((s, i) => { pal[s.id] = paletteColorAt(name, i, { max: paletteMax }); });
+    applyPalette();
+    writeStore();
+  }
 
   // ---- barra de herramientas ----
   const toolbar = document.createElement('div');
@@ -172,6 +273,117 @@ export function attachChartEditor(cfg) {
       bReset.className = 'ql-btn ql-btn-ghost';
       toolbar.appendChild(bReset);
     }
+
+    if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
+  }
+
+  const PALETTE_LABEL = {
+    categorical: T.paletteCategorical, sequential: T.paletteSequential,
+    sequentialPoles: T.paletteSequential, divergent: T.paletteDivergent,
+    divergentPoles: T.paletteDivergent,
+  };
+
+  function swatchBar(name) {
+    const bar = document.createElement('span');
+    bar.className = 'ce-pal-swatchbar';
+    const colors = (PALETTES[name] && PALETTES[name].colors) || [];
+    colors.slice(0, paletteMax || colors.length).forEach((hex) => {
+      const sw = document.createElement('span');
+      sw.style.background = hex;
+      bar.appendChild(sw);
+    });
+    return bar;
+  }
+
+  function renderPaletteSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-palette';
+    wrap.innerHTML = '<h5>' + T.paletteTitle + '</h5>';
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'ce-pal-btns';
+    const applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.appendChild(swatchBar(paletteType));
+    applyBtn.insertAdjacentHTML('beforeend', '<span>' + (PALETTE_LABEL[paletteType] || paletteType) + '</span>');
+    applyBtn.addEventListener('click', () => applyPresetPalette(paletteType));
+    btnRow.appendChild(applyBtn);
+    wrap.appendChild(btnRow);
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-pal-rows';
+    const currentHexes = paletteSeries.map((s, i) => effectiveSeriesColor(s.id, i));
+    paletteSeries.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'ce-pal-row';
+      const lab = document.createElement('label');
+      lab.textContent = s.label;
+      row.appendChild(lab);
+
+      const hex = currentHexes[i];
+      const colorId = 'ce-pal-c-' + (++cePanelUid);
+      const inpColor = document.createElement('input');
+      inpColor.type = 'color'; inpColor.id = colorId;
+      inpColor.value = isValidHex(hex) ? hex : '#888888';
+      lab.setAttribute('for', colorId);
+
+      const inpHex = document.createElement('input');
+      inpHex.type = 'text'; inpHex.className = 'ce-hexfield';
+      inpHex.value = (isValidHex(hex) ? hex : '').toUpperCase();
+      inpHex.setAttribute('aria-label', s.label + ' — ' + T.hex);
+      inpHex.placeholder = '#RRGGBB';
+
+      const warn = document.createElement('p');
+      warn.className = 'ce-pal-warn';
+
+      const showWarning = (h) => {
+        warn.textContent = '';
+        if (!h) return;
+        if (!isValidHex(h)) { warn.textContent = '⚠ ' + T.paletteInvalidHex; return; }
+        const others = paletteSeries.map((s2, j) => (j === i ? null : currentHexes[j])).filter(Boolean);
+        const res = checkAgainstPalette(h, others);
+        if (res.verdict === 'PASS') return;
+        if (res.reason === 'clash') {
+          const otherLabel = (paletteSeries.find((s2, j) => currentHexes[j] === res.other) || {}).label || res.other;
+          warn.textContent = '⚠ ' + T.paletteWarnClash(otherLabel);
+        } else if (res.reason === 'contrast') {
+          warn.textContent = '⚠ ' + T.paletteWarnContrast;
+        }
+      };
+      showWarning(hex);
+
+      // vista previa en vivo (solo DOM, sin persistir ni repintar la barra —
+      // así no se pierde el foco del campo de texto mientras se teclea);
+      // se persiste solo al confirmar (blur / Intro / soltar el selector nativo).
+      const preview = (h) => {
+        const ok = h === '' || isValidHex(h);
+        svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => { n.style.fill = ok ? h : ''; });
+        svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => { n.style.stroke = ok ? h : ''; });
+      };
+      const commit = (h) => { if (!h || isValidHex(h)) setSeriesColor(s.id, h || null); };
+
+      inpColor.addEventListener('input', () => { inpHex.value = inpColor.value.toUpperCase(); showWarning(inpColor.value); preview(inpColor.value); });
+      inpColor.addEventListener('change', () => commit(inpColor.value));
+      inpHex.addEventListener('input', () => {
+        let v = inpHex.value.trim();
+        if (v && v[0] !== '#') v = '#' + v;
+        showWarning(v);
+        if (isValidHex(v)) { inpColor.value = v; preview(v); }
+      });
+      inpHex.addEventListener('change', () => {
+        let v = inpHex.value.trim();
+        if (v && v[0] !== '#') v = '#' + v;
+        if (!v || isValidHex(v)) commit(v);
+      });
+      inpHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') inpHex.blur(); });
+
+      row.appendChild(inpColor);
+      row.appendChild(inpHex);
+      rows.appendChild(row);
+      rows.appendChild(warn);
+    });
+    wrap.appendChild(rows);
+    return wrap;
   }
   function mkBtn(icon, label, onClick) {
     const b = document.createElement('button');
@@ -319,6 +531,10 @@ export function attachChartEditor(cfg) {
     wraps.forEach((_, id) => applyState(id));
     wraps.forEach((_, id) => decorate(id));
     syncSelection();
+    // último paso a propósito: en algún gráfico (p. ej. las etiquetas de
+    // grupo del Venn) el mismo <text> es a la vez un elemento de texto
+    // arrastrable Y una serie de datos — si hay override de paleta, gana él.
+    applyPalette();
   }
 
   // ---- arrastre ----
@@ -402,8 +618,21 @@ export function attachChartEditor(cfg) {
     const inpColor = document.createElement('input');
     inpColor.type = 'color';
     inpColor.value = toHex(s.fill || cs.fill);
-    inpColor.addEventListener('input', () => { s.fill = inpColor.value; applyState(id); writeStoreDebounced(); });
+    const inpColorHex = document.createElement('input');
+    inpColorHex.type = 'text';
+    inpColorHex.className = 'ce-hexfield';
+    inpColorHex.setAttribute('aria-label', T.color + ' — ' + T.hex);
+    inpColorHex.placeholder = '#RRGGBB';
+    inpColorHex.value = inpColor.value.toUpperCase();
+    inpColor.addEventListener('input', () => { s.fill = inpColor.value; inpColorHex.value = inpColor.value.toUpperCase(); applyState(id); writeStoreDebounced(); });
+    inpColorHex.addEventListener('input', () => {
+      let v = inpColorHex.value.trim();
+      if (v && v[0] !== '#') v = '#' + v;
+      if (!isValidHex(v)) return;
+      inpColor.value = v; s.fill = v; applyState(id); writeStoreDebounced();
+    });
     rColor.appendChild(inpColor);
+    rColor.appendChild(inpColorHex);
     rows.appendChild(rColor);
 
     const rFont = row(T.font);

@@ -4,7 +4,8 @@ import { upgma, leafOrder, permanova, formatP } from '../lib/stats.js';
 import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
+import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -355,10 +356,18 @@ export function render(container) {
     svg.style.maxWidth = 'none';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
+    // degradado continuo (color-mix por celda, no una serie discreta): la
+    // paleta se lee ANTES de calcular colores y hay que repintar para
+    // aplicarla — a diferencia de las demás figuras, que se recolorean sin
+    // repintar. Ver js/lib/chartEditor.js getPaletteOverrides().
+    const gradOv = getPaletteOverrides('betaDiversity');
+    const nearColor = gradOv.near || 'var(--surface)';
+    const farColor = gradOv.far || 'var(--depleted)';
+
     const defs = svgEl('defs', {});
     const grad = svgEl('linearGradient', { id: 'ql-beta-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': 'var(--surface)' }));
-    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': 'var(--depleted)' }));
+    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': nearColor }));
+    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': farColor }));
     defs.appendChild(grad);
     svg.appendChild(defs);
 
@@ -379,7 +388,7 @@ export function render(container) {
         const frac = Math.max(0, Math.min(1, v / maxDist));
         const rect = svgEl('rect', {
           x: marginL + ci * cellSize, y: marginT + ri * cellSize, width: cellSize - 1, height: cellSize - 1,
-          fill: 'color-mix(in srgb, var(--depleted) ' + Math.round(frac * 100) + '%, var(--surface))',
+          fill: 'color-mix(in srgb, ' + farColor + ' ' + Math.round(frac * 100) + '%, ' + nearColor + ')',
         });
         rect.addEventListener('mouseenter', () => {
           const wrapRect = chartWrap.getBoundingClientRect();
@@ -427,7 +436,10 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: [{ id: 'near', label: t('beta.legendSimilar') }, { id: 'far', label: t('beta.legendDistinct') }],
+      paletteType: 'sequentialPoles',
       onReset: () => paint(),
+      onChange: () => paint(), // degradado continuo: repinta para recalcular color-mix por celda
     });
 
     const scrollDiv = document.createElement('div');
@@ -579,7 +591,10 @@ export function render(container) {
     ord.sampleIds.forEach((sid, i) => {
       const cx = sx(ord.coords[i][pcX]), cy = sy(ord.coords[i][pcY]);
       const g = groupOf[sid];
-      const c = svgEl('circle', { cx, cy, r: 5, fill: colorForGroup(g), 'fill-opacity': 0.85, stroke: 'var(--surface)', 'stroke-width': 1.4 });
+      const c = svgEl('circle', {
+        cx, cy, r: 5, fill: colorForGroup(g), 'fill-opacity': 0.85, stroke: 'var(--surface)', 'stroke-width': 1.4,
+        ...(g != null ? { 'data-ce-series-fill': 's' + groups.indexOf(g) } : {}),
+      });
       c.addEventListener('mouseenter', () => {
         const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
         tooltip.style.left = ((sr.left - wr.left) + cx * (sr.width / W)) + 'px';
@@ -606,7 +621,7 @@ export function render(container) {
       groups.forEach((g, i) => {
         const col = i % perRow, rw = Math.floor(i / perRow);
         const xx = col * 130, yy = rw * 15;
-        legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 5, fill: colorForGroup(g) }));
+        legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 5, fill: colorForGroup(g), 'data-ce-series-fill': 's' + i }));
         const tx = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
         tx.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
         legG.appendChild(tx);
@@ -629,6 +644,10 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      // scatter (PCoA): cualquier punto puede acabar junto a cualquier otro,
+      // así que la paleta categórica se limita a CATEGORICAL_SCATTER_MAX tonos.
+      paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
+      paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
       onReset: () => paint(),
     });
 

@@ -216,7 +216,7 @@ export function render(container) {
     }
 
     const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
-    const { kw, ceElements } = drawGroupBoxplot({
+    const { kw, ceElements, paletteSeries } = drawGroupBoxplot({
       svg, chartWrap, tooltip, groupNames, groupData,
       title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
       valueDecimals: decimals,
@@ -238,6 +238,7 @@ export function render(container) {
     editor = attachChartEditor({
       key: 'alphaDiversity', svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
       elements: ceElements,
+      paletteSeries, paletteType: 'categorical',
       onReset: () => paint(),
     });
 
@@ -482,6 +483,7 @@ export function render(container) {
       const pl = svgEl('polyline', {
         points: pts, fill: 'none', stroke: colorFor(c.group),
         'stroke-width': 1.6, 'stroke-opacity': 0.8, 'stroke-linejoin': 'round',
+        ...(c.group ? { 'data-ce-series-stroke': 's' + groupNames.indexOf(c.group) } : {}),
       });
       pl.addEventListener('mouseenter', () => {
         pl.setAttribute('stroke-width', '3'); pl.setAttribute('stroke-opacity', '1');
@@ -517,7 +519,7 @@ export function render(container) {
       groupNames.forEach((gn, i) => {
         const col = i % perRow, rw = Math.floor(i / perRow);
         const xx = col * 150, yy = rw * 16;
-        legG.appendChild(svgEl('line', { x1: xx, x2: xx + 16, y1: yy, y2: yy, stroke: colorFor(gn), 'stroke-width': 2.4 }));
+        legG.appendChild(svgEl('line', { x1: xx, x2: xx + 16, y1: yy, y2: yy, stroke: colorFor(gn), 'stroke-width': 2.4, 'data-ce-series-stroke': 's' + i }));
         const lt = svgEl('text', { x: xx + 22, y: yy + 3.5, class: 'ql-tick-label' });
         lt.textContent = gn.length > 16 ? gn.slice(0, 15) + '…' : gn;
         legG.appendChild(lt);
@@ -539,6 +541,8 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: groupNames.map((g, i) => ({ id: 's' + i, label: g })),
+      paletteType: 'categorical',
       onReset: () => paint(),
     });
 

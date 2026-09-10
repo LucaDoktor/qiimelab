@@ -268,6 +268,8 @@ export function render(container) {
           { id: 'title', create: { text: useUpset ? t('venn.chartUpset') : t('venn.chartVenn'), x: vb.x + vb.width / 2, y: vb.y + 16, anchor: 'middle', cls: 'ce-title' } },
           ...labelIds,
         ],
+        paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
+        paletteType: 'categorical',
         onReset: () => paint(),
       });
     }

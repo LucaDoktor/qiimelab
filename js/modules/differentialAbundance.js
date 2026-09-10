@@ -7,7 +7,7 @@ import {
 import { ingestFile } from '../lib/ingest.js';
 import { formatP } from '../lib/stats.js';
 import { partitionByMask, drawVenn } from '../lib/setDiagram.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -427,7 +427,7 @@ export function render(container) {
       const total = widths.reduce((a, b) => a + b, 0) + GAP * (items.length - 1);
       let x = -total / 2;
       items.forEach(([col, label], i) => {
-        g.appendChild(svgEl('rect', { x, y: -SW + 1, width: SW, height: SW, rx: 2, fill: col }));
+        g.appendChild(svgEl('rect', { x, y: -SW + 1, width: SW, height: SW, rx: 2, fill: col, ...(which[i] === 'ns' ? {} : { 'data-ce-series-fill': which[i] }) }));
         const tx = svgEl('text', { x: x + SW + 6, y: 0, class: 'ql-tick-label' });
         tx.textContent = label;
         g.appendChild(tx);
@@ -438,11 +438,18 @@ export function render(container) {
     }
 
     // divergente por log2FC: azul (reducido) — neutro — rojo (enriquecido)
+    // degradado continuo (color-mix por celda, no una serie discreta): la
+    // paleta se lee ANTES de calcular colores y hay que repintar para
+    // aplicarla. Ver js/lib/chartEditor.js getPaletteOverrides().
     function lfcFill(v, maxAbs) {
+      // ids alineados con el ORDEN de la paleta divergente (rojo, gris, azul)
+      // en heatCfg() más abajo: 'up' = polo rojo, 'down' = polo azul.
+      const ov = getPaletteOverrides('differentialAbundance-heatmap');
+      const midColor = ov.mid || 'var(--surface)';
       if (v == null || !isFinite(v)) return 'var(--page)';
       const f = Math.max(0, Math.min(1, Math.abs(v) / (maxAbs || 1)));
-      const pole = v >= 0 ? 'var(--enriched)' : 'var(--depleted)';
-      return 'color-mix(in srgb, ' + pole + ' ' + Math.round(f * 100) + '%, var(--surface))';
+      const pole = v >= 0 ? (ov.up || 'var(--enriched)') : (ov.down || 'var(--depleted)');
+      return 'color-mix(in srgb, ' + pole + ' ' + Math.round(f * 100) + '%, ' + midColor + ')';
     }
 
     const SIG_CAP = 40;
@@ -587,7 +594,10 @@ export function render(container) {
           pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9.5, fill: 'none', stroke: 'var(--surface)', 'stroke-width': 4 }));
           pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9.5, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 }));
         }
-        const c = svgEl('circle', { cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6 });
+        const c = svgEl('circle', {
+          cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6,
+          ...(d.status === 'ns' ? {} : { 'data-ce-series-fill': d.status }),
+        });
         c.addEventListener('mouseenter', () => showTooltip(d, cx, cy));
         c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
         pointsLayer.appendChild(c);
@@ -621,6 +631,8 @@ export function render(container) {
           { id: 'ytitle', selector: '[data-ce="ytitle"]' },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
         ],
+        paletteSeries: [{ id: 'up', label: t('differential.legendUp') }, { id: 'down', label: t('differential.legendDown') }],
+        paletteType: 'divergentPoles',
       };
     }
 
@@ -635,6 +647,8 @@ export function render(container) {
           { id: 'xtitle', selector: '[data-ce="xtitle"]' },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
         ],
+        paletteSeries: [{ id: 'up', label: t('differential.legendUp') }, { id: 'down', label: t('differential.legendDown') }],
+        paletteType: 'divergentPoles',
       };
     }
     function renderLollipop(searchTerm) {
@@ -676,8 +690,8 @@ export function render(container) {
         const col = d.status === 'up' ? 'var(--enriched)' : 'var(--depleted)';
         const row = svgEl('g', dim ? { opacity: 0.25 } : {});
         if (matches) row.appendChild(svgEl('rect', { x: mL - 6, y: y - rowH / 2 + 1, width: innerW + 12, height: rowH - 2, fill: 'var(--accent-soft)', rx: 3 }));
-        row.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(d.lfc), y1: y, y2: y, stroke: col, 'stroke-width': 2 }));
-        const dot = svgEl('circle', { cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4 });
+        row.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(d.lfc), y1: y, y2: y, stroke: col, 'stroke-width': 2, 'data-ce-series-stroke': d.status }));
+        const dot = svgEl('circle', { cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-ce-series-fill': d.status });
         dot.addEventListener('mouseenter', () => showTooltip(d, xScale(d.lfc), y));
         dot.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
         row.appendChild(dot);
@@ -705,6 +719,14 @@ export function render(container) {
           { id: 'title', create: { text: t('differential.chartHeat'), x: HW / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
         ],
+        // orden alineado con DIVERGENT_STOPS = [neg=rojo, mid=gris, pos=azul]
+        paletteSeries: [
+          { id: 'up', label: t('differential.legendUp') },
+          { id: 'mid', label: t('differential.legendNs') },
+          { id: 'down', label: t('differential.legendDown') },
+        ],
+        paletteType: 'divergent',
+        onChange: () => paint(), // degradado continuo: repinta para recalcular color-mix por celda
       };
     }
     function renderHeatmap(searchTerm) {
@@ -767,12 +789,13 @@ export function render(container) {
         g.appendChild(tx);
       });
 
+      const gradOv = getPaletteOverrides('differentialAbundance-heatmap');
       const legG = svgEl('g', { 'data-ce': 'legend' });
       const defs = svgEl('defs', {});
       const grad = svgEl('linearGradient', { id: 'ql-da-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-      grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': 'var(--depleted)' }));
-      grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': 'var(--surface)' }));
-      grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': 'var(--enriched)' }));
+      grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': gradOv.down || 'var(--depleted)' }));
+      grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': gradOv.mid || 'var(--surface)' }));
+      grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': gradOv.up || 'var(--enriched)' }));
       defs.appendChild(grad);
       svg.appendChild(defs);
       const barW = Math.min(200, Math.max(120, gridW + 30));
@@ -846,6 +869,9 @@ export function render(container) {
       filename: ceCfg.filename,
       lang: getLang(),
       elements: ceCfg.elements,
+      paletteSeries: ceCfg.paletteSeries,
+      paletteType: ceCfg.paletteType,
+      onChange: ceCfg.onChange,
       onReset: () => paint(),
     });
 

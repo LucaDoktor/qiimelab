@@ -361,6 +361,7 @@ export function render(container) {
         const rect = svgEl('rect', {
           x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
           fill: 'var(' + s.colorVar + ')',
+          ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
         });
         rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, cx, yTop, chartWrap, svg, W, H, tooltip));
         rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
@@ -399,7 +400,10 @@ export function render(container) {
     series.forEach((s, i) => {
       const col = Math.floor(i / legRows), rw = i % legRows;
       const xx = col * colW, yy = rw * 15;
-      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + s.colorVar + ')' }));
+      legG.appendChild(svgEl('rect', {
+        x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + s.colorVar + ')',
+        ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+      }));
       const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
       lt.textContent = s.label;
       legG.appendChild(lt);
@@ -422,6 +426,11 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: CAT_VARS.map((cv, i) => ({
+        id: 's' + i,
+        label: (series.find((s) => s.colorVar === cv) || {}).label || t('barplots.paletteSlotN', { n: i + 1 }),
+      })),
+      paletteType: 'categorical',
       onReset: () => paint(),
     });
 
@@ -737,6 +746,7 @@ export function render(container) {
       const rect = svgEl('rect', {
         x: marginL, y: y + 3, width: w, height: bh, rx: 2,
         fill: groupColor(s.enrichedIdx), 'fill-opacity': 0.85,
+        'data-ce-series-fill': 's' + s.enrichedIdx,
       });
       rect.addEventListener('mouseenter', () => {
         const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
@@ -765,7 +775,7 @@ export function render(container) {
     const legG = svgEl('g', { 'data-ce': 'legend' });
     legItems.forEach((it) => {
       const xx = it._x, yy = it._row * 15;
-      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: groupColor(it.gi) }));
+      legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: groupColor(it.gi), 'data-ce-series-fill': 's' + it.gi }));
       const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
       lt.textContent = it.text;
       legG.appendChild(lt);
@@ -781,6 +791,8 @@ export function render(container) {
         { id: 'labels', selector: '[data-ce="labels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
+      paletteType: 'categorical',
       onReset: () => paint(),
     });
   }

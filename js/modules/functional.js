@@ -270,7 +270,7 @@ export function render(container) {
       return;
     }
 
-    const { kw, ceElements } = drawGroupBoxplot({
+    const { kw, ceElements, paletteSeries } = drawGroupBoxplot({
       svg, chartWrap, tooltip, groupNames, groupData,
       title: moduleName, xTitle: groupCol, yTitle: t('functional.colScore'),
       valueLabel: moduleName, valueDecimals: 3,
@@ -293,6 +293,7 @@ export function render(container) {
     editor = attachChartEditor({
       key: 'functional', svg, mount: chartPanel, filename: t('functional.title') + '-' + moduleName, lang: getLang(),
       elements: ceElements,
+      paletteSeries, paletteType: 'categorical',
       onReset: () => paint(),
     });
 

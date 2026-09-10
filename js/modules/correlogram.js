@@ -17,7 +17,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
 import { matchSampleId } from '../lib/sampleMatch.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 
@@ -145,10 +145,16 @@ function taxaRelativeAbundance() {
   return null;
 }
 
+// degradado continuo (color-mix por celda, no una serie discreta): la
+// paleta se lee ANTES de calcular colores y hay que repintar para
+// aplicarla. Ver js/lib/chartEditor.js getPaletteOverrides().
 function corrFill(r) {
-  if (!isFinite(r)) return 'var(--corr-zero)';
+  const ov = getPaletteOverrides('correlogram');
+  const zero = ov.mid || 'var(--corr-zero)';
+  if (!isFinite(r)) return zero;
   const pct = Math.round(Math.min(1, Math.abs(r)) * 100);
-  return 'color-mix(in srgb, ' + (r >= 0 ? 'var(--corr-pos)' : 'var(--corr-neg)') + ' ' + pct + '%, var(--corr-zero))';
+  const pole = r >= 0 ? (ov.pos || 'var(--corr-pos)') : (ov.neg || 'var(--corr-neg)');
+  return 'color-mix(in srgb, ' + pole + ' ' + pct + '%, ' + zero + ')';
 }
 function stars(p) {
   if (!isFinite(p)) return '';
@@ -493,12 +499,13 @@ export function render(container) {
     svg.appendChild(colLabels);
 
     // leyenda: barra divergente -1 … 0 … +1
+    const legGradOv = getPaletteOverrides('correlogram');
     const legG = svgEl('g', { 'data-ce': 'legend' });
     const defs = svgEl('defs', {});
     const grad = svgEl('linearGradient', { id: 'ql-corr-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': 'var(--corr-neg)' }));
-    grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': 'var(--corr-zero)' }));
-    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': 'var(--corr-pos)' }));
+    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': legGradOv.neg || 'var(--corr-neg)' }));
+    grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': legGradOv.mid || 'var(--corr-zero)' }));
+    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': legGradOv.pos || 'var(--corr-pos)' }));
     defs.appendChild(grad);
     svg.appendChild(defs);
     const barW = Math.min(180, gridS * 0.7);
@@ -523,6 +530,15 @@ export function render(container) {
         { id: 'collabels', selector: '[data-ce="collabels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      // orden alineado con DIVERGENT_STOPS = [neg=rojo, mid=gris, pos=azul];
+      // corr-neg/corr-pos ya son alias de enriched(rojo)/depleted(azul).
+      paletteSeries: [
+        { id: 'neg', label: t('correlogram.legendNeg') },
+        { id: 'mid', label: t('correlogram.legendZero') },
+        { id: 'pos', label: t('correlogram.legendPos') },
+      ],
+      paletteType: 'divergent',
+      onChange: () => paint(), // degradado continuo: repinta para recalcular color-mix por celda
       onReset: () => paint(),
     });
 
@@ -603,6 +619,7 @@ export function render(container) {
         x1: a.x, y1: a.y, x2: b.x, y2: b.y,
         stroke: edgeColor(e.r), 'stroke-width': (1 + w * 4.5).toFixed(2),
         'stroke-opacity': baseOpacity, 'stroke-linecap': 'round',
+        'data-ce-series-stroke': e.r >= 0 ? 'pos' : 'neg',
       });
       ln.addEventListener('mouseenter', () => {
         ln.setAttribute('stroke-opacity', '1');
@@ -648,10 +665,10 @@ export function render(container) {
 
     // leyenda: signo + grosor por |r|
     const legG = svgEl('g', { 'data-ce': 'legend' });
-    legG.appendChild(svgEl('line', { x1: 0, y1: 0, x2: 26, y2: 0, stroke: 'var(--corr-pos)', 'stroke-width': 3.5, 'stroke-linecap': 'round' }));
+    legG.appendChild(svgEl('line', { x1: 0, y1: 0, x2: 26, y2: 0, stroke: 'var(--corr-pos)', 'stroke-width': 3.5, 'stroke-linecap': 'round', 'data-ce-series-stroke': 'pos' }));
     const lt1 = svgEl('text', { x: 32, y: 3.5, class: 'ql-tick-label' }); lt1.textContent = t('correlogram.netLegendPos');
     legG.appendChild(lt1);
-    legG.appendChild(svgEl('line', { x1: 0, y1: 16, x2: 26, y2: 16, stroke: 'var(--corr-neg)', 'stroke-width': 3.5, 'stroke-linecap': 'round' }));
+    legG.appendChild(svgEl('line', { x1: 0, y1: 16, x2: 26, y2: 16, stroke: 'var(--corr-neg)', 'stroke-width': 3.5, 'stroke-linecap': 'round', 'data-ce-series-stroke': 'neg' }));
     const lt2 = svgEl('text', { x: 32, y: 19.5, class: 'ql-tick-label' }); lt2.textContent = t('correlogram.netLegendNeg');
     legG.appendChild(lt2);
     const lt3 = svgEl('text', { x: 0, y: 34, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
@@ -674,6 +691,12 @@ export function render(container) {
         { id: 'labels', selector: '[data-ce="labels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      // orden alineado con DIVERGENT_POLES = [neg=rojo, pos=azul]
+      paletteSeries: [
+        { id: 'neg', label: t('correlogram.netLegendNeg') },
+        { id: 'pos', label: t('correlogram.netLegendPos') },
+      ],
+      paletteType: 'divergentPoles',
       onReset: () => paint(),
     });
 

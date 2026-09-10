@@ -98,7 +98,10 @@ export function drawVenn(host, groups, byMask, onRegion, opts = {}) {
   const fillAlpha = groups.length >= 4 ? 0.22 : 0.3;
   layout.shapes.forEach((sh) => {
     const col = 'var(' + CAT_VARS[sh.ci % CAT_VARS.length] + ')';
-    const common = { fill: col, 'fill-opacity': fillAlpha, stroke: col, 'stroke-opacity': 0.55, 'stroke-width': 1 };
+    const common = {
+      fill: col, 'fill-opacity': fillAlpha, stroke: col, 'stroke-opacity': 0.55, 'stroke-width': 1,
+      'data-ce-series-fill': 's' + sh.ci, 'data-ce-series-stroke': 's' + sh.ci,
+    };
     if (sh.type === 'circle') svg.appendChild(svgEl('circle', { cx: sh.cx, cy: sh.cy, r: sh.r, ...common }));
     else svg.appendChild(svgEl('ellipse', { cx: sh.cx, cy: sh.cy, rx: sh.rx, ry: sh.ry, transform: 'rotate(' + sh.rot + ' ' + sh.cx + ' ' + sh.cy + ')', ...common }));
   });
@@ -109,7 +112,7 @@ export function drawVenn(host, groups, byMask, onRegion, opts = {}) {
     const tx = svgEl('text', {
       x: at[0], y: at[1], class: 'ql-axis-label', 'text-anchor': 'middle',
       'font-weight': 700, 'font-size': 14, fill: 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')',
-      'data-ce': 'grp' + gi,
+      'data-ce': 'grp' + gi, 'data-ce-series-fill': 's' + gi,
     });
     tx.textContent = g.length > 18 ? g.slice(0, 17) + '…' : g;
     svg.appendChild(tx);
@@ -183,8 +186,8 @@ export function drawUpset(host, groups, byMask, presence, onRegion, opts = {}) {
     const y = matrixY0 + gi * rowH;
     const w = (setSizes[gi] / maxSet) * barMaxW;
     const col = 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')';
-    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: col, 'fill-opacity': 0.85, rx: 2 }));
-    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', fill: col, 'font-weight': 600, 'data-ce': 'set' + gi });
+    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: col, 'fill-opacity': 0.85, rx: 2, 'data-ce-series-fill': 's' + gi }));
+    const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', fill: col, 'font-weight': 600, 'data-ce': 'set' + gi, 'data-ce-series-fill': 's' + gi });
     lbl.textContent = (g.length > 20 ? g.slice(0, 19) + '…' : g) + ' · ' + setSizes[gi];
     svg.appendChild(lbl);
   });

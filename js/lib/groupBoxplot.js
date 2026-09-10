@@ -108,15 +108,23 @@ export function drawGroupBoxplot(o) {
     svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerLo), y2: yScale(whiskerLo), class: 'ql-baseline-line' }));
     svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerHi), y2: yScale(whiskerHi), class: 'ql-baseline-line' }));
 
+    const seriesId = 's' + gi;
     svg.appendChild(svgEl('rect', {
       x: cx - boxW / 2, y: yScale(q3), width: boxW, height: Math.max(1, yScale(q1) - yScale(q3)),
       fill: 'var(' + colorVar + ')', 'fill-opacity': 0.16, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.5, rx: 3,
+      'data-ce-series-fill': seriesId, 'data-ce-series-stroke': seriesId,
     }));
-    svg.appendChild(svgEl('line', { x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5 }));
+    svg.appendChild(svgEl('line', {
+      x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5,
+      'data-ce-series-stroke': seriesId,
+    }));
 
     vals.forEach((v) => {
       const jitter = (rnd() - 0.5) * boxW * 0.7;
-      const c = svgEl('circle', { cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', opacity: 0.75, stroke: 'var(--surface)', 'stroke-width': 1 });
+      const c = svgEl('circle', {
+        cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', opacity: 0.75, stroke: 'var(--surface)', 'stroke-width': 1,
+        'data-ce-series-fill': seriesId,
+      });
       c.addEventListener('mouseenter', () => {
         const wrapRect = chartWrap.getBoundingClientRect();
         const svgRect = svg.getBoundingClientRect();
@@ -169,7 +177,10 @@ export function drawGroupBoxplot(o) {
   groupNames.forEach((g, i) => {
     const col = Math.floor(i / legRows), rw = i % legRows;
     const xx = col * colW, yy = rw * 15;
-    legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + CAT_VARS[i % CAT_VARS.length] + ')' }));
+    legG.appendChild(svgEl('rect', {
+      x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + CAT_VARS[i % CAT_VARS.length] + ')',
+      'data-ce-series-fill': 's' + i,
+    }));
     const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
     lt.textContent = String(g) + ' (n=' + groupData[g].length + ')';
     legG.appendChild(lt);
@@ -184,6 +195,8 @@ export function drawGroupBoxplot(o) {
     { id: 'sig', selector: '[data-ce="sig"]', kind: 'group' },
     { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
   ];
+  // una serie por grupo — para el selector de paleta del editor de gráficos
+  const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
 
-  return { kw, W, H, ceElements };
+  return { kw, W, H, ceElements, paletteSeries };
 }
