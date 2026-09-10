@@ -11,7 +11,7 @@ import {
   cleanPrimerSeq, baseComposition, gcPercent, gcClamp,
   molecularWeight, extinctionCoefficient, meltingTemp,
 } from '../lib/primerAnalysis.js';
-import { buildDimerMatrix, getHetero, classifyDimer, classifyHairpin } from '../lib/primerDimers.js';
+import { buildDimerMatrix, getHetero, classifyDimer, classifyHairpin, scanDimer, scanHairpin } from '../lib/primerDimers.js';
 import { parseFasta, findPrimerSites, findAmplicons, CRITICAL_3PRIME_ZONE } from '../lib/primerTemplate.js';
 import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/primerCoverage.js';
 import { parseTable } from '../lib/csv.js';
@@ -23,13 +23,12 @@ const EXAMPLE_TAX_URL = 'datos-ejemplo/primers/taxonomia_ejemplo.tsv';
 const NONE = '__none__'; // "(ninguno)" explícito, distinto de '' (= "todavía sin elegir")
 const RANK_DEPTHS = [null, 2, 3, 4, 5, 6, 7]; // null = completa; 2..7 = filo..especie (convención QIIME2)
 
-// pestañas ya implementadas — se amplía en el próximo commit (lote). Con 1
-// sola pestaña no se muestra la barra.
 const TABS = [
   { id: 'primers', labelKey: 'primers.tabPrimers' },
   { id: 'dimers', labelKey: 'primers.tabDimers' },
   { id: 'template', labelKey: 'primers.tabTemplate' },
   { id: 'coverage', labelKey: 'primers.tabCoverage' },
+  { id: 'batch', labelKey: 'primers.tabBatch' },
 ];
 
 function escapeHtml(s) {
@@ -53,6 +52,7 @@ function defaultState() {
     templateA: '', templateB: '',
     covRefText: '', covTaxText: '',
     covTol: 1, covA: '', covB: '', covRankIdx: 6, // índice en RANK_DEPTHS ("Género" por defecto)
+    batchPairs: [],
   };
 }
 
@@ -76,6 +76,9 @@ function load() {
         covA: typeof raw.covA === 'string' ? raw.covA : '',
         covB: typeof raw.covB === 'string' ? raw.covB : '',
         covRankIdx: Number.isInteger(raw.covRankIdx) && raw.covRankIdx >= 0 && raw.covRankIdx < RANK_DEPTHS.length ? raw.covRankIdx : 6,
+        batchPairs: Array.isArray(raw.batchPairs)
+          ? raw.batchPairs.map((bp) => ({ id: String(bp.id || ''), label: String(bp.label || ''), a: String(bp.a || ''), b: String(bp.b || '') })).filter((bp) => bp.id)
+          : [],
       };
     }
   } catch (e) { /* localStorage puede fallar */ }
@@ -92,6 +95,7 @@ function highlightSeq(seq) {
 export function render(container) {
   const s = load();
   let nextIdNum = 1 + s.primers.reduce((m, p) => Math.max(m, parseInt(String(p.id).replace(/\D/g, ''), 10) || 0), 0);
+  let nextBatchIdNum = 1 + s.batchPairs.reduce((m, bp) => Math.max(m, parseInt(String(bp.id).replace(/\D/g, ''), 10) || 0), 0);
 
   function derivePrimers() {
     return s.primers.map((p) => {
@@ -136,6 +140,7 @@ export function render(container) {
     if (s.tab === 'dimers') renderDimersTab();
     else if (s.tab === 'template') renderTemplateTab();
     else if (s.tab === 'coverage') renderCoverageTab();
+    else if (s.tab === 'batch') renderBatchTab();
     else renderPrimersTab();
   }
 
@@ -673,6 +678,144 @@ export function render(container) {
     }
 
     container.appendChild(resultsCard);
+  }
+
+  function classifyDeltaTm(dTm) {
+    if (!Number.isFinite(dTm)) return 'ok';
+    if (dTm > 5) return 'crit';
+    if (dTm > 3) return 'warn';
+    return 'ok';
+  }
+
+  // peor caso entre auto-dímero de A, de B, hetero-dímero A×B y horquilla de
+  // A o de B — un solo badge para la tabla de lote (el detalle completo está
+  // en la pestaña "Dímeros / horquillas").
+  function worstDimerFor(pA, pB) {
+    const candidates = [
+      { kind: 'primers.batchDimerSelfA', cand: scanDimer(pA.seq, pA.seq), classify: classifyDimer },
+      { kind: 'primers.batchDimerSelfB', cand: scanDimer(pB.seq, pB.seq), classify: classifyDimer },
+      { kind: 'primers.batchDimerHetero', cand: scanDimer(pA.seq, pB.seq), classify: classifyDimer },
+      { kind: 'primers.batchHairpinA', cand: scanHairpin(pA.seq), classify: classifyHairpin },
+      { kind: 'primers.batchHairpinB', cand: scanHairpin(pB.seq), classify: classifyHairpin },
+    ];
+    const order = { ok: 0, warn: 1, crit: 2 };
+    let worst = null;
+    candidates.forEach((c) => {
+      const level = c.classify(c.cand);
+      if (!worst || order[level] > order[worst.level]) worst = { ...c, level };
+    });
+    return worst;
+  }
+
+  function renderBatchTab() {
+    const valid = derivePrimers().filter((p) => p.valid).map((p, i) => ({ ...p, label: primerLabel(p, i) }));
+
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+    card.innerHTML = '<h2>' + t('primers.batchTitle') + '</h2><p class="ql-panel-note">' + t('primers.batchNote') + '</p>';
+
+    if (valid.length < 2) {
+      card.insertAdjacentHTML('beforeend', '<div class="ql-empty"><h3>' + t('primers.emptyTitle') + '</h3><p>' + t('primers.batchEmpty') + '</p></div>');
+      container.appendChild(card);
+      return;
+    }
+
+    const scroll = document.createElement('div');
+    scroll.className = 'ql-table-scroll scroll-x';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    tbl.innerHTML = '<thead><tr>' +
+      ['primers.colPairLabel', 'primers.colPairA', 'primers.colPairB', 'primers.colDeltaTm', 'primers.colDimers', 'primers.colCoverage', '']
+        .map((k) => '<th>' + (k ? t(k) : '') + '</th>').join('') + '</tr></thead>';
+    const tb = document.createElement('tbody');
+
+    const refs = s.covRefText.trim() ? parseFasta(s.covRefText) : [];
+
+    s.batchPairs.forEach((bp, i) => {
+      if (!bp.a || !valid.some((p) => p.id === bp.a)) bp.a = valid[0].id;
+      if (!bp.b || !valid.some((p) => p.id === bp.b)) bp.b = valid.find((p) => p.id !== bp.a)?.id || valid[0].id;
+      const pA = valid.find((p) => p.id === bp.a);
+      const pB = valid.find((p) => p.id === bp.b);
+      const tmA = meltingTemp(pA.seq, { Na: s.salt, dnac1: s.conc, dnac2: 0 });
+      const tmB = meltingTemp(pB.seq, { Na: s.salt, dnac1: s.conc, dnac2: 0 });
+      const dTm = Math.abs(tmA.tm - tmB.tm);
+      const dTmLevel = classifyDeltaTm(dTm);
+      const worst = worstDimerFor(pA, pB);
+
+      let cov = null;
+      if (refs.length) cov = computeCoverage(refs, { forward: pA.seq, reverse: pB.seq }, { maxMismatches: s.covTol });
+
+      const tr = document.createElement('tr');
+
+      const tdLabel = document.createElement('td');
+      const labelIn = document.createElement('input');
+      labelIn.type = 'text'; labelIn.value = bp.label;
+      labelIn.placeholder = t('primers.batchPairPh', { n: i + 1 });
+      labelIn.setAttribute('aria-label', t('primers.colPairLabel') + ' — ' + t('primers.batchPairPh', { n: i + 1 }));
+      labelIn.addEventListener('change', () => { bp.label = labelIn.value; save(s); });
+      tdLabel.appendChild(labelIn);
+      tr.appendChild(tdLabel);
+
+      const mkPrimerSelect = (value, onChange) => {
+        const sel = document.createElement('select');
+        valid.forEach((p) => sel.insertAdjacentHTML('beforeend', '<option value="' + p.id + '"' + (p.id === value ? ' selected' : '') + '>' + escapeHtml(p.label) + '</option>'));
+        sel.addEventListener('change', () => { onChange(sel.value); paint(); });
+        return sel;
+      };
+      const tdA = document.createElement('td');
+      tdA.appendChild(mkPrimerSelect(bp.a, (v) => { bp.a = v; }));
+      tdA.insertAdjacentHTML('beforeend', '<div class="ql-field-help" style="margin-top:2px;">Tm ' + (tmA.isDegenerate ? fmt1(tmA.min) + '–' + fmt1(tmA.max) : fmt1(tmA.tm)) + ' °C</div>');
+      tr.appendChild(tdA);
+
+      const tdB = document.createElement('td');
+      tdB.appendChild(mkPrimerSelect(bp.b, (v) => { bp.b = v; }));
+      tdB.insertAdjacentHTML('beforeend', '<div class="ql-field-help" style="margin-top:2px;">Tm ' + (tmB.isDegenerate ? fmt1(tmB.min) + '–' + fmt1(tmB.max) : fmt1(tmB.tm)) + ' °C</div>');
+      tr.appendChild(tdB);
+
+      const tdDTm = document.createElement('td');
+      tdDTm.className = 'ql-num tabular';
+      tdDTm.innerHTML = fmt1(dTm) + ' °C ' + riskBadge(dTmLevel);
+      tr.appendChild(tdDTm);
+
+      const tdDimer = document.createElement('td');
+      tdDimer.innerHTML = riskBadge(worst.level);
+      tdDimer.title = t(worst.kind);
+      tr.appendChild(tdDimer);
+
+      const tdCov = document.createElement('td');
+      tdCov.className = 'ql-num tabular';
+      tdCov.innerHTML = cov ? fmt1(cov.pct) + '% (' + cov.covered + '/' + cov.total + ')' : '<span class="ql-cell-muted" title="' + escapeHtml(t('primers.batchNoRef')) + '">—</span>';
+      tr.appendChild(tdCov);
+
+      const tdRm = document.createElement('td');
+      const rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'ql-cmp-rm'; rm.textContent = '✕';
+      rm.title = t('ui.remove');
+      rm.setAttribute('aria-label', t('ui.remove') + ' — ' + (bp.label || t('primers.batchPairPh', { n: i + 1 })));
+      rm.addEventListener('click', () => { s.batchPairs.splice(i, 1); paint(); });
+      tdRm.appendChild(rm);
+      tr.appendChild(tdRm);
+
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    scroll.appendChild(tbl);
+    card.appendChild(scroll);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button'; addBtn.className = 'ql-btn'; addBtn.style.marginTop = '12px';
+    addBtn.textContent = t('primers.batchAddPair');
+    addBtn.addEventListener('click', () => {
+      const a = valid[s.batchPairs.length % valid.length]?.id || valid[0].id;
+      const b = valid[(s.batchPairs.length + 1) % valid.length]?.id || valid[0].id;
+      s.batchPairs.push({ id: 'bp' + nextBatchIdNum++, label: '', a, b });
+      paint();
+    });
+    card.appendChild(addBtn);
+
+    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:12px;">' + t('primers.batchDeltaTmGuideline') + '</p>');
+    if (!refs.length) card.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.batchNoRefGlobal') + '</p>');
+    container.appendChild(card);
   }
 
   function renderPrimersTab() {
