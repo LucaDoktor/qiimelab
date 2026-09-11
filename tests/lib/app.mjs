@@ -57,6 +57,11 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     await c.ev(`(() => { const n = document.querySelector('#clR'); if (n) { n.value = '0.1'; n.dispatchEvent(new Event('change')); } })()`);
     await sleep(400);
   }
+  if (route === '#/barplots') {
+    // orientación horizontal del barplot apilado — mismos datos, otra proyección
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Horizontal'); if (b) b.click(); })()`);
+    await sleep(400);
+  }
   if (route === '#/arbol') {
     // módulo autónomo (localStorage, no LOAD_ALL): carga su propio ejemplo y
     // espera a que termine el pipeline async (alineamiento + NJ) antes de

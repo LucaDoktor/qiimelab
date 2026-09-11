@@ -54,6 +54,7 @@ export function render(container) {
   let groupCol = null;
   let topN = TOP_N_DEFAULT;
   let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
+  let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
   let view = 'barplot';        // 'barplot' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
   let bmSort = { key: 'delta', dir: 'desc' };
@@ -159,6 +160,23 @@ export function render(container) {
       '<input type="number" id="qlPrev" class="ql-num-small tabular" min="0" max="100" step="5" value="' + minPrev + '" /></div>' +
       '<p class="ql-field-help">' + t('barplots.prevHelp') + '</p>';
     controls.appendChild(prevField);
+
+    const orientField = document.createElement('div');
+    orientField.className = 'ql-field';
+    orientField.innerHTML = '<label>' + t('barplots.orientLabel') + '</label>';
+    const orientSeg = document.createElement('div');
+    orientSeg.className = 'ql-segmented';
+    [['vertical', t('barplots.orientVertical')], ['horizontal', t('barplots.orientHorizontal')]].forEach(([v, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (orientation === v ? ' is-on' : '');
+      b.textContent = lbl;
+      b.addEventListener('click', () => { if (orientation !== v) { orientation = v; paint(); } });
+      orientSeg.appendChild(b);
+    });
+    orientField.appendChild(orientSeg);
+    orientField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.orientHelp') + '</p>');
+    controls.appendChild(orientField);
 
     if (groupOptions.length > 0) {
       const groupField = document.createElement('div');
@@ -311,92 +329,173 @@ export function render(container) {
     // chart
     const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
     const legRows = Math.ceil(series.length / legCols);
-    const marginL = 56, marginR = 12, marginT = 42;
-    // Las etiquetas de muestra van rotadas -55°: cuánto bajan depende de su
-    // longitud. Reservamos hueco real para que el título del eje X no se
-    // solape con ellas (bug de maquetado que se veía con IDs largos).
-    const showEvery = sampleOrder.length > 24 ? Math.ceil(sampleOrder.length / 24) : 1;
-    const maxLabelChars = sampleOrder.reduce((m, s, si) => (si % showEvery === 0 ? Math.max(m, String(s).length) : m), 0);
-    const labelDrop = 14 + Math.min(104, Math.round(maxLabelChars * 6.4 * 0.82)); // 0.82 ≈ sin(55°)
-    const xTitleGap = labelDrop + 14;
-    const marginB = xTitleGap + 20 + legRows * 15 + (colorsRepeat ? 20 : 4);
-    const slotW = Math.max(18, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
-    const barW = Math.min(24, slotW * 0.7);
-    const innerH = 380;
-    const W = Math.max(marginL + marginR + slotW * sampleOrder.length, 420);
-    const H = marginT + innerH + marginB;
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    svg.style.width = W + 'px'; // ancho real en px: si no caben todas las muestras, el contenedor hace scroll horizontal en vez de aplastar las barras
-    svg.style.maxWidth = 'none';
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-    // gridlines y-axis (0/25/50/75/100 %)
-    [0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
-      const y = marginT + innerH - frac * innerH;
-      svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
-      const t = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
-      t.textContent = Math.round(frac * 100) + '%';
-      svg.appendChild(t);
-    });
-    svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerH, class: 'ql-baseline-line' }));
-
+    const horizontal = orientation === 'horizontal';
     const gap = 2; // separador entre segmentos apilados
-    sampleOrder.forEach((sampleId, si) => {
-      const row = rowsBySample[sampleId];
-      if (!row) return;
-      const cx = marginL + si * slotW + slotW / 2;
-      const total = rowSum(row) || 1;
-      let cumulative = 0;
-      series.forEach((s) => {
-        let val;
-        if (s.key === '__other__') {
-          val = otherRaw(row) / total;
-        } else {
-          val = (parseFloat(row[s.key]) || 0) / total;
-        }
-        if (val <= 0) { return; }
-        const yTop = marginT + innerH - (cumulative + val) * innerH;
-        const yBot = marginT + innerH - cumulative * innerH;
-        const h = Math.max(0, yBot - yTop - gap);
-        const rect = svgEl('rect', {
-          x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
-          fill: 'var(' + s.colorVar + ')',
-          ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+    let W, H, xLabelBase, legTranslateX, legTranslateY;
+
+    if (!horizontal) {
+      const marginL = 56, marginR = 12, marginT = 42;
+      // Las etiquetas de muestra van rotadas -55°: cuánto bajan depende de su
+      // longitud. Reservamos hueco real para que el título del eje X no se
+      // solape con ellas (bug de maquetado que se veía con IDs largos).
+      const showEvery = sampleOrder.length > 24 ? Math.ceil(sampleOrder.length / 24) : 1;
+      const maxLabelChars = sampleOrder.reduce((m, s, si) => (si % showEvery === 0 ? Math.max(m, String(s).length) : m), 0);
+      const labelDrop = 14 + Math.min(104, Math.round(maxLabelChars * 6.4 * 0.82)); // 0.82 ≈ sin(55°)
+      const xTitleGap = labelDrop + 14;
+      const marginB = xTitleGap + 20 + legRows * 15 + (colorsRepeat ? 20 : 4);
+      const slotW = Math.max(18, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
+      const barW = Math.min(24, slotW * 0.7);
+      const innerH = 380;
+      W = Math.max(marginL + marginR + slotW * sampleOrder.length, 420);
+      H = marginT + innerH + marginB;
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      svg.style.width = W + 'px'; // ancho real en px: si no caben todas las muestras, el contenedor hace scroll horizontal en vez de aplastar las barras
+      svg.style.maxWidth = 'none';
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      // gridlines y-axis (0/25/50/75/100 %)
+      [0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
+        const y = marginT + innerH - frac * innerH;
+        svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+        const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+        tk.textContent = Math.round(frac * 100) + '%';
+        svg.appendChild(tk);
+      });
+      svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerH, class: 'ql-baseline-line' }));
+
+      sampleOrder.forEach((sampleId, si) => {
+        const row = rowsBySample[sampleId];
+        if (!row) return;
+        const cx = marginL + si * slotW + slotW / 2;
+        const total = rowSum(row) || 1;
+        let cumulative = 0;
+        series.forEach((s) => {
+          let val;
+          if (s.key === '__other__') val = otherRaw(row) / total;
+          else val = (parseFloat(row[s.key]) || 0) / total;
+          if (val <= 0) return;
+          const yTop = marginT + innerH - (cumulative + val) * innerH;
+          const yBot = marginT + innerH - cumulative * innerH;
+          const h = Math.max(0, yBot - yTop - gap);
+          const rect = svgEl('rect', {
+            x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
+            fill: 'var(' + s.colorVar + ')',
+            ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+          });
+          rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, cx, yTop, chartWrap, svg, W, H, tooltip));
+          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+          svg.appendChild(rect);
+          cumulative += val;
         });
-        rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, cx, yTop, chartWrap, svg, W, H, tooltip));
-        rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
-        svg.appendChild(rect);
-        cumulative += val;
       });
-    });
 
-    // etiquetas eje X (rotadas si hay muchas muestras)
-    sampleOrder.forEach((sampleId, si) => {
-      if (si % showEvery !== 0) return;
-      const cx = marginL + si * slotW + slotW / 2;
-      const t = svgEl('text', {
-        x: cx, y: marginT + innerH + 16, class: 'ql-tick-label', 'text-anchor': 'end',
-        transform: 'rotate(-55 ' + cx + ' ' + (marginT + innerH + 16) + ')',
+      // etiquetas eje X (rotadas si hay muchas muestras)
+      sampleOrder.forEach((sampleId, si) => {
+        if (si % showEvery !== 0) return;
+        const cx = marginL + si * slotW + slotW / 2;
+        const tx = svgEl('text', {
+          x: cx, y: marginT + innerH + 16, class: 'ql-tick-label', 'text-anchor': 'end',
+          transform: 'rotate(-55 ' + cx + ' ' + (marginT + innerH + 16) + ')',
+        });
+        tx.textContent = sampleId;
+        svg.appendChild(tx);
       });
-      t.textContent = sampleId;
-      svg.appendChild(t);
-    });
 
-    const xLabelBase = marginT + innerH + xTitleGap; // bajo las etiquetas de muestra rotadas
-    const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
-    xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
-    svg.appendChild(xTitle);
+      xLabelBase = marginT + innerH + xTitleGap; // bajo las etiquetas de muestra rotadas
+      const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
+      svg.appendChild(xTitle);
 
-    const yTitle = svgEl('text', {
-      x: 15, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
-      transform: 'rotate(-90 15 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
-    });
-    yTitle.textContent = t('barplots.axisPct');
-    svg.appendChild(yTitle);
+      const yTitle = svgEl('text', {
+        x: 15, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+        transform: 'rotate(-90 15 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
+      });
+      yTitle.textContent = t('barplots.axisPct');
+      svg.appendChild(yTitle);
 
-    // leyenda dentro del SVG (editable + exportable), 1-3 columnas
+      legTranslateX = marginL; legTranslateY = xLabelBase + 18;
+    } else {
+      // ---- orientación horizontal: una fila por muestra, sin rotar
+      // etiquetas — pensada para muchas muestras con nombres largos, que en
+      // vertical solo cabían rotadas -55°. ----
+      const maxLabelChars = sampleOrder.reduce((m, s) => Math.max(m, String(s).length), 0);
+      const labelW = Math.min(200, maxLabelChars * 6.3);
+      const axisTitleGap = 26;
+      const marginL = axisTitleGap + labelW + 14, marginR = 16, marginT = 42;
+      const rowH = Math.max(16, Math.min(34, 480 / Math.max(sampleOrder.length, 1)));
+      const barH = Math.min(22, rowH * 0.72);
+      const innerW = 420;
+      const innerCat = rowH * sampleOrder.length;
+      const marginB = 14 + 22 + legRows * 15 + (colorsRepeat ? 20 : 4);
+      W = Math.max(marginL + innerW + marginR, 420);
+      H = marginT + innerCat + marginB;
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      svg.style.width = ''; // el ancho es fijo (el eje de valor); solo la altura crece con el nº de muestras
+      svg.style.maxWidth = '';
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      // gridlines eje de valor (0/25/50/75/100 %), arriba de las barras
+      [0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
+        const x = marginL + frac * innerW;
+        svg.appendChild(svgEl('line', { x1: x, x2: x, y1: marginT, y2: marginT + innerCat, class: 'ql-gridline' }));
+        const tk = svgEl('text', { x, y: marginT - 8, class: 'ql-tick-label', 'text-anchor': 'middle' });
+        tk.textContent = Math.round(frac * 100) + '%';
+        svg.appendChild(tk);
+      });
+      svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerCat, class: 'ql-baseline-line' }));
+
+      sampleOrder.forEach((sampleId, si) => {
+        const row = rowsBySample[sampleId];
+        if (!row) return;
+        const cy = marginT + si * rowH + rowH / 2;
+        const total = rowSum(row) || 1;
+        let cumulative = 0;
+        series.forEach((s) => {
+          let val;
+          if (s.key === '__other__') val = otherRaw(row) / total;
+          else val = (parseFloat(row[s.key]) || 0) / total;
+          if (val <= 0) return;
+          const xL = marginL + cumulative * innerW;
+          const xR = marginL + (cumulative + val) * innerW;
+          const w = Math.max(0, xR - xL - gap);
+          const rect = svgEl('rect', {
+            x: xL, y: cy - barH / 2, width: Math.max(w, 0), height: barH,
+            fill: 'var(' + s.colorVar + ')',
+            ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+          });
+          rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, xR, cy, chartWrap, svg, W, H, tooltip));
+          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+          svg.appendChild(rect);
+          cumulative += val;
+        });
+      });
+
+      // etiquetas de muestra: normales, a la izquierda — el motivo del modo horizontal
+      sampleOrder.forEach((sampleId, si) => {
+        const cy = marginT + si * rowH + rowH / 2;
+        const tx = svgEl('text', { x: marginL - 8, y: cy + 4, class: 'ql-tick-label', 'text-anchor': 'end' });
+        tx.textContent = sampleId;
+        svg.appendChild(tx);
+      });
+
+      xLabelBase = marginT + innerCat + 34;
+      const xTitle = svgEl('text', { x: marginL + innerW / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      xTitle.textContent = t('barplots.axisPct');
+      svg.appendChild(xTitle);
+
+      const yTitle = svgEl('text', {
+        x: 15, y: marginT + innerCat / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+        transform: 'rotate(-90 15 ' + (marginT + innerCat / 2) + ')', 'data-ce': 'ytitle',
+      });
+      yTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
+      svg.appendChild(yTitle);
+
+      legTranslateX = marginL; legTranslateY = xLabelBase + 18;
+    }
+
+    // leyenda dentro del SVG (editable + exportable), 1-3 columnas — común a las dos orientaciones
     const legG = svgEl('g', { 'data-ce': 'legend' });
-    const colW = Math.min(260, Math.max(150, (W - marginL - marginR) / legCols));
+    const colW = Math.min(260, Math.max(150, (W - legTranslateX - 12) / legCols));
     series.forEach((s, i) => {
       const col = Math.floor(i / legRows), rw = i % legRows;
       const xx = col * colW, yy = rw * 15;
@@ -414,12 +513,12 @@ export function render(container) {
       nt.textContent = t('barplots.colorsRepeat');
       legG.appendChild(nt);
     }
-    legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 18) + ')');
+    legG.setAttribute('transform', 'translate(' + legTranslateX + ',' + legTranslateY + ')');
     svg.appendChild(legG);
 
     if (editor) editor.destroy();
     editor = attachChartEditor({
-      key: 'taxaBarplot', svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
+      key: horizontal ? 'taxaBarplot-horizontal' : 'taxaBarplot', svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
       elements: [
         { id: 'title', create: { text: t('barplots.chartFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
