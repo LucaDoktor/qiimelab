@@ -18,6 +18,7 @@ import { groupColor } from '../lib/groupBoxplot.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { ingestFile } from '../lib/ingest.js';
 import { summariseCountSeries } from '../lib/countStats.js';
+import { fisherLSD, compactLetterDisplay } from '../lib/stats.js';
 import {
   loadExampleMicrobialCountsPlate, loadExampleMicrobialCountsMPN, exampleDownloadBlock,
 } from '../lib/exampleData.js';
@@ -306,6 +307,18 @@ export function render(container) {
     const summary = summariseCountSeries(s);
     const usable = summary.groups.filter((g) => g.n > 0);
 
+    // ANOVA de un factor + LSD de Fisher por pares -> letras de grupo
+    // homogéneo (a, b, ab…). Sobre los MISMOS valores en log10 que ya usa
+    // el resto del módulo para media/SD/SE — no una estadística aparte.
+    let lsd = null, letters = null;
+    if (usable.length >= 2) {
+      const attempt = fisherLSD(usable.map((g) => g.values), 0.05);
+      if (!attempt.error) {
+        lsd = attempt;
+        letters = compactLetterDisplay(usable.length, lsd.pairwise, lsd.means);
+      }
+    }
+
     const grid = document.createElement('div');
     grid.className = 'ql-grid-2';
 
@@ -353,6 +366,27 @@ export function render(container) {
       '</div>';
     controls.appendChild(statsBox);
 
+    // ANOVA + LSD de Fisher: letras de grupo homogéneo
+    if (lsd) {
+      const anovaBox = document.createElement('div');
+      anovaBox.style.marginTop = '10px';
+      anovaBox.innerHTML = '<div class="ql-stats">' +
+        '<div class="ql-stat"><div class="ql-stat-label">' + t('recuentos.statAnovaF') + '</div><div class="ql-stat-value" style="font-size:18px;">' + fmt(lsd.anova.F, 2) + '</div></div>' +
+        '<div class="ql-stat"><div class="ql-stat-label">' + t('recuentos.statAnovaP') + '</div><div class="ql-stat-value" style="font-size:18px;">' + fmt(lsd.anova.p, 4) + '</div></div>' +
+        '</div>';
+      controls.appendChild(anovaBox);
+      const lsdNote = document.createElement('p');
+      lsdNote.className = 'ql-field-help';
+      lsdNote.style.marginTop = '6px';
+      lsdNote.textContent = t('recuentos.lsdCaveat');
+      controls.appendChild(lsdNote);
+    } else if (usable.length >= 2) {
+      const w = document.createElement('p');
+      w.className = 'ql-field-help';
+      w.textContent = t('recuentos.lsdNeedMore');
+      controls.appendChild(w);
+    }
+
     // aviso de réplicas desiguales
     if (summary.unevenN) {
       const w = document.createElement('p');
@@ -389,12 +423,12 @@ export function render(container) {
       return;
     }
 
-    drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable);
-    renderTable(tableCard, summary, usable);
+    drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters);
+    renderTable(tableCard, summary, usable, letters);
   }
 
   // ---- barras verticales + barra de error ----
-  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups) {
+  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups, letters) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const err = (g) => (errBar === 'sd' ? g.sd : g.se);
@@ -410,7 +444,7 @@ export function render(container) {
 
     const n = groups.length;
     const slotW = Math.max(70, Math.min(150, 620 / n));
-    const marginL = 60, marginR = 20, marginT = 40;
+    const marginL = 60, marginR = 20, marginT = letters ? 54 : 40;
     const longestLabel = Math.max(...groups.map((g) => g.key.length));
     const rotate = n > 4 || longestLabel > 12;
     const marginB = rotate ? 60 + Math.min(120, longestLabel * 5.2) : 70;
@@ -461,11 +495,23 @@ export function render(container) {
 
       // barra de error (solo si n >= 2 → SD/SE definidos)
       const e = err(g);
+      let errTopY = yTop;
       if (g.n >= 2 && e > 0) {
         const yHi = yScale(g.meanLog + e), yLo = yScale(Math.max(yMin, g.meanLog - e));
         svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yHi, y2: yLo, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
         svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yHi, y2: yHi, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
         svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yLo, y2: yLo, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
+        errTopY = yHi;
+      }
+
+      // letra de grupo homogéneo (ANOVA + LSD de Fisher): dos grupos que
+      // comparten letra NO difieren significativamente entre sí.
+      if (letters && letters[gi]) {
+        const lt = svgEl('text', {
+          x: cx, y: errTopY - 8, 'text-anchor': 'middle', 'font-weight': 700, 'font-size': 13, fill: 'var(--ink)',
+        });
+        lt.textContent = letters[gi];
+        svg.appendChild(lt);
       }
 
       // etiqueta de grupo
@@ -519,13 +565,14 @@ export function render(container) {
   }
 
   // ---- tabla alternativa (grupo, n, media log10, SD, SE) con aria-sort ----
-  function renderTable(tableCard, summary, groups) {
+  function renderTable(tableCard, summary, groups, letters) {
     const cols = [
       ['group', t('recuentos.colGroup')],
       ['n', 'n'],
       ['mean', t('recuentos.colMean')],
       ['sd', 'SD'],
       ['se', 'SE'],
+      ...(letters ? [['letter', t('recuentos.colLetter')]] : []),
     ];
     const scrollDiv = document.createElement('div');
     scrollDiv.className = 'ql-table-scroll scroll-x';
@@ -540,7 +587,7 @@ export function render(container) {
     });
     tbl.innerHTML = thead + '</tr></thead>';
 
-    const rows = groups.map((g) => ({ group: g.key, n: g.n, mean: g.meanLog, sd: g.sd, se: g.se }));
+    const rows = groups.map((g, i) => ({ group: g.key, n: g.n, mean: g.meanLog, sd: g.sd, se: g.se, letter: letters ? letters[i] : '' }));
     const dir = sort.dir === 'asc' ? 1 : -1;
     rows.sort((a, b) => {
       const x = a[sort.key], y = b[sort.key];
@@ -555,7 +602,8 @@ export function render(container) {
         '<td class="ql-num tabular">' + r.n + '</td>' +
         '<td class="ql-num tabular">' + fmt(r.mean, 3) + '</td>' +
         '<td class="ql-num tabular">' + (r.n >= 2 ? fmt(r.sd, 3) : '—') + '</td>' +
-        '<td class="ql-num tabular">' + (r.n >= 2 ? fmt(r.se, 3) : '—') + '</td>';
+        '<td class="ql-num tabular">' + (r.n >= 2 ? fmt(r.se, 3) : '—') + '</td>' +
+        (letters ? '<td class="ql-num tabular mono">' + escapeHtml(r.letter || '—') + '</td>' : '');
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);

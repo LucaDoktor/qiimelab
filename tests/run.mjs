@@ -39,6 +39,7 @@ const SUITE = [
   { name: 'stats/cliffsdelta', file: 'stats/cliffsdelta.mjs', kind: 'R' },
   { name: 'stats/countsummary', file: 'stats/countsummary.mjs', kind: 'R' },
   { name: 'stats/permanova', file: 'stats/permanova.mjs', kind: 'R' },
+  { name: 'stats/fisherlsd', file: 'stats/fisherlsd.mjs', kind: 'R' },
   { name: 'stats/neighborjoining', file: 'stats/neighborjoining.mjs', kind: 'R' },
   { name: 'stats/phylodistance', file: 'stats/phylodistance.mjs', kind: 'R' },
   { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },

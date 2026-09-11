@@ -671,3 +671,114 @@ export function permanova(distMatrix, groups, opt = {}) {
     F: Fobs, R2, p: pval, permutations: perms,
   };
 }
+
+// ---------- ANOVA de un factor + LSD de Fisher + letras de grupo homogéneo ----------
+
+/** p-valor de cola superior de la F de Fisher, vía la relación con la beta
+ *  incompleta regularizada: P(F(d1,d2) > f) = I_{d2/(d2+d1·f)}(d2/2, d1/2). */
+export function fDistPValue(f, d1, d2) {
+  if (!(d1 > 0) || !(d2 > 0)) return NaN;
+  if (!(f > 0)) return f === 0 ? 1 : NaN;
+  if (!isFinite(f)) return 0;
+  const x = d2 / (d2 + d1 * f);
+  return incompleteBeta(d2 / 2, d1 / 2, x);
+}
+
+/**
+ * ANOVA de un factor (equivalente a `summary(aov(y ~ grupo))` en R).
+ * @param {number[][]} groups  un array de valores por grupo
+ * @returns {{dfBetween:number, dfWithin:number, ssBetween:number, ssWithin:number,
+ *   msBetween:number, msWithin:number, F:number, p:number} | {error:string}}
+ */
+export function oneWayAnova(groups) {
+  const k = groups.length;
+  if (k < 2) return { error: 'Hacen falta al menos 2 grupos.' };
+  const ns = groups.map((g) => g.length);
+  const N = ns.reduce((a, b) => a + b, 0);
+  if (N - k <= 0) return { error: 'No hay grados de libertad dentro de grupos (faltan réplicas).' };
+  const means = groups.map(mean);
+  const grandMean = mean(groups.flat());
+  let ssBetween = 0, ssWithin = 0;
+  groups.forEach((g, i) => {
+    ssBetween += ns[i] * (means[i] - grandMean) ** 2;
+    g.forEach((v) => { ssWithin += (v - means[i]) ** 2; });
+  });
+  const dfBetween = k - 1, dfWithin = N - k;
+  const msBetween = ssBetween / dfBetween;
+  const msWithin = ssWithin / dfWithin;
+  const F = msWithin > 0 ? msBetween / msWithin : (msBetween > 0 ? Infinity : NaN);
+  const p = isFinite(F) ? fDistPValue(F, dfBetween, dfWithin) : (isNaN(F) ? NaN : 0);
+  return { dfBetween, dfWithin, ssBetween, ssWithin, msBetween, msWithin, F, p };
+}
+
+/**
+ * Test LSD de Fisher (least significant difference) por pares, usando la
+ * varianza combinada (MSwithin) y los grados de libertad del ANOVA — el
+ * mismo test que `agricolae::LSD.test(mod, "grupo", p.adj="none")` en R: un
+ * t-test por pareja con la varianza combinada, SIN corregir por comparaciones
+ * múltiples (de ahí "least significant" — es deliberadamente permisivo,
+ * pensado para usarse solo tras un ANOVA ya significativo).
+ * @param {number[][]} groups
+ * @param {number} [alpha=0.05]
+ * @returns {{ anova:object, means:number[], ns:number[],
+ *   pairwise: {i:number,j:number,diff:number,t:number,p:number,significant:boolean}[] } | {error:string}}
+ */
+export function fisherLSD(groups, alpha = 0.05) {
+  const anova = oneWayAnova(groups);
+  if (anova.error) return anova;
+  const means = groups.map(mean);
+  const ns = groups.map((g) => g.length);
+  const pairwise = [];
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const se = Math.sqrt(anova.msWithin * (1 / ns[i] + 1 / ns[j]));
+      const diff = means[i] - means[j];
+      let t, p;
+      if (se > 0) { t = diff / se; p = studentTwoTailedP(t, anova.dfWithin); }
+      else { t = diff === 0 ? 0 : (diff > 0 ? Infinity : -Infinity); p = diff === 0 ? 1 : 0; }
+      pairwise.push({ i, j, diff, t, p, significant: p < alpha });
+    }
+  }
+  return { anova, means, ns, pairwise };
+}
+
+/**
+ * Letras de grupo homogéneo (compact letter display) a partir de los
+ * resultados por pares de `fisherLSD()`: dos grupos comparten letra si NO
+ * difieren significativamente. Las letras son exactamente las CLIQUES
+ * MAXIMALES del grafo "no difieren" (Bron-Kerbosch) — la misma
+ * caracterización que usa `multcompView::multcompLetters()` en R — así que
+ * funciona igual de bien si el patrón de significación no es "monótono" con
+ * la media (algo que puede pasar con tamaños de muestra muy desiguales entre
+ * grupos, un caso que este módulo ya trata como habitual).
+ * @param {number} k  nº de grupos
+ * @param {{i:number,j:number,significant:boolean}[]} pairwise
+ * @param {number[]} [meansForOrder]  medias para ordenar las letras (mayor primero); opcional
+ * @returns {string[]}  una letra (o varias, ej. "ab") por grupo, en el orden 0..k-1
+ */
+export function compactLetterDisplay(k, pairwise, meansForOrder) {
+  const adj = Array.from({ length: k }, () => new Set());
+  pairwise.forEach(({ i, j, significant }) => { if (!significant) { adj[i].add(j); adj[j].add(i); } });
+
+  const cliques = [];
+  function bronKerbosch(R, P, X) {
+    if (P.size === 0 && X.size === 0) { cliques.push([...R].sort((a, b) => a - b)); return; }
+    for (const v of [...P]) {
+      bronKerbosch(new Set([...R, v]), new Set([...P].filter((u) => adj[v].has(u))), new Set([...X].filter((u) => adj[v].has(u))));
+      P.delete(v);
+      X.add(v);
+    }
+  }
+  bronKerbosch(new Set(), new Set(Array.from({ length: k }, (_, i) => i)), new Set());
+
+  // orden de letras: por la media más alta del clique primero (convención habitual, "a" = el grupo más alto)
+  const cliqueMean = (c) => Math.max(...c.map((i) => (meansForOrder ? meansForOrder[i] : -i)));
+  cliques.sort((a, b) => cliqueMean(b) - cliqueMean(a));
+
+  const letters = Array.from({ length: k }, () => '');
+  cliques.forEach((clique, idx) => {
+    const letter = String.fromCharCode(97 + (idx % 26)) + (idx >= 26 ? String(Math.floor(idx / 26)) : '');
+    clique.forEach((i) => { letters[i] += letter; });
+  });
+  return letters;
+}
