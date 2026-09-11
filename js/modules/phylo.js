@@ -41,12 +41,16 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function defaultState() { return { fastaText: '', correction: 'p' }; }
+function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect' }; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (raw && typeof raw.fastaText === 'string') {
-      return { fastaText: raw.fastaText, correction: raw.correction === 'jc' ? 'jc' : 'p' };
+      return {
+        fastaText: raw.fastaText,
+        correction: raw.correction === 'jc' ? 'jc' : 'p',
+        layout: raw.layout === 'circular' ? 'circular' : 'rect',
+      };
     }
   } catch (e) { /* localStorage puede fallar */ }
   return defaultState();
@@ -114,7 +118,7 @@ function niceScaleValue(maxDepth) {
 
 /** Cladograma rectangular: x = distancia acumulada desde la raíz, y = orden
  *  de hojas (los internos, en el punto medio de sus hijos). */
-function drawCladogram(svg, tree) {
+function drawCladogramRect(svg, tree) {
   const leaves = collectLeaves(tree);
   const nLeaves = leaves.length;
   const { depths, maxDepth } = computeDrawDepths(tree);
@@ -174,6 +178,101 @@ function drawCladogram(svg, tree) {
   const scaleVal = niceScaleValue(maxDepth);
   if (scaleVal > 0) {
     const x0 = marginL, y0 = H - 14, w = scaleVal * xScale;
+    const g = svgEl('g', {});
+    g.appendChild(svgEl('line', { x1: x0, y1: y0, x2: x0 + w, y2: y0, class: 'ql-baseline-line' }));
+    g.appendChild(svgEl('line', { x1: x0, y1: y0 - 4, x2: x0, y2: y0 + 4, class: 'ql-baseline-line' }));
+    g.appendChild(svgEl('line', { x1: x0 + w, y1: y0 - 4, x2: x0 + w, y2: y0 + 4, class: 'ql-baseline-line' }));
+    const lab = svgEl('text', { x: x0, y: y0 + 14, class: 'ql-tick-label' });
+    lab.textContent = scaleVal + ' (' + t('phylo.scaleCaption') + ')';
+    g.appendChild(lab);
+    svg.appendChild(g);
+  }
+}
+
+/** Cladograma circular/radial: MISMO árbol y MISMAS coordenadas (x=distancia
+ *  acumulada, y=orden de hojas) que drawCladogramRect — solo cambia la
+ *  proyección final a coordenadas polares (x->radio, y->ángulo). Las hojas
+ *  se reparten a ángulos iguales alrededor del círculo (en el mismo orden
+ *  que collectLeaves, así que los hijos de un nodo caen siempre en un arco
+ *  contiguo, sin envolver el punto 0°/360°); los internos van al ángulo
+ *  medio de sus hijos, igual que en el rectangular. */
+function drawCladogramCircular(svg, tree) {
+  const leaves = collectLeaves(tree);
+  const n = leaves.length;
+  const { depths, maxDepth } = computeDrawDepths(tree);
+  // radio mínimo por hoja ~ misma densidad que rowH=20 del rectangular
+  const plotR = Math.max(140, (n * 20) / (2 * Math.PI));
+  const marginLabels = 170;
+  const cx = plotR + marginLabels, cy = plotR + marginLabels;
+  const W = 2 * (plotR + marginLabels), H = W;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const rScale = maxDepth > 0 ? plotR / maxDepth : 0;
+  const rOf = (id) => (depths.get(id) || 0) * rScale;
+  const angleStep = (2 * Math.PI) / n;
+  const leafAngle = new Map();
+  leaves.forEach((leaf, i) => leafAngle.set(leaf.id, i * angleStep));
+  const angleMemo = new Map();
+  function angleOf(node) {
+    if (angleMemo.has(node.id)) return angleMemo.get(node.id);
+    const a = !node.children.length
+      ? leafAngle.get(node.id)
+      : node.children.reduce((sum, ch) => sum + angleOf(ch.node), 0) / node.children.length;
+    angleMemo.set(node.id, a);
+    return a;
+  }
+  angleOf(tree);
+  const point = (angle, r) => ({ x: cx + r * Math.sin(angle), y: cy - r * Math.cos(angle) });
+
+  const linesG = svgEl('g', {});
+  const labelsG = svgEl('g', { 'data-ce': 'leaflabels' });
+
+  function drawNode(node) {
+    const r = rOf(node.id);
+    if (node.children.length) {
+      const a0 = angleOf(node.children[0].node);
+      const a1 = angleOf(node.children[node.children.length - 1].node);
+      const p0 = point(a0, r), p1 = point(a1, r);
+      const sweep = a1 - a0;
+      const largeArc = sweep > Math.PI ? 1 : 0;
+      if (sweep > 1e-9) {
+        linesG.appendChild(svgEl('path', {
+          d: 'M ' + p0.x + ' ' + p0.y + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + p1.x + ' ' + p1.y,
+          fill: 'none', class: 'ql-baseline-line',
+        }));
+      }
+      node.children.forEach((ch) => {
+        const a = angleOf(ch.node);
+        const pIn = point(a, r), pOut = point(a, rOf(ch.node.id));
+        linesG.appendChild(svgEl('line', { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line' }));
+        drawNode(ch.node);
+      });
+    } else {
+      const a = angleOf(node);
+      const pLeaf = point(a, r), pOuter = point(a, plotR);
+      if (plotR - r > 2) linesG.appendChild(svgEl('line', { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line' }));
+      const pLab = point(a, plotR + 6);
+      const angleDeg = (a * 180) / Math.PI;
+      const flip = angleDeg > 180;
+      const lab = svgEl('text', {
+        x: pLab.x, y: pLab.y, class: 'ql-tick-label',
+        'text-anchor': flip ? 'end' : 'start',
+        'dominant-baseline': 'middle',
+        transform: 'rotate(' + (angleDeg - 90 + (flip ? 180 : 0)) + ' ' + pLab.x + ' ' + pLab.y + ')',
+      });
+      lab.textContent = node.label;
+      labelsG.appendChild(lab);
+    }
+  }
+  drawNode(tree);
+  svg.appendChild(linesG);
+  svg.appendChild(labelsG);
+
+  // barra de escala: segmento recto en la esquina, no radia desde el centro
+  const scaleVal = niceScaleValue(maxDepth);
+  if (scaleVal > 0) {
+    const x0 = 8, y0 = H - 14, w = scaleVal * rScale;
     const g = svgEl('g', {});
     g.appendChild(svgEl('line', { x1: x0, y1: y0, x2: x0 + w, y2: y0, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0, y1: y0 - 4, x2: x0, y2: y0 + 4, class: 'ql-baseline-line' }));
@@ -410,7 +509,7 @@ export function render(container) {
     chartPanel.innerHTML = '<p class="ql-panel-note">' + t('phylo.treeNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartPhylo') });
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t(s.layout === 'circular' ? 'a11y.chartPhyloCircular' : 'a11y.chartPhylo') });
     chartWrap.appendChild(svg);
     chartPanel.appendChild(chartWrap);
     grid.appendChild(chartPanel);
@@ -418,6 +517,23 @@ export function render(container) {
     const ctrl = document.createElement('aside');
     ctrl.className = 'ql-card ql-panel';
     ctrl.innerHTML = '<h2>' + t('phylo.modelTitle') + '</h2>';
+
+    const layoutField = document.createElement('div');
+    layoutField.className = 'ql-field';
+    layoutField.innerHTML = '<label>' + t('phylo.layoutLabel') + '</label>';
+    const layoutSeg = document.createElement('div');
+    layoutSeg.className = 'ql-segmented';
+    [['rect', t('phylo.layoutRect')], ['circular', t('phylo.layoutCircular')]].forEach(([v, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (s.layout === v ? ' is-on' : '');
+      b.textContent = lbl;
+      b.addEventListener('click', () => { if (s.layout !== v) { s.layout = v; paint(); } });
+      layoutSeg.appendChild(b);
+    });
+    layoutField.appendChild(layoutSeg);
+    ctrl.appendChild(layoutField);
+
     const corrField = document.createElement('div');
     corrField.className = 'ql-field';
     corrField.innerHTML = '<label for="phylo-correction">' + t('phylo.correctionLabel') + '</label>';
@@ -457,10 +573,11 @@ export function render(container) {
           '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statSaturated') + '</div><div class="ql-stat-value" style="font-size:20px;color:var(--warning);">' + saturated.length + '</div></div>');
       }
 
-      drawCladogram(svg, tree);
+      const isCircular = s.layout === 'circular';
+      if (isCircular) drawCladogramCircular(svg, tree); else drawCladogramRect(svg, tree);
       editor = attachChartEditor({
-        key: 'phylo', svg, mount: chartPanel, lang: getLang(),
-        filename: t('phylo.figTitle'),
+        key: isCircular ? 'phylo-circular' : 'phylo', svg, mount: chartPanel, lang: getLang(),
+        filename: t('phylo.figTitle') + (isCircular ? '-' + t('phylo.layoutCircular') : ''),
         elements: [
           { id: 'title', create: { text: t('phylo.figTitle'), x: 8, y: 14, anchor: 'start', cls: 'ce-title' } },
           { id: 'leaflabels', selector: '[data-ce="leaflabels"]', kind: 'group' },

@@ -69,6 +69,9 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     }
     await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); if (b) b.click(); })()`);
     await sleep(350);
+    // layout circular: mismo árbol, proyección polar — probarlo también
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Circular'); if (b) b.click(); })()`);
+    await sleep(400);
   }
   if (route === '#/glosario') {
     // esperar a que el módulo termine de pintar las entradas (bajo carga puede tardar)
