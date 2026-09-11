@@ -27,6 +27,7 @@ const SUITE = [
   { name: 'palettes', file: 'palettes.mjs', kind: 'estático' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
+  { name: 'venngeometry', file: 'venngeometry.mjs', kind: 'estático' },
   { name: 'stats/diversity', file: 'stats/diversity.mjs', kind: 'R' },
   { name: 'stats/rarefaction', file: 'stats/rarefaction.mjs', kind: 'R' },
   { name: 'stats/richness', file: 'stats/richness.mjs', kind: 'R' },

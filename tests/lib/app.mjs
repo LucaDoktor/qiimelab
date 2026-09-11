@@ -73,6 +73,11 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Circular'); if (b) b.click(); })()`);
     await sleep(400);
   }
+  if (route === '#/venn') {
+    // forma de rectángulos (alternativa a los círculos, exacta con 4 conjuntos)
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Rectángulos'); if (b) b.click(); })()`);
+    await sleep(400);
+  }
   if (route === '#/glosario') {
     // esperar a que el módulo termine de pintar las entradas (bajo carga puede tardar)
     for (let i = 0; i < 25; i++) {

@@ -48,6 +48,7 @@ export function render(container) {
   let minCount = 0;
   let minSamples = 1;
   let viewMode = 'auto'; // 'auto' | 'venn' | 'upset'
+  let vennShape = 'circles'; // 'circles' | 'rect' — solo aplica cuando se dibuja un Venn (no UpSet)
   let openMask = null;    // región seleccionada en la tabla
   let editor = null;
 
@@ -212,6 +213,26 @@ export function render(container) {
       fView.appendChild(selView);
       cGrid.appendChild(fView);
     }
+    if (!useUpset && groups.length >= 2 && groups.length <= 4) {
+      const fShape = document.createElement('div');
+      fShape.className = 'ql-field';
+      fShape.innerHTML = '<label>' + t('venn.shapeLabel') + '</label>';
+      const shapeSeg = document.createElement('div');
+      shapeSeg.className = 'ql-segmented';
+      [['circles', t('venn.shapeCircles')], ['rect', t('venn.shapeRect')]].forEach(([v, lbl]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ql-seg-btn' + (vennShape === v ? ' is-on' : '');
+        b.textContent = lbl;
+        b.addEventListener('click', () => { if (vennShape !== v) { vennShape = v; paint(); } });
+        shapeSeg.appendChild(b);
+      });
+      fShape.appendChild(shapeSeg);
+      if (groups.length === 4) {
+        fShape.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('venn.shapeHelp4') + '</p>');
+      }
+      cGrid.appendChild(fShape);
+    }
     controls.appendChild(cGrid);
 
     const totalPresent = new Set();
@@ -256,14 +277,18 @@ export function render(container) {
     } else if (useUpset) {
       chartSvg = drawUpset(chartWrap, groups, byMask, presence, (mask) => { openMask = mask; renderTable(); });
     } else {
-      chartSvg = drawVenn(chartWrap, groups, byMask, (mask) => { openMask = mask; renderTable(); });
+      chartSvg = drawVenn(chartWrap, groups, byMask, (mask) => { openMask = mask; renderTable(); }, { shape: vennShape });
     }
 
     if (chartSvg) {
       const vb = chartSvg.viewBox.baseVal;
       const labelIds = groups.map((_, gi) => ({ id: (useUpset ? 'set' : 'grp') + gi, selector: '[data-ce="' + (useUpset ? 'set' : 'grp') + gi + '"]' }));
+      // 'venn' se mantiene para UpSet y para el Venn de círculos (comportamiento
+      // previo, para no perder estilos ya guardados); el rectángulos es modo
+      // nuevo -> clave propia, como '-lollipop'/'-heatmap' en differentialAbundance.js.
+      const chartKey = (!useUpset && vennShape === 'rect') ? 'venn-rect' : 'venn';
       editor = attachChartEditor({
-        key: 'venn', svg: chartSvg, mount: chartPanel, filename: (useUpset ? 'upset' : 'venn') + '-' + groupCol, lang: getLang(),
+        key: chartKey, svg: chartSvg, mount: chartPanel, filename: (useUpset ? 'upset' : 'venn') + '-' + groupCol, lang: getLang(),
         elements: [
           { id: 'title', create: { text: useUpset ? t('venn.chartUpset') : t('venn.chartVenn'), x: vb.x + vb.width / 2, y: vb.y + 16, anchor: 'middle', cls: 'ce-title' } },
           ...labelIds,
