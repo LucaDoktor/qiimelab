@@ -4,7 +4,7 @@ import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } 
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
-import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP } from '../lib/stats.js';
+import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore } from '../lib/stats.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -57,6 +57,7 @@ export function render(container) {
   let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
   let view = 'barplot';        // 'barplot' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
+  let bmScore = 'cliffs';      // 'cliffs' | 'lda' — qué score manda en el gráfico y el orden por defecto
   let bmSort = { key: 'delta', dir: 'desc' };
   let editor = null;
 
@@ -645,6 +646,27 @@ export function render(container) {
     qR.addEventListener('change', () => applyQ(qR.value));
     qN.addEventListener('change', () => applyQ(qN.value));
 
+    // score del gráfico: δ de Cliff (no asume normalidad) o LDA bootstrapeado
+    // (el nombre que la gente espera de "LEfSe") — las dos quedan siempre
+    // visibles en la tabla; este selector solo decide cuál manda en la
+    // longitud de las barras y el orden por defecto.
+    const scoreField = document.createElement('div');
+    scoreField.className = 'ql-field';
+    scoreField.innerHTML = '<label>' + t('barplots.bmScoreLabel') + '</label>';
+    const scoreSeg = document.createElement('div');
+    scoreSeg.className = 'ql-segmented';
+    [['cliffs', t('barplots.bmScoreCliffs')], ['lda', t('barplots.bmScoreLda')]].forEach(([v, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (bmScore === v ? ' is-on' : '');
+      b.textContent = lbl;
+      b.addEventListener('click', () => { if (bmScore !== v) { bmScore = v; bmSort = { key: v === 'lda' ? 'ldaScore' : 'delta', dir: 'desc' }; paint(); } });
+      scoreSeg.appendChild(b);
+    });
+    scoreField.appendChild(scoreSeg);
+    scoreField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + (bmScore === 'lda' ? t('barplots.bmScoreLdaHelp') : t('barplots.bmScoreCliffsHelp')) + '</p>');
+    controls.appendChild(scoreField);
+
     const method = document.createElement('p');
     method.className = 'ql-field-help';
     method.style.marginTop = '14px';
@@ -707,23 +729,38 @@ export function render(container) {
     const q = benjaminiHochberg(tested.map((x) => x.p));
     tested.forEach((x, i) => { x.q = q[i]; });
 
-    // --- significativos: grupo enriquecido (mediana más alta) + delta de Cliff ---
+    // --- significativos: grupo enriquecido (mediana más alta) + dos scores
+    // de tamaño de efecto, calculados los dos siempre (no uno u otro):
+    // delta de Cliff (one-vs-rest, no asume normalidad) y el LDA univariante
+    // bootstrapeado al estilo LEfSe (one-vs-rest, mismo split). ---
     const sig = tested.filter((x) => x.q < qThresh).map((x) => {
       const medians = x.perGroup.map((arr) => quartiles(arr.slice().sort((a, b) => a - b)).median);
       let bi = 0;
       for (let i = 1; i < medians.length; i++) if (medians[i] > medians[bi]) bi = i;
       const inGroup = x.perGroup[bi];
       const rest = x.perGroup.filter((_, i) => i !== bi).flat();
-      return { ...x, enrichedGroup: groups[bi], enrichedIdx: bi, delta: cliffsDelta(inGroup, rest) };
+      const lda = lefseLdaScore(inGroup, rest);
+      return {
+        ...x, enrichedGroup: groups[bi], enrichedIdx: bi,
+        delta: cliffsDelta(inGroup, rest),
+        ldaScore: lda.error ? null : lda.score,
+      };
     });
-    sig.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    const scoreOf = (x) => (bmScore === 'lda' ? x.ldaScore : x.delta);
+    sig.sort((a, b) => Math.abs(scoreOf(b) ?? -Infinity) - Math.abs(scoreOf(a) ?? -Infinity));
+    const ldaMissing = sig.filter((x) => x.ldaScore == null).length;
 
     chartPanel.insertAdjacentHTML('beforeend',
       '<p class="ql-field-help" style="margin-top:6px;">' +
       t('barplots.bmCount', { n: sig.length, total: tested.length, q: qThresh }) + '</p>');
+    if (bmScore === 'lda' && ldaMissing > 0) {
+      chartPanel.insertAdjacentHTML('beforeend',
+        '<p class="ql-field-help">' + t('barplots.bmLdaMissing', { n: ldaMissing }) + '</p>');
+    }
 
     // --- gráfico: barras horizontales tipo LEfSe ---
-    drawBiomarkerBars(svg, chartPanel, chartWrap, tooltip, sig, groups);
+    const sigForChart = bmScore === 'lda' ? sig.filter((x) => x.ldaScore != null) : sig;
+    drawBiomarkerBars(svg, chartPanel, chartWrap, tooltip, sigForChart, groups, bmScore);
 
     // --- tabla ordenable ---
     const scrollDiv = document.createElement('div');
@@ -734,6 +771,7 @@ export function render(container) {
       ['label', t('barplots.bmColTaxon')],
       ['enrichedGroup', t('barplots.bmColGroup')],
       ['delta', t('barplots.bmColDelta')],
+      ['ldaScore', t('barplots.bmColLda')],
       ['q', t('barplots.bmColQ')],
     ];
     let thead = '<thead><tr>';
@@ -746,12 +784,13 @@ export function render(container) {
     tbl.innerHTML = thead + '</tr></thead>';
     const tb = document.createElement('tbody');
     if (sig.length === 0) {
-      tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
     } else {
       const dir = bmSort.dir === 'asc' ? 1 : -1;
+      const absSortKeys = new Set(['delta', 'ldaScore']);
       const rows = sig.slice().sort((a, b) => {
         const av = a[bmSort.key], bv = b[bmSort.key];
-        if (bmSort.key === 'delta') return (Math.abs(av) - Math.abs(bv)) * dir;
+        if (absSortKeys.has(bmSort.key)) return ((Math.abs(av) || -Infinity) - (Math.abs(bv) || -Infinity)) * dir;
         if (typeof av === 'string') return av.localeCompare(bv) * dir;
         return (av - bv) * dir;
       });
@@ -761,6 +800,7 @@ export function render(container) {
           '<td>' + escapeHtml(r.label) + '</td>' +
           '<td><span class="ql-bm-swatch" style="background:' + groupColor(r.enrichedIdx) + '"></span>' + escapeHtml(r.enrichedGroup) + '</td>' +
           '<td class="ql-num tabular">' + r.delta.toFixed(3) + '</td>' +
+          '<td class="ql-num tabular">' + (r.ldaScore == null ? '—' : r.ldaScore.toFixed(3)) + '</td>' +
           '<td class="ql-num tabular">' + formatP(r.q) + '</td>';
         tb.appendChild(tr);
       });
@@ -772,14 +812,14 @@ export function render(container) {
       btn.addEventListener('click', () => {
         const key = btn.getAttribute('data-sort');
         if (bmSort.key === key) bmSort = { key, dir: bmSort.dir === 'asc' ? 'desc' : 'asc' };
-        // por defecto: nombres y q ascendente; δ (efecto) descendente
-        else bmSort = { key, dir: key === 'delta' ? 'desc' : 'asc' };
+        // por defecto: nombres y q ascendente; scores de efecto (δ, LDA) descendente
+        else bmSort = { key, dir: (key === 'delta' || key === 'ldaScore') ? 'desc' : 'asc' };
         paint();
       });
     });
   }
 
-  function drawBiomarkerBars(svg, mount, chartWrap, tooltip, sig, groups) {
+  function drawBiomarkerBars(svg, mount, chartWrap, tooltip, sig, groups, bmScore) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (sig.length === 0) {
       svg.setAttribute('viewBox', '0 0 400 80');
@@ -817,7 +857,8 @@ export function render(container) {
     svg.style.width = '';
     svg.style.maxWidth = '';
 
-    const maxAbs = Math.max(...sig.map((s) => Math.abs(s.delta)), 0.2);
+    const scoreOf = (s) => (bmScore === 'lda' ? s.ldaScore : s.delta);
+    const maxAbs = Math.max(...sig.map((s) => Math.abs(scoreOf(s))), 0.2);
     const x = (d) => marginL + (Math.abs(d) / maxAbs) * innerW;
 
     // rejilla vertical + eje
@@ -833,7 +874,7 @@ export function render(container) {
     svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT - 6, y2: barsBottom, class: 'ql-baseline-line' }));
 
     const axT = svgEl('text', { x: marginL + innerW / 2, y: axisY, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
-    axT.textContent = t('barplots.bmAxisDelta');
+    axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : t('barplots.bmAxisDelta');
     svg.appendChild(axT);
 
     const barsG = svgEl('g', { 'data-ce': 'bars' });
@@ -841,7 +882,8 @@ export function render(container) {
     sig.forEach((s, i) => {
       const y = marginT + i * rowH;
       const bh = rowH - 8;
-      const w = Math.max(1.5, x(s.delta) - marginL);
+      const sv = scoreOf(s);
+      const w = Math.max(1.5, x(sv) - marginL);
       const rect = svgEl('rect', {
         x: marginL, y: y + 3, width: w, height: bh, rx: 2,
         fill: groupColor(s.enrichedIdx), 'fill-opacity': 0.85,
@@ -853,7 +895,8 @@ export function render(container) {
         tooltip.style.top = ((sr.top - wr.top) + (y + rowH / 2) * (sr.height / H)) + 'px';
         tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(s.label) + '</div>' +
           '<div class="ql-tt-row">' + escapeHtml(t('barplots.bmEnrichedIn', { group: s.enrichedGroup })) +
-          ' · δ = ' + s.delta.toFixed(3) + ' · q = ' + formatP(s.q) + '</div>';
+          ' · δ = ' + s.delta.toFixed(3) + (s.ldaScore == null ? '' : ' · LDA = ' + s.ldaScore.toFixed(3)) +
+          ' · q = ' + formatP(s.q) + '</div>';
         tooltip.classList.add('is-show');
       });
       rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
@@ -864,7 +907,7 @@ export function render(container) {
       labelsG.appendChild(lt);
 
       const vt = svgEl('text', { x: marginL + w + 5, y: y + rowH / 2 + 3, class: 'ql-tick-label' });
-      vt.textContent = s.delta.toFixed(2);
+      vt.textContent = sv.toFixed(2);
       barsG.appendChild(vt);
     });
     svg.appendChild(barsG);

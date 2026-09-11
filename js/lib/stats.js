@@ -782,3 +782,74 @@ export function compactLetterDisplay(k, pairwise, meansForOrder) {
   });
   return letters;
 }
+
+// ---------- LDA univariante estabilizada con bootstrap (variante propia, inspirada en LEfSe) ----------
+// El LDA de LEfSe (Segata et al. 2011) NO es un LDA multivariante sobre toda
+// la matriz: es univariante, por característica, entre dos clases (aquí:
+// "grupo enriquecido" vs "el resto", el mismo one-vs-rest que ya usa
+// cliffsDelta en el panel de biomarcadores) — estabilizado remuestreando
+// repetidamente. Aquí, punto por punto:
+//   1. coeficiente discriminante de Fisher (LDA 1D, 2 clases): (media_A −
+//      media_B) / varianza combinada. Es la fórmula clásica de Fisher 1936
+//      (NO el `$scaling` que da `MASS::lda()` en R, que normaliza a varianza
+//      unitaria y por tanto NO depende de qué clase tiene la media más
+//      alta — se comprobó y se descartó antes de escribir esto). Se conecta
+//      de forma exacta con el t de Student de varianzas iguales:
+//      w = t · sqrt((1/n_A+1/n_B) / varianza_combinada) — así se verifica
+//      contra `t.test(..., var.equal=TRUE)` sin depender de ningún paquete
+//      de LDA.
+//   2. bootstrap: 30 remuestreos SIN reemplazo al ~66% de cada clase (por
+//      separado, no del conjunto combinado — variante propia, más simple
+//      que remuestrear la tabla completa y re-separar clases después).
+//   3. mediana de los 30 coeficientes (no la media: más robusta a alguna
+//      iteración degenerada), y el score final es log10(|mediana|).
+// Al operar sobre el mismo % de abundancia relativa que usa el resto del
+// panel de biomarcadores (no la normalización a escala fija ×10⁶ del LEfSe
+// original), la escala numérica del score NO es directamente comparable a
+// los LDA scores publicados con la herramienta LEfSe — se avisa en la UI.
+
+function sampleWithoutReplacement(arr, k, rnd) {
+  const a = arr.slice();
+  const n = a.length;
+  const kk = Math.min(k, n);
+  for (let i = 0; i < kk; i++) {
+    const j = i + Math.floor(rnd() * (n - i));
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a.slice(0, kk);
+}
+
+/** Coeficiente discriminante de Fisher (LDA 1D, 2 clases): (mediaA−mediaB)/varianza combinada. */
+export function fisherDiscriminantCoefficient(a, b) {
+  const na = a.length, nb = b.length;
+  if (na < 2 || nb < 2) return NaN;
+  const pooled = ((na - 1) * stdDev(a) ** 2 + (nb - 1) * stdDev(b) ** 2) / (na + nb - 2);
+  if (!(pooled > 0)) return NaN;
+  return (mean(a) - mean(b)) / pooled;
+}
+
+/**
+ * LDA score al estilo LEfSe: coeficiente discriminante de Fisher entre dos
+ * clases, estabilizado con bootstrap (remuestreo sin reemplazo al 66% de
+ * cada clase, `iterations` veces, mediana de los coeficientes).
+ * @param {number[]} a  clase "enriquecida"
+ * @param {number[]} b  clase "resto"
+ * @param {{iterations?:number, fraction?:number, seed?:number}} [opt]
+ * @returns {{coefficient:number, score:number, iterations:number} | {error:string}}
+ */
+export function lefseLdaScore(a, b, opt = {}) {
+  const iterations = opt.iterations != null ? opt.iterations : 30;
+  const fraction = opt.fraction != null ? opt.fraction : 2 / 3;
+  if (a.length < 2 || b.length < 2) return { error: 'Hacen falta al menos 2 valores en cada clase.' };
+  const rnd = mulberry32s(opt.seed != null ? opt.seed : 0x1D5A);
+  const na = Math.max(2, Math.min(a.length, Math.round(a.length * fraction)));
+  const nb = Math.max(2, Math.min(b.length, Math.round(b.length * fraction)));
+  const coefs = [];
+  for (let k = 0; k < iterations; k++) {
+    const w = fisherDiscriminantCoefficient(sampleWithoutReplacement(a, na, rnd), sampleWithoutReplacement(b, nb, rnd));
+    if (Number.isFinite(w)) coefs.push(w);
+  }
+  if (!coefs.length) return { error: 'Ninguna iteración del bootstrap dio un coeficiente válido (varianza combinada nula en todas).' };
+  const med = quartiles(coefs.slice().sort((x, y) => x - y)).median;
+  return { coefficient: med, score: Math.log10(Math.abs(med)), iterations: coefs.length };
+}
