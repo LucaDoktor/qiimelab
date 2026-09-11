@@ -9,6 +9,7 @@
 
 import { t } from '../lib/i18n.js';
 import { mean, stdDev, standardError } from '../lib/stats.js';
+import { registerFile, addMicrobialCountSeries } from '../state.js';
 
 const STORE_KEY = 'qiimelab.ufcCalc';
 
@@ -309,6 +310,29 @@ export function render(container) {
       } catch (e) { /* clipboard puede fallar */ }
     });
     resCard.appendChild(copyBtn);
+
+    const sendBtn = document.createElement('button');
+    sendBtn.type = 'button';
+    sendBtn.className = 'ql-btn';
+    sendBtn.style.cssText = 'margin-top:12px;margin-left:8px;';
+    sendBtn.textContent = t('ufc.sendToRecuentos');
+    sendBtn.addEventListener('click', () => {
+      const fileId = registerFile('calculadora-ufc.mL', 0, t('ufc.sendToRecuentosNote'));
+      addMicrobialCountSeries({
+        label: t('ufc.recuentosSeriesLabel'),
+        sourceFileId: fileId,
+        headers: [t('ufc.colLabel'), t('ufc.colCfu')],
+        rows: usable.map((r) => ({
+          [t('ufc.colLabel')]: r.label || t('ufc.rowN', { n: rows.indexOf(r) + 1 }),
+          [t('ufc.colCfu')]: r.cfu,
+        })),
+        mapping: { groupCols: [0], valueCol: 1, dilutionCol: null, alreadyLog: false },
+      });
+      sendBtn.textContent = t('ufc.sentConfirm');
+      setTimeout(() => { sendBtn.textContent = t('ufc.sendToRecuentos'); }, 2200);
+    });
+    resCard.appendChild(sendBtn);
+    resCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + t('ufc.sendToRecuentosHelp') + '</p>');
 
     container.appendChild(resCard);
   }

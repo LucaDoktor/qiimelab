@@ -667,6 +667,11 @@ const DICTS = {
       copy: 'Copiar resultado',
       copied: 'Copiado ✓',
       copyHeader: 'etiqueta\tUFC/mL\tlog10',
+      sendToRecuentos: 'Enviar a Recuentos',
+      sendToRecuentosHelp: 'Crea una nueva serie en #/recuentos con estas filas (etiqueta = grupo, UFC/mL = valor) — agrupa las que compartan etiqueta como réplicas. Se puede renombrar o quitar desde allí.',
+      sendToRecuentosNote: 'Filas enviadas desde la calculadora de UFC/mL.',
+      sentConfirm: 'Enviado ✓ — ver en Recuentos',
+      recuentosSeriesLabel: 'Calculadora UFC/mL',
     },
     primers: {
       eyebrow: 'Diseño de primers',
@@ -1814,6 +1819,11 @@ const DICTS = {
       copy: 'Copy result',
       copied: 'Copied ✓',
       copyHeader: 'label\tCFU/mL\tlog10',
+      sendToRecuentos: 'Send to Recuentos',
+      sendToRecuentosHelp: 'Creates a new series in #/recuentos with these rows (label = group, CFU/mL = value) — rows sharing a label become replicates. Rename or remove it from there.',
+      sendToRecuentosNote: 'Rows sent from the CFU/mL calculator.',
+      sentConfirm: 'Sent ✓ — see it in Recuentos',
+      recuentosSeriesLabel: 'CFU/mL calculator',
     },
     primers: {
       eyebrow: 'Primer design',

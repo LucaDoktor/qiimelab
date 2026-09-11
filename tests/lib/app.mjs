@@ -57,6 +57,20 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     await c.ev(`(() => { const n = document.querySelector('#clR'); if (n) { n.value = '0.1'; n.dispatchEvent(new Event('change')); } })()`);
     await sleep(400);
   }
+  if (route === '#/ufc') {
+    // rellenar una fila y probar el envío a #/recuentos como serie nueva
+    await c.ev(`(() => {
+      const tr = document.querySelector('.ql-ufc-table tbody tr');
+      if (!tr) return;
+      const inputs = tr.querySelectorAll('input');
+      inputs[0].value = 'sweep'; inputs[0].dispatchEvent(new Event('change'));
+      inputs[1].value = '100'; inputs[1].dispatchEvent(new Event('change'));
+      inputs[2].value = '3'; inputs[2].dispatchEvent(new Event('change'));
+    })()`);
+    await sleep(300);
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Enviar a Recuentos/.test(x.textContent)); if (b) b.click(); })()`);
+    await sleep(300);
+  }
   if (route === '#/barplots') {
     // orientación horizontal del barplot apilado — mismos datos, otra proyección
     await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Horizontal'); if (b) b.click(); })()`);
