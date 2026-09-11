@@ -5,9 +5,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 17 rutas de módulo (#/…#/validacion) + la subvista "Red" del correlograma = 18.
+// 18 rutas de módulo (#/…#/validacion) + la subvista "Red" del correlograma = 19.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/recuentos', '#/ufc', '#/primers', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe',
+  '#/recuentos', '#/ufc', '#/primers', '#/arbol', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe',
   '#/recursos', '#/glosario', '#/validacion'];
 
 // carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones + 2 recuentos)
@@ -56,6 +56,19 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
   if (route === '#/correlograma') {
     await c.ev(`(() => { const n = document.querySelector('#clR'); if (n) { n.value = '0.1'; n.dispatchEvent(new Event('change')); } })()`);
     await sleep(400);
+  }
+  if (route === '#/arbol') {
+    // módulo autónomo (localStorage, no LOAD_ALL): carga su propio ejemplo y
+    // espera a que termine el pipeline async (alineamiento + NJ) antes de
+    // probar "Personalizar" sobre el árbol ya dibujado.
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Cargar ejemplo|Load example/.test(x.textContent)); if (b) b.click(); })()`);
+    await sleep(500);
+    for (let i = 0; i < 60; i++) {
+      if (await c.ev(`document.querySelectorAll('.ql-svg .ql-baseline-line').length > 0`)) break;
+      await sleep(400);
+    }
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); if (b) b.click(); })()`);
+    await sleep(350);
   }
   if (route === '#/glosario') {
     // esperar a que el módulo termine de pintar las entradas (bajo carga puede tardar)

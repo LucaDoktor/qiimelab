@@ -20,7 +20,7 @@ Chrome, R, un paquete de R, o Biopython). El runner sale ≠ 0 solo si algo
 
 | archivo | tipo | qué comprueba |
 |---|---|---|
-| `sweep-routes.mjs` | navegador | Las 18 rutas/subvistas (17 módulos + la subvista "Red" del correlograma) en **claro y oscuro**, con todos los ejemplos cargados. Incluye `#/glosario` con su filtro de texto y sus `<details>`. Falla ante cualquier `console.error` / excepción. |
+| `sweep-routes.mjs` | navegador | Las 19 rutas/subvistas (18 módulos + la subvista "Red" del correlograma) en **claro y oscuro**, con todos los ejemplos cargados. Incluye `#/glosario` con su filtro de texto y sus `<details>`. Falla ante cualquier `console.error` / excepción. |
 | `sweep-session.mjs` | navegador | Ciclo `exportSession()` → `clearAllState()` → `importSession()` → re-barrido. Canarios numéricos (nº taxa, KW H/p, % var PCoA, profundidad mín. de rarefacción, nº comparaciones…) **idénticos bit a bit** y **0** referencias `sourceFileId` colgadas. |
 | `sweep-a11y.mjs` | navegador | Heurísticas por ruta × tema: nombre accesible en cada `button`/`a`, etiqueta en cada `input`/`select`, `aria-label` en cada `svg[role=img]`, una `<main tabindex=-1>`, enlace “saltar al contenido”, `<nav aria-label>`, `aria-current` en la navegación activa. |
 | `keyboard-editor.mjs` | navegador | El editor de gráficos con **solo teclado**: foco en el tirador, flechas mueven (Shift = paso mayor), Intro abre el panel (el foco entra), Escape cierra y devuelve el foco, la posición persiste en `localStorage`. |
@@ -32,6 +32,7 @@ Chrome, R, un paquete de R, o Biopython). El runner sale ≠ 0 solo si algo
 | `primercoverage.mjs` | estático | `computeCoverage()`/`groupCoverageByTaxon()`/`buildTaxonomyMap()` (`js/lib/primerCoverage.js`): 4 referencias (2 con el primer, 2 sin él) agrupadas en 2 grupos taxonómicos (uno 100% cubierto, el otro 0%); cobertura de una pareja (amplicón) cuando solo una referencia tiene los dos sitios; alias de columnas id/taxonomía habituales. |
 | `palettes.mjs` | estático | `paletteValidator.js` (distancia OKLab, simulación de dicromacia Machado 2009, contraste WCAG) marca un par rojo/verde de igual luminosidad como confuso en protanopía/deuteranopía (y NO marca rojo/verde "puros", que sí se distinguen por brillo); las 3 paletas por defecto (`js/lib/palettes.js`) pasan con el mismo criterio que ya usan `cvd.mjs`/`contrast.mjs` para `--cat-*`. |
 | `primerdesign.mjs` | estático | `designPrimers()` (`js/lib/primerDesign.js`): sobre una plantilla con 515F/806R real embebido cerca (producto ~129 pb) y un primer sintético embebido lejos (~749 pb), el modo qPCR solo da parejas de 121-140 pb y el modo estándar da parejas de 612-799 pb (que qPCR rechazaría por tamaño); una secuencia duplicada en la plantilla se excluye de los candidatos (especificidad); cambiar el tope de tamaño a mano lo respeta; `confirmSpecificity()` (reutiliza `findPrimerSites` de `primerTemplate.js`) confirma 1 sola aparición de cada primer de la mejor pareja. |
+| `phyloalign.mjs` | estático | `needlemanWunsch()`/`buildProgressiveAlignment()` (`js/lib/phyloAlign.js`): secuencias idénticas sin huecos, una inserción conocida produce exactamente 1 hueco neto, máxima divergencia en secuencias de igual longitud no desplaza el marco; el alineamiento progresivo de 4 secuencias (guía UPGMA real) da una MSA de anchura única cuya versión sin huecos reconstruye cada secuencia original byte a byte, y la p-distance de la pareja casi idéntica sale muy por debajo de la de la pareja divergente. |
 | `privacy.mjs` | estático | 2 pasadas de literales prohibidos (listas `LEAK_A` + `LEAK_B` en base64, las mismas que `VW_Final/scripts/verify_recursos_qiimelab.mjs`) sobre todo el árbol de código y datos de ejemplo, o sobre un rango git (`node tests/privacy.mjs 08b51af..HEAD`). |
 | `contrast.mjs` | estático | Contraste WCAG AA de los pares texto/fondo y componente/fondo, en claro y oscuro. Colores resueltos desde `css/tokens.css` (sigue al archivo). Falla si algún par de texto/UI incumple AA **sin** justificación documentada. |
 | `cvd.mjs` | estático | Simulación de proto/deutero/tritanopía (Machado 2009) sobre la paleta de datos. **Gate**: el par divergente `--corr-pos` × `--corr-neg` (único canal solo-color) ≥ ΔE 8 en las 3 dicromacias. La paleta categórica se informa (adyacentes < 8 por protan./deuter. bloquean; solo por tritanopía se aceptan). |
@@ -47,8 +48,10 @@ Chrome, R, un paquete de R, o Biopython). El runner sale ≠ 0 solo si algo
 | `stats/cliffsdelta.mjs` | R (`effsize`) | `cliffsDelta()` vs `effsize::cliff.delta()$estimate`. |
 | `stats/countsummary.mjs` | R base | `summariseCountSeries()` (recuento microbiano): media/SD/SE en log10 por grupo vs. `mean()` / `sd()` / `sd()/sqrt(n)`; además comprueba la exclusión de celdas `#NUM!` / 0 y la vía "el valor ya viene en log10". |
 | `stats/permanova.mjs` | R (`vegan`) | `permanova()` (PERMANOVA de un factor): Df, sumas de cuadrados, pseudo-F y R² **exactos** vs `vegan::adonis2`; el p-valor (estocástico) se comprueba por rango + determinismo. |
+| `stats/neighborjoining.mjs` | R (`ape`) | `neighborJoining()` (`js/lib/neighborJoining.js`) sobre el ejemplo de 5 taxones publicado en la entrada de Wikipedia "Neighbor joining": las distancias patrísticas reconstruyen la matriz original **exacto** (el árbol es perfectamente aditivo) vs `ape::nj()` + `cophenetic()`; además las 7 longitudes de rama con nombre del artículo (a=2, b=3, u→v=3, c=4, v→w=2, d=2, e=1) y los casos n=2/n=3. |
+| `stats/phylodistance.mjs` | R (`ape`) | `pDistance()`/`jukesCantorCorrection()` (`js/lib/phyloDistance.js`) vs `ape::dist.dna(model="raw"/"JC69", pairwise.deletion=TRUE)`: proporción de sitios distintos con huecos excluidos por pares, saturación (NaN) de JC69 a p≥0,75, y `buildDistanceMatrix()` capando el par saturado. |
 | `stats/primertm.mjs` | Biopython | `tmNN()`/`meltingTemp()` (`js/lib/primerAnalysis.js`, Tm de vecino más próximo SantaLucia 1998) vs `Bio.SeqUtils.MeltingTemp.Tm_NN` (`nn_table=DNA_NN3`, `saltcorr=5`) — 10 casos (secuencias concretas, sal/concentración de primer variadas) + el primer degenerado 515F (4 resoluciones IUPAC → min/max/media). |
-| `mobile-audit.mjs` | navegador | Recorre las 18 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
+| `mobile-audit.mjs` | navegador | Recorre las 19 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
 | `pwa.mjs` | estático + navegador | `manifest.json` es JSON válido con los campos obligatorios y sus iconos existen; `index.html` enlaza el manifest. Con navegador: el service worker registra, activa y controla la página tras la 1ª carga; con la red simulada offline por CDP una 2ª navegación sigue sirviendo el shell (sidebar + main + footer) desde caché sin errores; y el evento `offline`/`online` muestra/oculta el banner "sin conexión" de `js/lib/pwa.js`. |
 | `perf-stress.mjs` | navegador | Genera un dataset de estrés (260 muestras × 2800 taxones, semilla fija, **no** en `datos-ejemplo/`) y cronometra las 4 operaciones pesadas midiendo el "jank" (hueco máximo entre frames de `requestAnimationFrame`). **Falla** si la ruta migrada a Web Worker (`js/lib/heavyStats.js`: UPGMA de matrices grandes + curvas de rarefacción) vuelve a bloquear el hilo principal (> 120 ms). El resto solo se informa. |
 
@@ -80,6 +83,13 @@ R instalado.
   `compare-overlap.mjs`).
 - **Exportación SVG/PNG del editor de gráficos**, **impresión del informe
   combinado**, **descarga del HTML autocontenido**: no automatizadas.
+- **`#/arbol` interactivo**: `sweep-routes.mjs` carga el ejemplo, espera a que
+  termine el pipeline y prueba "Personalizar" sobre el árbol ya dibujado (con
+  las fórmulas cubiertas por `phyloalign.mjs`/`stats/neighborjoining.mjs`/
+  `stats/phylodistance.mjs`); el aviso de "demasiadas secuencias" con el botón
+  de quedarse con las más abundantes, quitar una secuencia a mano de la lista,
+  y que cambiar p-distance↔Jukes-Cantor NO repita el alineamiento (cacheado
+  aparte), se verificaron a mano una vez, no de forma persistida.
 - **i18n**: no se comprueba que existan todas las claves en `es`/`en` ni que
   `it`/`de`/`zh` caigan a `es` sin huecos.
 - **Rendimiento**: `perf-stress.mjs` mide las 4 operaciones pesadas y verifica

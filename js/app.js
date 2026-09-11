@@ -36,6 +36,7 @@ const moduleLoaders = {
   recuentos: () => import('./modules/microbialCounts.js'),
   ufc: () => import('./modules/cfuCalculator.js'),
   primers: () => import('./modules/primers.js'),
+  arbol: () => import('./modules/phylo.js'),
   venn: () => import('./modules/venn.js'),
   correlograma: () => import('./modules/correlogram.js'),
   funcional: () => import('./modules/functional.js'),

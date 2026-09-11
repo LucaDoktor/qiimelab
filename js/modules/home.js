@@ -19,6 +19,7 @@ const MODULES_INFO = [
   { route: 'funcional', qKey: 'home.q.funcional', nameKey: 'nav.funcional', descKey: 'modules.funcional.desc', glos: 'kegg' },
   { route: 'qc', qKey: 'home.q.qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc', glos: 'qc' },
   { route: 'primers', qKey: 'home.q.primers', nameKey: 'nav.primers', descKey: 'modules.primers.desc', glos: 'primerTm' },
+  { route: 'arbol', qKey: 'home.q.arbol', nameKey: 'nav.arbol', descKey: 'modules.arbol.desc', glos: 'neighborJoiningTerm' },
 ];
 
 const MORE_LINKS = [

@@ -1,4 +1,4 @@
-// Barrido headless de las 18 rutas/subvistas en claro y oscuro con todos los
+// Barrido headless de las 19 rutas/subvistas en claro y oscuro con todos los
 // ejemplos cargados. Falla si aparece cualquier error de consola o excepción.
 //
 //   node tests/sweep-routes.mjs
@@ -37,7 +37,7 @@ for (const dark of [false, true]) {
 
     console.log(`\n===== ${themeName} =====`);
     if (c.problems.length === 0) {
-      console.log('  0 errores de consola / excepciones en las 18 rutas/subvistas');
+      console.log('  0 errores de consola / excepciones en las 19 rutas/subvistas');
     } else {
       failed = true;
       c.problems.forEach((p) => console.log('  ✗ ' + p));
