@@ -219,6 +219,18 @@ function sendConsensusToPrimers(sampleId, consensus) {
   location.hash = '#/primers';
 }
 
+/**
+ * URL de la "Common URL API" de NCBI BLAST (CMD=Put) que lanza una búsqueda
+ * blastn contra `nt` con la secuencia ya cargada — verificado a mano (no
+ * solo documentado) que una petición GET a esta URL con un consenso Sanger
+ * real (~1400 nt) devuelve la página de espera con un RID asignado, no una
+ * página en blanco. La identificación en sí (correr BLAST) queda fuera de
+ * la app: esto es solo el puente hacia NCBI.
+ */
+function ncbiBlastUrl(sequence) {
+  return 'https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Put&PROGRAM=blastn&DATABASE=nt&QUERY=' + encodeURIComponent(sequence);
+}
+
 // ---------- visor de cromatograma ----------
 
 function clientXToSvgX(svg, clientX) {
@@ -870,7 +882,18 @@ export function render(container) {
       sendBtn.disabled = !r.consensus;
       sendBtn.addEventListener('click', () => sendConsensusToPrimers(r.id, r.consensus));
       btnRow.appendChild(copyBtn); btnRow.appendChild(sendBtn);
+      if (r.consensus) {
+        const blastLink = document.createElement('a');
+        blastLink.className = 'ql-btn';
+        blastLink.href = ncbiBlastUrl(r.consensus);
+        blastLink.target = '_blank';
+        blastLink.rel = 'noopener';
+        blastLink.title = t('sanger.blastTitle');
+        blastLink.textContent = t('sanger.blastLink') + ' ↗';
+        btnRow.appendChild(blastLink);
+      }
       detailWrap.appendChild(btnRow);
+      detailWrap.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + t('sanger.blastNote') + '</p>');
     }
 
     const initial = results.find((r) => r.id === s.selectedSampleId) || results[0];

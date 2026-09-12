@@ -1012,6 +1012,8 @@ const DICTS = {
       copyFasta: 'Copiar FASTA', copiedFasta: 'Copiado ✓', sendToPrimers: 'Enviar a Primers (Plantilla)',
       scopeTitle: 'Qué NO hace este módulo, a propósito',
       scopeNote: 'No identifica taxonómicamente el consenso por BLAST (necesitaría red y un servicio externo — rompería la arquitectura 100% en el navegador; puedes copiar el FASTA exportado y usarlo en NCBI BLAST u otra herramienta tú mismo). No ensambla más de 2 lecturas por muestra (solo forward + reverse). No resuelve dobles picos de heterocigotos ni otros errores de basecalling más allá del recorte por calidad.',
+      blastLink: 'Buscar en NCBI BLAST', blastTitle: 'Abre NCBI BLAST en una pestaña nueva con esta secuencia ya cargada',
+      blastNote: 'Abre blastn contra la base "nt" de NCBI en una pestaña nueva, con el consenso ya cargado en la búsqueda — no hace falta pegarlo a mano. La búsqueda corre en los servidores de NCBI, no en esta app: identificar el resultado (a qué especie corresponde) es cosa tuya en esa pestaña.',
     },
     barplots: {
       eyebrow: 'Composición de la comunidad', title: 'Barplots taxonómicos',
@@ -2237,6 +2239,8 @@ const DICTS = {
       copyFasta: 'Copy FASTA', copiedFasta: 'Copied ✓', sendToPrimers: 'Send to Primers (Template)',
       scopeTitle: 'What this module deliberately does NOT do',
       scopeNote: 'It does not identify the consensus taxonomically via BLAST (that would need network access and an external service — it would break the 100%-in-the-browser architecture; you can copy the exported FASTA and run it through NCBI BLAST or another tool yourself). It does not assemble more than 2 reads per sample (forward + reverse only). It does not resolve heterozygote double peaks or other basecalling errors beyond quality trimming.',
+      blastLink: 'Search on NCBI BLAST', blastTitle: 'Opens NCBI BLAST in a new tab with this sequence already loaded',
+      blastNote: 'Opens blastn against NCBI\'s "nt" database in a new tab, with the consensus already loaded into the search — no need to paste it by hand. The search runs on NCBI\'s own servers, not in this app: identifying the result (which species it matches) is up to you over there.',
     },
     barplots: {
       eyebrow: 'Community composition', title: 'Taxonomic barplots',
