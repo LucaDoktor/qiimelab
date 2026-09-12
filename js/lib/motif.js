@@ -1,8 +1,8 @@
-// Motivo decorativo de fondo: un árbol filogenético RADIAL (ramas como radios
-// y arcos desde un centro, hojas repartidas por el perímetro) — la forma más
-// reconocible de dibujar filogenia en microbioma. SVG a mano, sin librerías,
-// en `currentColor`: va DETRÁS de texto, con opacidad y máscara de desvanecido
-// desde el CSS, así que se adapta solo a claro y a oscuro.
+// Motivo decorativo de fondo, dibujado a mano en SVG (sin imágenes ni
+// librerías). Dos elementos del dominio: un dendrograma de clustering y una
+// nube de puntos tipo ordenación (PCoA). Todo en `currentColor` y trazo
+// fino: va DETRÁS de texto, con opacidad y máscara de desvanecido desde el
+// CSS, así que se adapta solo a claro y a oscuro.
 
 function mulberry32(a) {
   return function () {
@@ -13,84 +13,74 @@ function mulberry32(a) {
   };
 }
 
+// Dendrograma horizontal (raíz a la izquierda, hojas a la derecha), como el
+// que sale de un UPGMA. Recursivo: cada nodo parte su franja vertical en dos
+// y se conecta con un codo ortogonal. Apila tramos de <path> en `seg` y los
+// puntos-hoja en `leaves`. Devuelve la y del nodo.
+function buildDendro(x0, x1, y0, y1, depth, rnd, seg, leaves) {
+  if (depth <= 0 || (y1 - y0) < 16) {
+    const y = (y0 + y1) / 2;
+    leaves.push([x1, y]);
+    return y;
+  }
+  const split = 0.5 + (rnd() - 0.5) * 0.5;
+  const ym = y0 + (y1 - y0) * split;
+  const branchX = x0 + (x1 - x0) * (0.22 + rnd() * 0.28);
+  const yTop = buildDendro(branchX, x1, y0, ym, depth - 1, rnd, seg, leaves);
+  const yBot = buildDendro(branchX, x1, ym, y1, depth - 1, rnd, seg, leaves);
+  seg.push('M' + branchX.toFixed(1) + ' ' + yTop.toFixed(1) + 'V' + yBot.toFixed(1));
+  const yc = (yTop + yBot) / 2;
+  seg.push('M' + x0.toFixed(1) + ' ' + yc.toFixed(1) + 'H' + branchX.toFixed(1));
+  return yc;
+}
+
 /**
  * @param {object} [opt]
- * @param {number} [opt.w]      ancho del viewBox
- * @param {number} [opt.h]      alto del viewBox
- * @param {number} [opt.seed]   semilla (misma semilla = mismo árbol)
- * @param {'hero'|'panel'} [opt.variant]  densidad (profundidad del árbol)
- * @param {number} [opt.sweep]  ángulo total del abanico en grados (<360 = con hueco)
- * @param {number} [opt.start]  ángulo inicial en grados
+ * @param {number} [opt.w] ancho del viewBox
+ * @param {number} [opt.h] alto del viewBox
+ * @param {number} [opt.seed] semilla (misma semilla = mismo dibujo)
+ * @param {'hero'|'panel'} [opt.variant] densidad
  * @returns {string} `<svg class="ql-motif">…</svg>`
  */
 export function domainMotif(opt = {}) {
-  const w = opt.w || 1000;
-  const h = opt.h || 380;
+  const w = opt.w || 1200;
+  const h = opt.h || 300;
   const seed = opt.seed || 0xB10175;
-  const depth = opt.variant === 'panel' ? 4 : 5;
-  const sweep = opt.sweep || 330;      // < 360: el hueco cae a la izquierda, donde el CSS lo enmascara
-  const start = opt.start || -165;
+  const dense = opt.variant !== 'panel';
   const rnd = mulberry32(seed);
 
-  // Lienzo ancho: la "circunferencia" es en realidad una elipse axis-aligned,
-  // así el árbol radial llena una banda apaisada sin deformarse el trazo.
-  const cx = w * 0.6, cy = h * 0.52;
-  const RX = w * 0.42, RY = h * 0.46;
-  const ROOT_R = 0.06;                 // radio (fracción) donde arranca la raíz
-
-  // (fracción de radio, ángulo en grados) -> punto XY en la elipse
-  const pt = (rf, ang) => {
-    const a = (ang - 90) * Math.PI / 180;
-    return [cx + rf * RX * Math.cos(a), cy + rf * RY * Math.sin(a)];
-  };
-  // arco a radio constante `rf` entre dos ángulos (arco de elipse, rotación 0)
-  const arc = (rf, a0, a1) => {
-    const [x0, y0] = pt(rf, a0);
-    const [x1, y1] = pt(rf, a1);
-    const large = Math.abs(a1 - a0) > 180 ? 1 : 0;
-    const sw = a1 > a0 ? 1 : 0;
-    return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) +
-      'A' + (rf * RX).toFixed(1) + ' ' + (rf * RY).toFixed(1) + ' 0 ' + large + ' ' + sw + ' ' +
-      x1.toFixed(1) + ' ' + y1.toFixed(1);
-  };
-
-  // árbol binario: cada nodo ocupa la cuña [a0,a1] y su rama arranca en r0.
-  // Los nodos internos se quedan dentro de ~0.7 de radio; así las ramas-hoja
-  // (que llegan hasta 1.0) son largas y radiales, como las puntas de un árbol.
-  function build(a0, a1, r0, d) {
-    if (d <= 0 || a1 - a0 < 8) {
-      return { leaf: true, ang: (a0 + a1) / 2, rad: 1 };
-    }
-    const split = 0.5 + (rnd() - 0.5) * 0.5;
-    const am = a0 + (a1 - a0) * split;
-    const rad = Math.min(0.7, r0 + 0.06 + rnd() * 0.13);   // "longitud de rama", pequeña e irregular
-    const L = build(a0, am, rad, d - 1);
-    const R = build(am, a1, rad, d - 1);
-    return { leaf: false, ang: (L.ang + R.ang) / 2, rad, L, R };
-  }
-
+  // --- dendrograma, mitad izquierda del motivo ---
   const seg = [];
-  const leaves = [];
-  function emit(node, parentRad) {
-    const [x0, y0] = pt(parentRad, node.ang);   // radio: del padre al nodo
-    const [x1, y1] = pt(node.rad, node.ang);
-    seg.push('M' + x0.toFixed(1) + ' ' + y0.toFixed(1) + 'L' + x1.toFixed(1) + ' ' + y1.toFixed(1));
-    if (node.leaf) { leaves.push([x1, y1]); return; }
-    seg.push(arc(node.rad, node.L.ang, node.R.ang));       // arco que une los dos hijos
-    emit(node.L, node.rad);
-    emit(node.R, node.rad);
-  }
+  const dLeaves = [];
+  buildDendro(w * 0.04, w * 0.46, h * 0.06, h * 0.94, dense ? 5 : 4, rnd, seg, dLeaves);
+  let leafDots = '';
+  dLeaves.forEach(([x, y]) => {
+    leafDots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3"/>';
+  });
 
-  emit(build(start, start + sweep, ROOT_R, depth), ROOT_R);
-
-  const [rootX, rootY] = pt(0, 0);
-  let dots = '<circle cx="' + rootX.toFixed(1) + '" cy="' + rootY.toFixed(1) + '" r="3.6"/>';
-  leaves.forEach(([x, y]) => { dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.1"/>'; });
+  // --- nube de puntos tipo ordenación, mitad derecha ---
+  const clusters = [
+    { cx: w * 0.63, cy: h * 0.42, s: h * 0.30, n: dense ? 16 : 9 },
+    { cx: w * 0.83, cy: h * 0.66, s: h * 0.26, n: dense ? 14 : 8 },
+    { cx: w * 0.90, cy: h * 0.24, s: h * 0.20, n: dense ? 11 : 6 },
+  ];
+  let dots = '';
+  clusters.forEach((c) => {
+    for (let i = 0; i < c.n; i++) {
+      const gx = (rnd() + rnd() + rnd() - 1.5) / 1.5;
+      const gy = (rnd() + rnd() + rnd() - 1.5) / 1.5;
+      const x = c.cx + gx * c.s;
+      const y = c.cy + gy * c.s;
+      if (x > w - 8 || x < w * 0.5 || y < 8 || y > h - 8) continue;
+      const r = 3 + rnd() * 4.5;
+      dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(1) + '"/>';
+    }
+  });
 
   return (
     '<svg class="ql-motif" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">' +
     '<path class="ql-motif-tree" pathLength="1" d="' + seg.join('') + '" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<g class="ql-motif-dots" fill="currentColor" stroke="none">' + dots + '</g>' +
+    '<g class="ql-motif-dots" fill="currentColor" stroke="none">' + leafDots + dots + '</g>' +
     '</svg>'
   );
 }
