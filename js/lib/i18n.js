@@ -1010,6 +1010,8 @@ const DICTS = {
       reviewNeeded: 'Revisar', reviewOk: 'ok', exportFasta: 'Exportar FASTA (todas las muestras)',
       statAmbiguous: 'Bases ambiguas (N/IUPAC)', statConsensusLen: 'Longitud del consenso', noConsensus: '(sin consenso)',
       copyFasta: 'Copiar FASTA', copiedFasta: 'Copiado ✓', sendToPrimers: 'Enviar a Primers (Plantilla)',
+      scopeTitle: 'Qué NO hace este módulo, a propósito',
+      scopeNote: 'No identifica taxonómicamente el consenso por BLAST (necesitaría red y un servicio externo — rompería la arquitectura 100% en el navegador; puedes copiar el FASTA exportado y usarlo en NCBI BLAST u otra herramienta tú mismo). No ensambla más de 2 lecturas por muestra (solo forward + reverse). No resuelve dobles picos de heterocigotos ni otros errores de basecalling más allá del recorte por calidad.',
     },
     barplots: {
       eyebrow: 'Composición de la comunidad', title: 'Barplots taxonómicos',
@@ -2233,6 +2235,8 @@ const DICTS = {
       reviewNeeded: 'Review', reviewOk: 'ok', exportFasta: 'Export FASTA (all samples)',
       statAmbiguous: 'Ambiguous bases (N/IUPAC)', statConsensusLen: 'Consensus length', noConsensus: '(no consensus)',
       copyFasta: 'Copy FASTA', copiedFasta: 'Copied ✓', sendToPrimers: 'Send to Primers (Template)',
+      scopeTitle: 'What this module deliberately does NOT do',
+      scopeNote: 'It does not identify the consensus taxonomically via BLAST (that would need network access and an external service — it would break the 100%-in-the-browser architecture; you can copy the exported FASTA and run it through NCBI BLAST or another tool yourself). It does not assemble more than 2 reads per sample (forward + reverse only). It does not resolve heterozygote double peaks or other basecalling errors beyond quality trimming.',
     },
     barplots: {
       eyebrow: 'Community composition', title: 'Taxonomic barplots',

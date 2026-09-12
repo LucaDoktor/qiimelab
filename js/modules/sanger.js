@@ -406,6 +406,11 @@ export function render(container) {
     const stack = document.createElement('div');
     stack.className = 'ql-stack';
 
+    const scopeCard = document.createElement('section');
+    scopeCard.className = 'ql-card ql-panel';
+    scopeCard.innerHTML = '<h2>' + t('sanger.scopeTitle') + '</h2><p class="ql-panel-note">' + t('sanger.scopeNote') + '</p>';
+    stack.appendChild(scopeCard);
+
     // --- dropzone ---
     const upCard = document.createElement('section');
     upCard.className = 'ql-card ql-panel';
