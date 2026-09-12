@@ -44,6 +44,93 @@ function fmtN(n) {
 }
 function fmt1(n, d = 1) { return Number.isFinite(n) ? n.toFixed(d) : '—'; }
 
+// mismo patrón que phylo.js (descarga de .nwk): Blob + <a download> temporal
+function download(name, text, mime) {
+  try {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { /* entorno sin descargas */ }
+}
+
+function riskLabel(level) {
+  return level === 'crit' ? t('primers.riskCrit') : level === 'warn' ? t('primers.riskWarn') : t('primers.riskOk');
+}
+
+/** Informe en texto plano de la pestaña "Primers" (mismos datos que la tabla de estadísticas). */
+function buildPrimersReportText(derived, s) {
+  const lines = [t('primers.reportTitle'), t('primers.reportGeneratedAt', { date: new Date().toLocaleString() }), ''];
+  derived.forEach((p, i) => {
+    const name = p.name || t('primers.namePh', { n: i + 1 });
+    lines.push(name + ':');
+    lines.push('  ' + t('primers.colSeq') + ': ' + p.raw);
+    if (!p.valid) {
+      lines.push('  ' + (p.invalid.length ? t('primers.invalidChars', { chars: p.invalid.join(' ') }) : t('primers.tooShort', { n: MIN_PRIMER_LEN })));
+      lines.push('');
+      return;
+    }
+    const gc = gcPercent(p.seq);
+    const clamp = gcClamp(p.seq);
+    const tm = meltingTemp(p.seq, { Na: s.salt, dnac1: s.conc, dnac2: 0 });
+    const mw = molecularWeight(p.seq);
+    const ext = extinctionCoefficient(p.seq);
+    const tmStr = tm.isDegenerate ? fmt1(tm.min) + '-' + fmt1(tm.max) + ' °C (' + t('primers.tmRangeTitle', { n: tm.n, mean: fmt1(tm.mean) }) + ')' : fmt1(tm.tm) + ' °C';
+    const clampStr = clamp.status === 'ok' ? t('primers.clampOk') : clamp.status === 'partial' ? t('primers.clampPartial', { pct: Math.round(clamp.gcFraction * 100) }) : t('primers.clampWarn');
+    lines.push('  ' + t('primers.colLength') + ': ' + p.seq.length + ' nt');
+    lines.push('  ' + t('primers.colGC') + ': ' + fmt1(gc.pct) + '%' + (gc.isEstimate ? ' (' + t('primers.estimateNote') + ')' : ''));
+    lines.push('  ' + t('primers.colClamp') + ': ' + clampStr);
+    lines.push('  ' + t('primers.colTm') + ': ' + tmStr + ' (' + t('primers.saltLabel') + ' ' + s.salt + ' mM, ' + t('primers.concLabel') + ' ' + s.conc + ' nM)');
+    lines.push('  ' + t('primers.colMW') + ': ' + fmtN(mw.mw) + ' g/mol' + (mw.isEstimate ? ' (' + t('primers.estimateNote') + ')' : ''));
+    lines.push('  ' + t('primers.colExt') + ': ' + fmtN(ext.ext260) + ' L/(mol·cm)' + (ext.isEstimate ? ' (' + t('primers.estimateNote') + ')' : ''));
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+/** Informe en texto plano de los resultados de la pestaña "Diseño". */
+function buildDesignReportText(designResult, templateLen) {
+  const lines = [
+    t('primers.reportTitle') + ' — ' + t('primers.designResultsTitle'),
+    t('primers.reportGeneratedAt', { date: new Date().toLocaleString() }),
+    t('primers.designEvaluatedNote', { n: designResult.candidatesEvaluated }) + (templateLen ? ' · ' + t('primers.designTemplateLen', { n: templateLen }) : ''),
+    '',
+  ];
+  designResult.pairs.forEach((p, i) => {
+    lines.push(t('primers.designPairLabel', { n: i + 1 }) + ':');
+    lines.push('  F: ' + p.forward.seq + '  (Tm ' + fmt1(p.forward.tm) + ' °C, GC ' + fmt1(p.forward.gc) + '%)');
+    lines.push('  R: ' + p.reverse.seq + '  (Tm ' + fmt1(p.reverse.tm) + ' °C, GC ' + fmt1(p.reverse.gc) + '%)');
+    lines.push('  ' + t('primers.colDeltaTm') + ': ' + fmt1(p.deltaTm) + ' °C');
+    lines.push('  ' + t('primers.designColSize') + ': ' + fmtN(p.size) + ' pb');
+    lines.push('  ' + t('primers.designColHetero') + ': ' + riskLabel(p.heteroLevel));
+    lines.push('  ' + t('primers.designColPenalty') + ': ' + fmt1(p.penalty, 2));
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+/** Botones "Copiar" + "Descargar .txt" para un informe ya construido como texto. */
+function reportButtons(getText, filename) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button'; copyBtn.className = 'ql-btn'; copyBtn.textContent = t('primers.reportCopy');
+  copyBtn.addEventListener('click', () => {
+    try {
+      navigator.clipboard.writeText(getText());
+      copyBtn.textContent = t('primers.reportCopied');
+      setTimeout(() => { copyBtn.textContent = t('primers.reportCopy'); }, 1600);
+    } catch (e) { /* clipboard puede fallar */ }
+  });
+  const dlBtn = document.createElement('button');
+  dlBtn.type = 'button'; dlBtn.className = 'ql-btn'; dlBtn.textContent = t('primers.reportDownload');
+  dlBtn.addEventListener('click', () => download(filename, getText(), 'text/plain'));
+  wrap.appendChild(copyBtn); wrap.appendChild(dlBtn);
+  return wrap;
+}
+
 function defaultState() {
   return {
     tab: 'primers',
@@ -442,6 +529,7 @@ export function render(container) {
     tbl.appendChild(tb);
     scroll.appendChild(tbl);
     resultsCard.appendChild(scroll);
+    resultsCard.appendChild(reportButtons(() => buildDesignReportText(designResult, templateSeq.length), 'primers-diseno.txt'));
     container.appendChild(resultsCard);
   }
 
@@ -1311,6 +1399,7 @@ export function render(container) {
     sScroll.appendChild(sTbl);
     statsCard.appendChild(sScroll);
     statsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.statsNote') + '</p>');
+    statsCard.appendChild(reportButtons(() => buildPrimersReportText(derived, s), 'primers-analisis.txt'));
     container.appendChild(statsCard);
   }
 
