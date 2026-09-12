@@ -5,9 +5,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 export { sleep };
 
-// 18 rutas de módulo (#/…#/validacion) + la subvista "Red" del correlograma = 19.
+// 19 rutas de módulo (#/…#/validacion) + la subvista "Red" del correlograma = 20.
 export const ROUTES = ['#/', '#/cargar', '#/barplots', '#/alfa', '#/beta', '#/diferencial',
-  '#/recuentos', '#/ufc', '#/primers', '#/arbol', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe',
+  '#/recuentos', '#/ufc', '#/primers', '#/arbol', '#/sanger', '#/venn', '#/correlograma', '#/funcional', '#/qc', '#/informe',
   '#/recursos', '#/glosario', '#/validacion'];
 
 // carga TODOS los ejemplos reales (+ conteos sintéticos + 3 comparaciones + 2 recuentos)
@@ -41,6 +41,7 @@ const TABS_FOR = {
   '#/correlograma': ['Red', 'Matriz'],
   '#/recuentos': ['Coliformes', 'Aerobios'],
   '#/primers': ['Diseño', 'Dímeros', 'Plantilla', 'Cobertura', 'Lote', 'Primers'],
+  '#/sanger': ['Cromatograma', 'Resultados', 'Entrada'],
 };
 
 export async function walkRoute(c, route, { report = false, onInfo = () => {} } = {}) {
@@ -91,6 +92,29 @@ export async function walkRoute(c, route, { report = false, onInfo = () => {} } 
     // layout circular: mismo árbol, proyección polar — probarlo también
     await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Circular'); if (b) b.click(); })()`);
     await sleep(400);
+  }
+  if (route === '#/sanger') {
+    // módulo autónomo (localStorage): el bucle de pestañas de arriba ya deja
+    // la vista en "Entrada" (última de TABS_FOR) — ahí vive el botón de
+    // ejemplo. Carga el par B13 (limpio), espera el pipeline async (fetch de
+    // 2 .ab1 + parseo + recorte + solapamiento) y visita cromatograma (con
+    // traza real ya dibujada) y resultados (con la fila ya calculada).
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /muestra limpia|clean sample/i.test(x.textContent)); if (b) b.click(); })()`);
+    for (let i = 0; i < 40; i++) {
+      if (await c.ev(`document.querySelectorAll('.ql-table tbody tr').length > 0`)) break;
+      await sleep(300);
+    }
+    await c.ev(`(() => { const b = [...document.querySelectorAll('.ql-tab')].find(x => /Cromatograma|Chromatogram/i.test(x.textContent)); if (b) b.click(); })()`);
+    for (let i = 0; i < 30; i++) {
+      if (await c.ev(`document.querySelectorAll('svg.ql-svg polyline').length > 0`)) break;
+      await sleep(300);
+    }
+    await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); if (b) b.click(); })()`);
+    await sleep(300);
+    await c.ev(`(() => { const b = [...document.querySelectorAll('.ql-tab')].find(x => /Resultados|Results/i.test(x.textContent)); if (b) b.click(); })()`);
+    await sleep(400);
+    await c.ev(`(() => { const tr = document.querySelector('.ql-table tbody tr'); if (tr) tr.click(); })()`);
+    await sleep(300);
   }
   if (route === '#/venn') {
     // forma de rectángulos (alternativa a los círculos, exacta con 4 conjuntos)

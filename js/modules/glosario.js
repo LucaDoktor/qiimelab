@@ -100,13 +100,23 @@ const GLOSSARY = [
       { id: 'newickTerm', route: 'arbol' },
     ],
   },
+  {
+    title: 'glosario.g8',
+    terms: [
+      { id: 'chromatogramTerm', route: 'sanger' },
+      { id: 'qualityTrimTerm', route: 'sanger' },
+      { id: 'mottAlgorithmTerm', route: 'sanger' },
+      { id: 'sangerOverlapTerm', route: 'sanger' },
+      { id: 'sangerConsensusTerm', route: 'sanger' },
+    ],
+  },
 ];
 
 const ROUTE_NAV = {
   barplots: 'nav.barplots', alfa: 'nav.alpha', beta: 'nav.beta',
   diferencial: 'nav.differential', venn: 'nav.venn', correlograma: 'nav.correlograma',
   funcional: 'nav.funcional', qc: 'nav.qc', cargar: 'nav.upload', recuentos: 'nav.recuentos',
-  primers: 'nav.primers', arbol: 'nav.arbol',
+  primers: 'nav.primers', arbol: 'nav.arbol', sanger: 'nav.sanger',
 };
 
 // normaliza para el filtro: minúsculas y sin diacríticos

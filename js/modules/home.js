@@ -20,6 +20,7 @@ const MODULES_INFO = [
   { route: 'qc', qKey: 'home.q.qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc', glos: 'qc' },
   { route: 'primers', qKey: 'home.q.primers', nameKey: 'nav.primers', descKey: 'modules.primers.desc', glos: 'primerTm' },
   { route: 'arbol', qKey: 'home.q.arbol', nameKey: 'nav.arbol', descKey: 'modules.arbol.desc', glos: 'neighborJoiningTerm' },
+  { route: 'sanger', qKey: 'home.q.sanger', nameKey: 'nav.sanger', descKey: 'modules.sanger.desc', glos: 'sangerConsensusTerm' },
 ];
 
 const MORE_LINKS = [
