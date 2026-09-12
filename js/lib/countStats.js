@@ -86,3 +86,29 @@ export function summariseCountSeries(series) {
     unevenN,
   };
 }
+
+/**
+ * Reparte las filas de una serie según `mapping.facetCol` (una columna
+ * EXTRA de agrupación, distinta de `groupCols`: no combina réplicas, sino
+ * que separa el análisis entero — barras + ANOVA/LSD — en un bloque por
+ * cada valor distinto, igual que "agrupar por" en diversidad alfa/beta).
+ * Sin `facetCol`, devuelve la serie tal cual en un único bloque
+ * (`level: null`) — mismo comportamiento que antes de que existiera esto.
+ * @param {object} series { headers, rows, mapping:{ facetCol:?number, ... } }
+ * @returns {Array<{ level: string|null, series: object }>}
+ */
+export function splitByFacet(series) {
+  const { headers, rows, mapping } = series;
+  const fc = mapping.facetCol;
+  if (fc == null || !headers[fc]) return [{ level: null, series }];
+  const col = headers[fc];
+  const map = new Map();
+  (rows || []).forEach((r) => {
+    const level = String(r[col] ?? '').trim() || '—';
+    if (!map.has(level)) map.set(level, []);
+    map.get(level).push(r);
+  });
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([level, rs]) => ({ level, series: { ...series, rows: rs } }));
+}

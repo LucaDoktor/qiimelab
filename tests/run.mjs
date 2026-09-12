@@ -27,6 +27,7 @@ const SUITE = [
   { name: 'palettes', file: 'palettes.mjs', kind: 'estático' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
+  { name: 'microbialcountsfacet', file: 'microbialcountsfacet.mjs', kind: 'estático' },
   { name: 'sangertrim', file: 'sangertrim.mjs', kind: 'estático' },
   { name: 'sangeroverlap', file: 'sangeroverlap.mjs', kind: 'estático' },
   { name: 'venngeometry', file: 'venngeometry.mjs', kind: 'estático' },

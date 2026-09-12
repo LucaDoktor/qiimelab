@@ -17,7 +17,8 @@ import { t, getLang } from '../lib/i18n.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { ingestFile } from '../lib/ingest.js';
-import { summariseCountSeries } from '../lib/countStats.js';
+import { parseTable } from '../lib/csv.js';
+import { summariseCountSeries, splitByFacet } from '../lib/countStats.js';
 import { fisherLSD, compactLetterDisplay } from '../lib/stats.js';
 import {
   loadExampleMicrobialCountsPlate, loadExampleMicrobialCountsMPN, exampleDownloadBlock,
@@ -48,7 +49,8 @@ export function render(container) {
   let activeId = null;
   let errBar = 'sd';               // 'sd' | 'se'
   let sort = { key: 'group', dir: 'asc' };
-  let editor = null;
+  let editors = []; // uno por bloque — con "agrupar por" puede haber varios a la vez
+  const addVarState = new Map(); // seriesId -> { open, mode:'manual'|'file', name, joinCol, editingCol, msg }
 
   async function addFromFile(file, msgEl) {
     let ing;
@@ -79,13 +81,14 @@ export function render(container) {
           valueCol: vc,
           dilutionCol: mc.dilutionCol != null ? mc.dilutionCol : null,
           alreadyLog: !!mc.alreadyLog,
+          facetCol: null,
         },
       });
     });
   }
 
   function paint() {
-    if (editor) { editor.destroy(); editor = null; }
+    editors.forEach((e) => e.destroy()); editors = [];
     container.innerHTML = '';
 
     const header = document.createElement('header');
@@ -156,6 +159,188 @@ export function render(container) {
 
     const active = series.find((s) => s.id === activeId);
     renderChartAndTable(active);
+  }
+
+  // =========================================================================
+  //  Añadir una variable propia (columna) a una serie: a mano, fila a fila,
+  //  o subiendo un archivo de 2 columnas (clave + valor) que se une por una
+  //  columna existente. La columna nueva queda disponible como cualquier
+  //  otra para "agrupar por" o como columna de agrupación de réplicas.
+  // =========================================================================
+  function renderAddVariable(s) {
+    const st = addVarState.get(s.id) || { open: false, mode: 'manual', name: '', joinCol: 0, editingCol: null, msg: '' };
+    addVarState.set(s.id, st);
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '10px';
+
+    // ---- tabla editable de una columna ya existente (recién creada o cualquiera) ----
+    if (st.editingCol != null && s.headers[st.editingCol] != null) {
+      const colName = s.headers[st.editingCol];
+      const idCols = (s.mapping.groupCols || []).map((i) => s.headers[i]).filter(Boolean);
+      const editCard = document.createElement('div');
+      editCard.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;margin-top:8px;';
+      editCard.innerHTML = '<p class="ql-field-help" style="margin:0 0 8px;"><strong>' +
+        t('recuentos.editingVar', { name: colName }) + '</strong></p>';
+      const scroll = document.createElement('div');
+      scroll.className = 'ql-table-scroll';
+      scroll.style.maxHeight = '260px';
+      const tbl = document.createElement('table');
+      tbl.className = 'ql-table';
+      tbl.innerHTML = '<thead><tr><th>' + t('recuentos.editingRowLabel') + '</th><th>' + escapeHtml(colName) + '</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      s.rows.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        const label = idCols.length ? idCols.map((c) => r[c]).join(' › ') : t('recuentos.rowN', { n: i + 1 });
+        const tdLbl = document.createElement('td');
+        tdLbl.textContent = label || t('recuentos.rowN', { n: i + 1 });
+        tr.appendChild(tdLbl);
+        const tdVal = document.createElement('td');
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.value = r[colName] ?? '';
+        inp.setAttribute('aria-label', colName + ' — ' + (label || t('recuentos.rowN', { n: i + 1 })));
+        inp.addEventListener('change', () => {
+          r[colName] = inp.value;
+          updateMicrobialCountSeries(s.id, { rows: s.rows.slice() });
+        });
+        tdVal.appendChild(inp);
+        tr.appendChild(tdVal);
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      scroll.appendChild(tbl);
+      editCard.appendChild(scroll);
+      const doneBtn = document.createElement('button');
+      doneBtn.type = 'button'; doneBtn.className = 'ql-btn'; doneBtn.style.marginTop = '8px';
+      doneBtn.textContent = t('recuentos.editingDone');
+      doneBtn.addEventListener('click', () => { st.editingCol = null; paint(); });
+      editCard.appendChild(doneBtn);
+      wrap.appendChild(editCard);
+      return wrap;
+    }
+
+    if (!st.open) {
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button'; openBtn.className = 'ql-btn';
+      openBtn.textContent = t('recuentos.addVariable');
+      openBtn.addEventListener('click', () => { st.open = true; paint(); });
+      wrap.appendChild(openBtn);
+      // acceso directo a editar cualquier columna ya existente
+      if (s.headers.length) {
+        const editSel = document.createElement('select');
+        editSel.style.marginLeft = '8px';
+        editSel.setAttribute('aria-label', t('recuentos.editVariablePick'));
+        const ph = document.createElement('option');
+        ph.value = ''; ph.textContent = t('recuentos.editVariablePick');
+        editSel.appendChild(ph);
+        s.headers.forEach((h, i) => {
+          const o = document.createElement('option');
+          o.value = String(i); o.textContent = h || t('ui.columnN', { n: i + 1 });
+          editSel.appendChild(o);
+        });
+        editSel.addEventListener('change', () => {
+          if (editSel.value === '') return;
+          st.editingCol = parseInt(editSel.value, 10);
+          paint();
+        });
+        wrap.appendChild(editSel);
+      }
+      return wrap;
+    }
+
+    // ---- panel abierto: crear columna a mano o desde archivo ----
+    const panel = document.createElement('div');
+    panel.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;margin-top:4px;';
+
+    const modeSeg = document.createElement('div');
+    modeSeg.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;';
+    [['manual', t('recuentos.addVarManual')], ['file', t('recuentos.addVarFile')]].forEach(([m, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ql-seg-btn' + (st.mode === m ? ' is-on' : ''); b.textContent = lbl;
+      b.addEventListener('click', () => { st.mode = m; paint(); });
+      modeSeg.appendChild(b);
+    });
+    panel.appendChild(modeSeg);
+
+    if (st.mode === 'manual') {
+      const nameField = document.createElement('div');
+      nameField.className = 'ql-field';
+      nameField.innerHTML = '<label>' + t('recuentos.addVarNameLabel') + '</label>';
+      const nameInp = document.createElement('input');
+      nameInp.type = 'text'; nameInp.value = st.name; nameInp.placeholder = t('recuentos.addVarNamePh');
+      nameInp.addEventListener('input', () => { st.name = nameInp.value; });
+      nameField.appendChild(nameInp);
+      panel.appendChild(nameField);
+
+      const createBtn = document.createElement('button');
+      createBtn.type = 'button'; createBtn.className = 'ql-btn ql-btn-primary';
+      createBtn.textContent = t('recuentos.addVarCreate');
+      createBtn.addEventListener('click', () => {
+        const name = st.name.trim();
+        if (!name) return;
+        if (s.headers.includes(name)) { st.msg = t('recuentos.addVarDupName'); paint(); return; }
+        const newRows = s.rows.map((r) => ({ ...r, [name]: '' }));
+        updateMicrobialCountSeries(s.id, { headers: [...s.headers, name], rows: newRows });
+        st.open = false; st.name = ''; st.msg = '';
+        st.editingCol = s.headers.length; // índice de la columna recién creada
+        paint();
+      });
+      panel.appendChild(createBtn);
+    } else {
+      panel.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin:0 0 8px;">' + t('recuentos.addVarFileHelp') + '</p>');
+      const joinField = document.createElement('div');
+      joinField.className = 'ql-field';
+      joinField.innerHTML = '<label>' + t('recuentos.addVarJoinLabel') + '</label>';
+      const joinSel = document.createElement('select');
+      s.headers.forEach((h, i) => {
+        const o = document.createElement('option');
+        o.value = String(i); o.textContent = h || t('ui.columnN', { n: i + 1 });
+        if (st.joinCol === i) o.selected = true;
+        joinSel.appendChild(o);
+      });
+      joinSel.addEventListener('change', () => { st.joinCol = parseInt(joinSel.value, 10); });
+      joinField.appendChild(joinSel);
+      panel.appendChild(joinField);
+
+      const fileInp = document.createElement('input');
+      fileInp.type = 'file'; fileInp.accept = '.csv,.tsv,.txt';
+      fileInp.addEventListener('change', async () => {
+        const f = fileInp.files && fileInp.files[0];
+        fileInp.value = '';
+        if (!f) return;
+        const text = await f.text();
+        const parsed = parseTable(text);
+        if (parsed.headers.length < 2) { st.msg = t('recuentos.addVarFileBadFormat'); paint(); return; }
+        const [keyHeader, valHeader] = parsed.headers;
+        const newName = valHeader || t('recuentos.addVarFileDefaultName');
+        if (s.headers.includes(newName)) { st.msg = t('recuentos.addVarDupName'); paint(); return; }
+        const lookup = new Map();
+        parsed.rows.forEach((r) => lookup.set(String(r[keyHeader] ?? '').trim(), r[valHeader]));
+        const joinHeader = s.headers[st.joinCol];
+        let matched = 0;
+        const newRows = s.rows.map((r) => {
+          const k = String(r[joinHeader] ?? '').trim();
+          const v = lookup.has(k) ? lookup.get(k) : '';
+          if (lookup.has(k)) matched++;
+          return { ...r, [newName]: v };
+        });
+        updateMicrobialCountSeries(s.id, { headers: [...s.headers, newName], rows: newRows });
+        st.open = false; st.msg = t('recuentos.addVarFileMatched', { n: matched, total: s.rows.length });
+        st.editingCol = null;
+        paint();
+      });
+      panel.appendChild(fileInp);
+    }
+
+    if (st.msg) panel.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + escapeHtml(st.msg) + '</p>');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.className = 'ql-btn'; cancelBtn.style.cssText = 'margin-top:8px;margin-left:8px;';
+    cancelBtn.textContent = t('ui.cancel');
+    cancelBtn.addEventListener('click', () => { st.open = false; st.msg = ''; paint(); });
+    panel.appendChild(cancelBtn);
+
+    wrap.appendChild(panel);
+    return wrap;
   }
 
   // =========================================================================
@@ -271,6 +456,33 @@ export function render(container) {
       });
       box.appendChild(gWrap);
 
+      // ---- agrupar por (una variable, separa el análisis entero en un
+      // bloque por nivel — no combina réplicas como groupCols de arriba) ----
+      const facetField = document.createElement('div');
+      facetField.className = 'ql-field';
+      facetField.innerHTML = '<label>' + t('recuentos.mapFacet') + '</label>';
+      const facetSel = document.createElement('select');
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '-1'; noneOpt.textContent = t('recuentos.facetNone');
+      if (s.mapping.facetCol == null) noneOpt.selected = true;
+      facetSel.appendChild(noneOpt);
+      s.headers.forEach((h, i) => {
+        if (i === s.mapping.valueCol || i === s.mapping.dilutionCol) return;
+        const o = document.createElement('option');
+        o.value = String(i); o.textContent = h || t('ui.columnN', { n: i + 1 });
+        if (s.mapping.facetCol === i) o.selected = true;
+        facetSel.appendChild(o);
+      });
+      facetSel.addEventListener('change', () => {
+        const fc = parseInt(facetSel.value, 10);
+        updateMicrobialCountSeries(s.id, { mapping: { ...s.mapping, facetCol: fc < 0 ? null : fc } });
+      });
+      facetField.appendChild(facetSel);
+      facetField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.facetHelp') + '</p>');
+      box.appendChild(facetField);
+
+      box.appendChild(renderAddVariable(s));
+
       card.appendChild(box);
     });
 
@@ -301,11 +513,35 @@ export function render(container) {
   }
 
   // =========================================================================
-  //  Gráfico + tabla de una serie
+  //  Gráfico + tabla de una serie — un bloque por nivel de "agrupar por"
+  //  (facetCol), o un único bloque si no hay ninguna variable elegida —
+  //  mismo espíritu que "agrupar por" en diversidad alfa/beta: el análisis
+  //  entero (barras + ANOVA/LSD) se recalcula por separado para cada nivel,
+  //  no solo el gráfico.
   // =========================================================================
   function renderChartAndTable(s) {
+    const facets = splitByFacet(s);
+    if (facets.length > 1) {
+      const facetHeader = document.createElement('p');
+      facetHeader.className = 'ql-panel-note';
+      facetHeader.style.margin = '0 0 4px';
+      facetHeader.textContent = t('recuentos.facetActive', { col: s.headers[s.mapping.facetCol], n: facets.length });
+      container.appendChild(facetHeader);
+    }
+    facets.forEach(({ level, series: fs }) => renderOneBlock(fs, level, facets.length > 1));
+  }
+
+  function renderOneBlock(s, level, showHeading) {
     const summary = summariseCountSeries(s);
     const usable = summary.groups.filter((g) => g.n > 0);
+
+    if (showHeading) {
+      const h = document.createElement('h2');
+      h.className = 'ql-block-heading';
+      h.style.cssText = 'margin:22px 0 10px;padding-top:14px;border-top:1px solid var(--border);';
+      h.textContent = t('recuentos.facetLevel', { level });
+      container.appendChild(h);
+    }
 
     // ANOVA de un factor + LSD de Fisher por pares -> letras de grupo
     // homogéneo (a, b, ab…). Sobre los MISMOS valores en log10 que ya usa
@@ -328,7 +564,7 @@ export function render(container) {
       t('recuentos.chartNote', { bar: errBar === 'sd' ? t('recuentos.sd') : t('recuentos.se') }) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
-    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('recuentos.a11yChart', { organism: s.label || '' }) });
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('recuentos.a11yChart', { organism: (s.label || '') + (level ? ' — ' + level : '') }) });
     const tooltip = document.createElement('div');
     tooltip.className = 'ql-tooltip';
     chartWrap.appendChild(svg); chartWrap.appendChild(tooltip);
@@ -423,12 +659,12 @@ export function render(container) {
       return;
     }
 
-    drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters);
+    drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, level);
     renderTable(tableCard, summary, usable, letters);
   }
 
   // ---- barras verticales + barra de error ----
-  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups, letters) {
+  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups, letters, level) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const err = (g) => (errBar === 'sd' ? g.sd : g.se);
@@ -549,11 +785,13 @@ export function render(container) {
     legG.setAttribute('transform', 'translate(' + (marginL + 8) + ',' + (marginT - 20) + ')');
     svg.appendChild(legG);
 
-    editor = attachChartEditor({
-      key: 'microbialCounts', svg, mount: chartPanel,
-      filename: t('recuentos.title') + '-' + (s.label || 'serie'), lang: getLang(),
+    const blockKey = 'microbialCounts' + (level ? '-' + level : '');
+    const blockTitle = (s.label || t('recuentos.title')) + (level ? ' — ' + level : '');
+    editors.push(attachChartEditor({
+      key: blockKey, svg, mount: chartPanel,
+      filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : ''), lang: getLang(),
       elements: [
-        { id: 'title', create: { text: s.label || t('recuentos.title'), x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'title', create: { text: blockTitle, x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
@@ -561,7 +799,7 @@ export function render(container) {
       paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g.key })),
       paletteType: 'categorical',
       onReset: () => paint(),
-    });
+    }));
   }
 
   // ---- tabla alternativa (grupo, n, media log10, SD, SE) con aria-sort ----
@@ -628,5 +866,5 @@ export function render(container) {
 
   paint();
   const stop = subscribe(paint);
-  return () => { stop(); if (editor) { editor.destroy(); editor = null; } };
+  return () => { stop(); editors.forEach((e) => e.destroy()); editors = []; };
 }
