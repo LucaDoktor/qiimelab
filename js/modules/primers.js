@@ -91,7 +91,8 @@ function buildPrimersReportText(derived, s) {
 }
 
 /** Informe en texto plano de los resultados de la pestaña "Diseño". */
-function buildDesignReportText(designResult, templateLen) {
+function buildDesignReportText(designResult, templateLen, designMode) {
+  const isQpcr = designMode === 'qpcr';
   const lines = [
     t('primers.reportTitle') + ' — ' + t('primers.designResultsTitle'),
     t('primers.reportGeneratedAt', { date: new Date().toLocaleString() }),
@@ -100,10 +101,10 @@ function buildDesignReportText(designResult, templateLen) {
   ];
   designResult.pairs.forEach((p, i) => {
     lines.push(t('primers.designPairLabel', { n: i + 1 }) + ':');
-    lines.push('  F: ' + p.forward.seq + '  (Tm ' + fmt1(p.forward.tm) + ' °C, GC ' + fmt1(p.forward.gc) + '%)');
-    lines.push('  R: ' + p.reverse.seq + '  (Tm ' + fmt1(p.reverse.tm) + ' °C, GC ' + fmt1(p.reverse.gc) + '%)');
+    lines.push('  F: ' + p.forward.seq + '  (Tm ' + fmt1(p.forward.tm) + ' °C, GC ' + fmt1(p.forward.gc) + '%)' + (isQpcr && p.forward.clamp.status !== 'ok' ? '  [' + t('primers.qpcr3primeWarn') + ']' : ''));
+    lines.push('  R: ' + p.reverse.seq + '  (Tm ' + fmt1(p.reverse.tm) + ' °C, GC ' + fmt1(p.reverse.gc) + '%)' + (isQpcr && p.reverse.clamp.status !== 'ok' ? '  [' + t('primers.qpcr3primeWarn') + ']' : ''));
     lines.push('  ' + t('primers.colDeltaTm') + ': ' + fmt1(p.deltaTm) + ' °C');
-    lines.push('  ' + t('primers.designColSize') + ': ' + fmtN(p.size) + ' pb');
+    lines.push('  ' + t('primers.designColSize') + ': ' + fmtN(p.size) + ' pb' + (isQpcr && p.size > 150 ? '  [' + t('primers.qpcrSizeWarn') + ']' : ''));
     lines.push('  ' + t('primers.designColHetero') + ': ' + riskLabel(p.heteroLevel));
     lines.push('  ' + t('primers.designColPenalty') + ': ' + fmt1(p.penalty, 2));
     lines.push('');
@@ -374,6 +375,11 @@ export function render(container) {
     });
     modeField.appendChild(seg);
     ctrl.appendChild(modeField);
+    if (s.designMode === 'qpcr') {
+      ctrl.insertAdjacentHTML('beforeend',
+        '<p class="ql-field-help">' + t('primers.qpcrSpecificityNote') + '</p>' +
+        '<p class="ql-field-help" style="margin-top:6px;">' + t('primers.qpcrValidationNote') + '</p>');
+    }
 
     const mode = { ...DESIGN_MODES[s.designMode], ...s.designOverrides[s.designMode] };
     const setOverride = (key, val) => { s.designOverrides[s.designMode][key] = val; designResult = null; paint(); };
@@ -496,16 +502,22 @@ export function render(container) {
         'primers.designColSize', 'primers.designColHetero', 'primers.designColPenalty', '']
         .map((k) => '<th>' + (k.includes('.') ? t(k) : k) + '</th>').join('') + '</tr></thead>';
     const tb = document.createElement('tbody');
+    // avisos específicos de qPCR (no bloqueantes: la pareja sigue apareciendo,
+    // solo se marca) — 3' en A/T y amplicón por encima de lo típico en SYBR
+    const clampMark = (clamp) => (s.designMode === 'qpcr' && clamp.status !== 'ok')
+      ? ' <span class="ql-badge ql-badge-warn" title="' + t('primers.qpcr3primeWarnTitle') + '">' + t('primers.qpcr3primeWarn') + '</span>' : '';
+    const sizeMark = (size) => (s.designMode === 'qpcr' && size > 150)
+      ? ' <span class="ql-badge ql-badge-warn" title="' + t('primers.qpcrSizeWarnTitle') + '">' + t('primers.qpcrSizeWarn') + '</span>' : '';
     designResult.pairs.forEach((p, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML =
         '<td class="ql-num tabular">' + (i + 1) + '</td>' +
-        '<td class="ql-num tabular mono">' + fmt1(p.forward.tm) + '</td>' +
-        '<td class="ql-num tabular mono">' + fmt1(p.reverse.tm) + '</td>' +
+        '<td class="ql-num tabular mono">' + fmt1(p.forward.tm) + clampMark(p.forward.clamp) + '</td>' +
+        '<td class="ql-num tabular mono">' + fmt1(p.reverse.tm) + clampMark(p.reverse.clamp) + '</td>' +
         '<td class="ql-num tabular">' + fmt1(p.deltaTm) + '</td>' +
         '<td class="ql-num tabular">' + fmt1(p.forward.gc) + '%</td>' +
         '<td class="ql-num tabular">' + fmt1(p.reverse.gc) + '%</td>' +
-        '<td class="ql-num tabular">' + fmtN(p.size) + '</td>' +
+        '<td class="ql-num tabular">' + fmtN(p.size) + sizeMark(p.size) + '</td>' +
         '<td>' + riskBadge(p.heteroLevel) + '</td>' +
         '<td class="ql-num tabular">' + fmt1(p.penalty, 2) + '</td>' +
         '<td></td>';
@@ -529,7 +541,7 @@ export function render(container) {
     tbl.appendChild(tb);
     scroll.appendChild(tbl);
     resultsCard.appendChild(scroll);
-    resultsCard.appendChild(reportButtons(() => buildDesignReportText(designResult, templateSeq.length), 'primers-diseno.txt'));
+    resultsCard.appendChild(reportButtons(() => buildDesignReportText(designResult, templateSeq.length, s.designMode), 'primers-diseno.txt'));
     container.appendChild(resultsCard);
   }
 

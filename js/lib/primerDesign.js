@@ -26,14 +26,23 @@ export const MODES = {
     gcMin: 40, gcMax: 60, gcIdeal: 50,
     threePrimeIdealGC: null,   // sin ideal de composición 3' específico
     weightDeltaTm: 0.4, weightHetero: 1,
+    clampPenalty: 2,           // 3' fuera de G/C: penalización blanda
   },
   qpcr: {
     ampliconMin: 60, ampliconMax: 200,
     tmMin: 59, tmMax: 61,
-    maxDeltaTm: 5,
+    // ΔTm ≤3 °C es la guía habitual para qPCR (IDT, PCR Biosystems, MIQE) —
+    // más estricto que el 5 °C anterior; sigue siendo editable a mano en la UI.
+    maxDeltaTm: 3,
     gcMin: 40, gcMax: 60, gcIdeal: 50,
     threePrimeIdealGC: 2,      // ideal ~3×A/T + 2×G/C en los últimos 5 nt
     weightDeltaTm: 2, weightHetero: 2.5,
+    // extremo 3' en A/T: varias guías de qPCR lo tratan como regla dura, no
+    // solo recomendable ("se unen de forma inespecífica") — penalización
+    // notablemente más alta que en PCR estándar, sin llegar a descartar el
+    // candidato (no es un filtro `return null`, sigue pudiendo aparecer si
+    // el resto de la pareja compensa).
+    clampPenalty: 6,
   },
 };
 
@@ -98,7 +107,7 @@ export function evaluateCandidate(seq, mode, opts = {}) {
   const tmTarget = (mode.tmMin + mode.tmMax) / 2;
 
   let penalty = W.tm * Math.abs(tm - tmTarget) + W.gc * Math.abs(gc - (mode.gcIdeal ?? 50));
-  if (clamp.status !== 'ok') penalty += W.clamp;
+  if (clamp.status !== 'ok') penalty += mode.clampPenalty ?? W.clamp;
   if (mode.threePrimeIdealGC != null) penalty += W.threePrimeComposition * Math.abs(threePrimeGCCount(seq) - mode.threePrimeIdealGC);
   penalty += W.hairpin[hairpinLevel] || 0;
   penalty += W.selfDimer[selfDimerLevel] || 0;

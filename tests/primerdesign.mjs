@@ -14,8 +14,9 @@
 //   node tests/primerdesign.mjs
 
 import { APP_ROOT } from './lib/env.mjs';
-const { designPrimers, generateCandidates, confirmSpecificity, MODES } =
+const { designPrimers, generateCandidates, evaluateCandidate, confirmSpecificity, MODES } =
   await import(APP_ROOT + '/js/lib/primerDesign.js');
+const { gcClamp } = await import(APP_ROOT + '/js/lib/primerAnalysis.js');
 
 let failed = false;
 const check = (name, ok, extra = '') => {
@@ -82,6 +83,34 @@ check('qPCR de verdad no tiene ninguna pareja de ese tamaño (los rangos no se s
   const conf = confirmSpecificity(TEMPLATE, top);
   check('confirmSpecificity(): cada primer de la mejor pareja aparece exactamente 1 vez',
     conf.forwardSites === 1 && conf.reverseSites === 1, JSON.stringify(conf));
+}
+
+// ---- 6. buenas prácticas de qPCR (IDT / PCR Biosystems / Bitesize Bio / MIQE): ----
+// ΔTm ≤3 °C, y el extremo 3' en A/T penaliza más que en PCR estándar
+// (regla más estricta para qPCR, no solo "recomendable" como en PCR
+// convencional) — sin llegar a descartar el candidato (sigue sin ser un
+// filtro `return null`).
+{
+  check('MODES.qpcr.maxDeltaTm es 3 °C (antes 5) — guía habitual para qPCR', MODES.qpcr.maxDeltaTm === 3);
+  check('MODES.qpcr penaliza un 3\' fuera de G/C más que MODES.standard',
+    MODES.qpcr.clampPenalty > MODES.standard.clampPenalty,
+    'qpcr=' + MODES.qpcr.clampPenalty + ' standard=' + MODES.standard.clampPenalty);
+
+  // candidato real (20 nt, Tm~59.4 dentro del rango de qPCR) con 3' en A/T
+  const seq = 'GAAAGCGTCTGAGTCGTCCA';
+  check('caso de prueba: su extremo 3\' es efectivamente A/T (clamp != ok)', gcClamp(seq).status !== 'ok', gcClamp(seq).status);
+
+  const evQpcr = evaluateCandidate(seq, MODES.qpcr, {});
+  const evQpcrNoClampPenalty = evaluateCandidate(seq, { ...MODES.qpcr, clampPenalty: 0 }, {});
+  check('qPCR: el aviso de 3\' en A/T no descarta el candidato (evaluateCandidate no devuelve null)', !!evQpcr);
+  check('qPCR: el aviso de 3\' en A/T añade exactamente mode.clampPenalty a la puntuación',
+    !!evQpcr && !!evQpcrNoClampPenalty && Math.abs((evQpcr.penalty - evQpcrNoClampPenalty.penalty) - MODES.qpcr.clampPenalty) < 1e-9,
+    evQpcr && evQpcrNoClampPenalty ? ('con=' + evQpcr.penalty.toFixed(3) + ' sin=' + evQpcrNoClampPenalty.penalty.toFixed(3)) : '');
+
+  const evStd = evaluateCandidate(seq, MODES.standard, {});
+  const evStdNoClampPenalty = evaluateCandidate(seq, { ...MODES.standard, clampPenalty: 0 }, {});
+  check('PCR estándar: el mismo aviso pesa menos que en qPCR (guía menos estricta fuera de qPCR)',
+    !!evStd && !!evStdNoClampPenalty && (evStd.penalty - evStdNoClampPenalty.penalty) < (evQpcr.penalty - evQpcrNoClampPenalty.penalty));
 }
 
 console.log('\nRESULTADO: ' + (failed ? 'FAIL' : 'PASS'));
