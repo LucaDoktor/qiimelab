@@ -97,7 +97,7 @@ function save(s) {
 const KNOWN_PRIMER_DIRECTION = {
   // 16S (bacterias)
   '27F': 'forward', '8F': 'forward', '338F': 'forward', '515F': 'forward', '519F': 'forward',
-  '785F': 'forward', '805F': 'forward',
+  '785F': 'forward', '805F': 'forward', '907F': 'forward',
   '337R': 'reverse', '519R': 'reverse', '785R': 'reverse', '805R': 'reverse',
   '907R': 'reverse', '1100R': 'reverse', '1492R': 'reverse',
   // ITS (hongos)
@@ -117,20 +117,22 @@ function splitKeywords(s) { return String(s || '').split(',').map((x) => x.trim(
 function tokenizeKeepSeps(base) { return base.split(/([-_.\s]+)/); }
 
 /** Busca el token que es un cebador — primero contra la tabla conocida
- *  (coincidencia exacta de token, para no confundir un cebador con parte
- *  del nombre de la muestra), luego contra las palabras clave configuradas
- *  a mano (coincidencia por inclusión, como antes). */
+ *  (coincidencia exacta de token, insensible a mayúsculas/minúsculas, para
+ *  no confundir un cebador con parte del nombre de la muestra), luego contra
+ *  las palabras clave configuradas a mano (coincidencia por inclusión). */
 function findPrimerToken(tokens, fwdKw, revKw) {
   for (let i = 0; i < tokens.length; i += 2) {
     const tok = tokens[i];
-    if (tok && KNOWN_PRIMER_DIRECTION[tok.toUpperCase()]) {
-      return { direction: KNOWN_PRIMER_DIRECTION[tok.toUpperCase()], tokenIndex: i };
+    if (!tok) continue;
+    const upper = tok.trim().toUpperCase();
+    if (KNOWN_PRIMER_DIRECTION[upper]) {
+      return { direction: KNOWN_PRIMER_DIRECTION[upper], tokenIndex: i };
     }
   }
   for (let i = 0; i < tokens.length; i += 2) {
     const tok = tokens[i];
     if (!tok) continue;
-    const upper = tok.toUpperCase();
+    const upper = tok.trim().toUpperCase();
     if (fwdKw.some((k) => upper.includes(k))) return { direction: 'forward', tokenIndex: i };
     if (revKw.some((k) => upper.includes(k))) return { direction: 'reverse', tokenIndex: i };
   }
@@ -308,9 +310,9 @@ function sendBatchToNCBI(consensusList) {
   form.style.display = 'none';
 
   const fields = {
-    CMD: 'Web',
+    PROGRAM: 'blastn',
     PAGE_TYPE: 'BlastSearch',
-    PAGE: 'Megablast',
+    LINK_LOC: 'blasthome',
     QUERY: multiFasta,
   };
 
