@@ -1003,7 +1003,15 @@ details > summary:focus-visible { outline: 2px solid var(--accent); outline-offs
 /* ---------- micro-interacciones ---------- */
 /* Consistentes en toda la app: hover/focus con un desplazamiento mínimo y
    sombra suave. Todo el movimiento va detrás de prefers-reduced-motion. */
+/* Sub-cabecera de sección dentro de la rejilla de módulos (home.js) — más
+   pequeña que el h2 de la propia tarjeta, para dejar clara la jerarquía. */
+.ql-modgroup-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--ink-muted); margin: 18px 0 8px;
+}
+.ql-modgroup-title:first-of-type { margin-top: 8px; }
 .ql-modgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(224px, 1fr)); gap: 12px; }
+.ql-modgrid + .ql-modgroup-title { margin-top: 20px; }
 .ql-modcard {
   position: relative;
   display: block;

@@ -2,25 +2,27 @@ import { state, subscribe } from '../state.js';
 import { t } from '../lib/i18n.js';
 import { domainMotif } from '../lib/motif.js';
 import { getProfileName } from '../lib/profile.js';
-import { slotFilled } from './shell.js';
+import { slotFilled, GROUPS } from './shell.js';
 import { healthBannerEl } from '../lib/healthBanner.js';
 
 // route = fragmento de ruta; qKey = pregunta en lenguaje llano (texto principal);
 // nameKey/descKey = rótulo y descripción técnicos (secundarios); glos = id del
-// término de glosario más relevante (#/glosario?t=<glos>).
+// término de glosario más relevante (#/glosario?t=<glos>); group = misma
+// sección que en la navegación principal (shell.js GROUPS) — la rejilla usa
+// las mismas cabeceras/orden, así que no se repite ni se puede desincronizar.
 const MODULES_INFO = [
-  { route: 'barplots', qKey: 'home.q.barplots', nameKey: 'nav.barplots', descKey: 'modules.barplots.desc', glos: 'relAbund' },
-  { route: 'alfa', qKey: 'home.q.alfa', nameKey: 'nav.alpha', descKey: 'modules.alpha.desc', glos: 'alphaDiv' },
-  { route: 'beta', qKey: 'home.q.beta', nameKey: 'nav.beta', descKey: 'modules.beta.desc', glos: 'betaDiv' },
-  { route: 'diferencial', qKey: 'home.q.diferencial', nameKey: 'nav.differential', descKey: 'modules.differential.desc', glos: 'diffAbund' },
-  { route: 'recuentos', qKey: 'home.q.recuentos', nameKey: 'nav.recuentos', descKey: 'modules.recuentos.desc', glos: 'sd' },
-  { route: 'venn', qKey: 'home.q.venn', nameKey: 'nav.venn', descKey: 'modules.venn.desc', glos: 'venn' },
-  { route: 'correlograma', qKey: 'home.q.correlograma', nameKey: 'nav.correlograma', descKey: 'modules.correlograma.desc', glos: 'correlation' },
-  { route: 'funcional', qKey: 'home.q.funcional', nameKey: 'nav.funcional', descKey: 'modules.funcional.desc', glos: 'kegg' },
-  { route: 'qc', qKey: 'home.q.qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc', glos: 'qc' },
-  { route: 'primers', qKey: 'home.q.primers', nameKey: 'nav.primers', descKey: 'modules.primers.desc', glos: 'primerTm' },
-  { route: 'arbol', qKey: 'home.q.arbol', nameKey: 'nav.arbol', descKey: 'modules.arbol.desc', glos: 'neighborJoiningTerm' },
-  { route: 'sanger', qKey: 'home.q.sanger', nameKey: 'nav.sanger', descKey: 'modules.sanger.desc', glos: 'sangerConsensusTerm' },
+  { route: 'qc', qKey: 'home.q.qc', nameKey: 'nav.qc', descKey: 'modules.qc.desc', glos: 'qc', group: 'data' },
+  { route: 'barplots', qKey: 'home.q.barplots', nameKey: 'nav.barplots', descKey: 'modules.barplots.desc', glos: 'relAbund', group: 'composition' },
+  { route: 'alfa', qKey: 'home.q.alfa', nameKey: 'nav.alpha', descKey: 'modules.alpha.desc', glos: 'alphaDiv', group: 'composition' },
+  { route: 'beta', qKey: 'home.q.beta', nameKey: 'nav.beta', descKey: 'modules.beta.desc', glos: 'betaDiv', group: 'composition' },
+  { route: 'venn', qKey: 'home.q.venn', nameKey: 'nav.venn', descKey: 'modules.venn.desc', glos: 'venn', group: 'composition' },
+  { route: 'correlograma', qKey: 'home.q.correlograma', nameKey: 'nav.correlograma', descKey: 'modules.correlograma.desc', glos: 'correlation', group: 'composition' },
+  { route: 'diferencial', qKey: 'home.q.diferencial', nameKey: 'nav.differential', descKey: 'modules.differential.desc', glos: 'diffAbund', group: 'stats' },
+  { route: 'funcional', qKey: 'home.q.funcional', nameKey: 'nav.funcional', descKey: 'modules.funcional.desc', glos: 'kegg', group: 'stats' },
+  { route: 'recuentos', qKey: 'home.q.recuentos', nameKey: 'nav.recuentos', descKey: 'modules.recuentos.desc', glos: 'sd', group: 'counts' },
+  { route: 'primers', qKey: 'home.q.primers', nameKey: 'nav.primers', descKey: 'modules.primers.desc', glos: 'primerTm', group: 'primers' },
+  { route: 'arbol', qKey: 'home.q.arbol', nameKey: 'nav.arbol', descKey: 'modules.arbol.desc', glos: 'neighborJoiningTerm', group: 'primers' },
+  { route: 'sanger', qKey: 'home.q.sanger', nameKey: 'nav.sanger', descKey: 'modules.sanger.desc', glos: 'sangerConsensusTerm', group: 'primers' },
 ];
 
 const MORE_LINKS = [
@@ -101,35 +103,44 @@ export function render(container) {
     summary.appendChild(stats);
     stack.appendChild(summary);
 
-    // módulos — como asistente de "qué quiero saber"
+    // módulos — como asistente de "qué quiero saber", agrupados en las
+    // mismas secciones que la navegación principal (shell.js GROUPS)
     const modsSection = document.createElement('section');
     modsSection.className = 'ql-card ql-panel';
     modsSection.innerHTML = '<h2>' + t('home.modulesTitle') + '</h2><p class="ql-panel-note">' + t('home.modulesNote') + '</p>';
-    const grid = document.createElement('div');
-    grid.className = 'ql-modgrid';
-    MODULES_INFO.forEach((m) => {
-      const has = slotFilled(m.route);
-      const cell = document.createElement('div');
-      cell.className = 'ql-modcell';
-      const card = document.createElement('a');
-      card.href = '#/' + m.route;
-      card.className = 'ql-modcard ql-modcard-q';
-      card.innerHTML =
-        '<div class="ql-modcard-head">' +
-        '<strong>' + t(m.qKey) + '</strong>' +
-        '<span class="ql-badge ' + (has ? 'ql-badge-good' : 'ql-badge-muted') + '">' +
-        t(has ? 'home.modHas' : 'home.modNo') + '</span></div>' +
-        '<p class="ql-modcard-name">' + t(m.nameKey) + ' · ' + t(m.descKey) + '</p>' +
-        '<span class="ql-modcard-go" aria-hidden="true">→</span>';
-      cell.appendChild(card);
-      const glosA = document.createElement('a');
-      glosA.className = 'ql-modcard-glos';
-      glosA.href = '#/glosario?t=' + m.glos;
-      glosA.textContent = t('home.glosLink');
-      cell.appendChild(glosA);
-      grid.appendChild(cell);
+    GROUPS.forEach((g) => {
+      const inGroup = MODULES_INFO.filter((m) => m.group === g.id);
+      if (!inGroup.length) return;
+      const h3 = document.createElement('h3');
+      h3.className = 'ql-modgroup-title';
+      h3.textContent = t(g.titleKey);
+      modsSection.appendChild(h3);
+      const grid = document.createElement('div');
+      grid.className = 'ql-modgrid';
+      inGroup.forEach((m) => {
+        const has = slotFilled(m.route);
+        const cell = document.createElement('div');
+        cell.className = 'ql-modcell';
+        const card = document.createElement('a');
+        card.href = '#/' + m.route;
+        card.className = 'ql-modcard ql-modcard-q';
+        card.innerHTML =
+          '<div class="ql-modcard-head">' +
+          '<strong>' + t(m.qKey) + '</strong>' +
+          '<span class="ql-badge ' + (has ? 'ql-badge-good' : 'ql-badge-muted') + '">' +
+          t(has ? 'home.modHas' : 'home.modNo') + '</span></div>' +
+          '<p class="ql-modcard-name">' + t(m.nameKey) + ' · ' + t(m.descKey) + '</p>' +
+          '<span class="ql-modcard-go" aria-hidden="true">→</span>';
+        cell.appendChild(card);
+        const glosA = document.createElement('a');
+        glosA.className = 'ql-modcard-glos';
+        glosA.href = '#/glosario?t=' + m.glos;
+        glosA.textContent = t('home.glosLink');
+        cell.appendChild(glosA);
+        grid.appendChild(cell);
+      });
+      modsSection.appendChild(grid);
     });
-    modsSection.appendChild(grid);
 
     const more = document.createElement('p');
     more.className = 'ql-modmore';

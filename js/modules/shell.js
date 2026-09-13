@@ -40,27 +40,41 @@ const BRAND_MARK =
   '<g fill="var(--accent-ink)"><circle cx="8" cy="25" r="1.9"/><circle cx="15" cy="25" r="1.9"/><circle cx="23" cy="25" r="1.9"/></g>' +
   '</svg>';
 
-// id = fragmento de ruta (#/<id>); navKey = clave de traducción del rótulo.
+// id = fragmento de ruta (#/<id>); navKey = clave de traducción del rótulo;
+// group = sección de la navegación (ver GROUPS más abajo) — 'home' queda
+// fuera de cualquier sección, es la portada, no un módulo de análisis.
+// Reordenar/agrupar es solo visual: ninguna ruta cambia de sitio.
 export const ROUTES = [
-  { id: '', navKey: 'nav.home', icon: 'home' },
-  { id: 'cargar', navKey: 'nav.upload', icon: 'upload' },
-  { id: 'barplots', navKey: 'nav.barplots', icon: 'bars' },
-  { id: 'alfa', navKey: 'nav.alpha', icon: 'alpha' },
-  { id: 'beta', navKey: 'nav.beta', icon: 'beta' },
-  { id: 'diferencial', navKey: 'nav.differential', icon: 'volcano' },
-  { id: 'recuentos', navKey: 'nav.recuentos', icon: 'recuentos' },
-  { id: 'ufc', navKey: 'nav.ufc', icon: 'ufc' },
-  { id: 'primers', navKey: 'nav.primers', icon: 'primers' },
-  { id: 'arbol', navKey: 'nav.arbol', icon: 'arbol' },
-  { id: 'sanger', navKey: 'nav.sanger', icon: 'sanger' },
-  { id: 'venn', navKey: 'nav.venn', icon: 'venn' },
-  { id: 'correlograma', navKey: 'nav.correlograma', icon: 'correlogram' },
-  { id: 'funcional', navKey: 'nav.funcional', icon: 'functional' },
-  { id: 'qc', navKey: 'nav.qc', icon: 'qc' },
-  { id: 'informe', navKey: 'nav.informe', icon: 'informe' },
-  { id: 'recursos', navKey: 'nav.recursos', icon: 'recursos' },
-  { id: 'glosario', navKey: 'nav.glosario', icon: 'glosario' },
-  { id: 'validacion', navKey: 'nav.validacion', icon: 'validacion' },
+  { id: '', navKey: 'nav.home', icon: 'home', group: 'home' },
+  { id: 'cargar', navKey: 'nav.upload', icon: 'upload', group: 'data' },
+  { id: 'qc', navKey: 'nav.qc', icon: 'qc', group: 'data' },
+  { id: 'barplots', navKey: 'nav.barplots', icon: 'bars', group: 'composition' },
+  { id: 'alfa', navKey: 'nav.alpha', icon: 'alpha', group: 'composition' },
+  { id: 'beta', navKey: 'nav.beta', icon: 'beta', group: 'composition' },
+  { id: 'venn', navKey: 'nav.venn', icon: 'venn', group: 'composition' },
+  { id: 'correlograma', navKey: 'nav.correlograma', icon: 'correlogram', group: 'composition' },
+  { id: 'diferencial', navKey: 'nav.differential', icon: 'volcano', group: 'stats' },
+  { id: 'funcional', navKey: 'nav.funcional', icon: 'functional', group: 'stats' },
+  { id: 'validacion', navKey: 'nav.validacion', icon: 'validacion', group: 'stats' },
+  { id: 'recuentos', navKey: 'nav.recuentos', icon: 'recuentos', group: 'counts' },
+  { id: 'ufc', navKey: 'nav.ufc', icon: 'ufc', group: 'counts' },
+  { id: 'primers', navKey: 'nav.primers', icon: 'primers', group: 'primers' },
+  { id: 'arbol', navKey: 'nav.arbol', icon: 'arbol', group: 'primers' },
+  { id: 'sanger', navKey: 'nav.sanger', icon: 'sanger', group: 'primers' },
+  { id: 'informe', navKey: 'nav.informe', icon: 'informe', group: 'resources' },
+  { id: 'recursos', navKey: 'nav.recursos', icon: 'recursos', group: 'resources' },
+  { id: 'glosario', navKey: 'nav.glosario', icon: 'glosario', group: 'resources' },
+];
+
+// título de cada sección de la navegación, en el mismo orden en que aparecen
+// (home no lleva cabecera propia — ver renderShell).
+export const GROUPS = [
+  { id: 'data', titleKey: 'shell.groupData' },
+  { id: 'composition', titleKey: 'shell.groupComposition' },
+  { id: 'stats', titleKey: 'shell.groupStats' },
+  { id: 'counts', titleKey: 'shell.groupCounts' },
+  { id: 'primers', titleKey: 'shell.groupPrimers' },
+  { id: 'resources', titleKey: 'shell.groupResources' },
 ];
 
 // primers.js persiste en localStorage (no es una salida de QIIME2, no usa
@@ -129,14 +143,7 @@ export function renderShell(container, currentRoute) {
     container.appendChild(hi);
   }
 
-  const nav = document.createElement('div');
-  nav.className = 'ql-nav';
-  const label = document.createElement('div');
-  label.className = 'ql-nav-group-label';
-  label.textContent = t('shell.groupModules');
-  nav.appendChild(label);
-
-  ROUTES.forEach((r) => {
+  function navItem(r) {
     const a = document.createElement('a');
     a.href = '#/' + r.id;
     const isActive = currentRoute === r.id;
@@ -145,9 +152,28 @@ export function renderShell(container, currentRoute) {
     const filled = slotFilled(r.id);
     a.innerHTML = '<span class="ql-nav-icon">' + ICONS[r.icon] + '</span><span>' + t(r.navKey) + '</span>' +
       (r.id !== '' && r.id !== 'cargar' && !filled ? '<span class="ql-nav-soon">' + t('shell.noData') + '</span>' : '');
-    nav.appendChild(a);
+    return a;
+  }
+
+  // "Resumen" (home) va suelto, antes de las secciones — es la portada, no
+  // un módulo de análisis más.
+  const homeNav = document.createElement('div');
+  homeNav.className = 'ql-nav';
+  homeNav.appendChild(navItem(ROUTES.find((r) => r.group === 'home')));
+  container.appendChild(homeNav);
+
+  GROUPS.forEach((g) => {
+    const routesInGroup = ROUTES.filter((r) => r.group === g.id);
+    if (!routesInGroup.length) return;
+    const nav = document.createElement('div');
+    nav.className = 'ql-nav';
+    const label = document.createElement('div');
+    label.className = 'ql-nav-group-label';
+    label.textContent = t(g.titleKey);
+    nav.appendChild(label);
+    routesInGroup.forEach((r) => nav.appendChild(navItem(r)));
+    container.appendChild(nav);
   });
-  container.appendChild(nav);
 
   const statusWrap = document.createElement('div');
   statusWrap.className = 'ql-nav';
