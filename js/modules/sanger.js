@@ -51,7 +51,7 @@ function defaultState() {
   return {
     tab: 'entrada',
     trimMethod: 'mott', mottThreshold: 0.05, windowSize: 15, windowMinQ: 20, minLength: 50,
-    fwdKeywords: '27F,FWD,FORWARD', revKeywords: '1492R,REV,REVERSE',
+    fwdKeywords: '27F,FWD,FORWARD', revKeywords: '907R,1492R,REV,REVERSE',
     expectedAmplicon: '', ampliconTolerance: 150,
     selectedSampleId: '', selectedDirection: 'forward',
     manualTrim: {}, // { [sampleId]: { forward:{start,end}|null, reverse:{start,end}|null } }
@@ -72,7 +72,9 @@ function load() {
         windowMinQ: Number.isFinite(+raw.windowMinQ) ? +raw.windowMinQ : d.windowMinQ,
         minLength: Number.isFinite(+raw.minLength) && +raw.minLength >= 0 ? +raw.minLength : d.minLength,
         fwdKeywords: typeof raw.fwdKeywords === 'string' ? raw.fwdKeywords : d.fwdKeywords,
-        revKeywords: typeof raw.revKeywords === 'string' ? raw.revKeywords : d.revKeywords,
+        revKeywords: typeof raw.revKeywords === 'string'
+          ? (raw.revKeywords === '1492R,REV,REVERSE' ? d.revKeywords : raw.revKeywords)
+          : d.revKeywords,
         expectedAmplicon: typeof raw.expectedAmplicon === 'string' ? raw.expectedAmplicon : d.expectedAmplicon,
         ampliconTolerance: Number.isFinite(+raw.ampliconTolerance) && +raw.ampliconTolerance >= 0 ? +raw.ampliconTolerance : d.ampliconTolerance,
         selectedSampleId: typeof raw.selectedSampleId === 'string' ? raw.selectedSampleId : '',
@@ -116,12 +118,12 @@ function splitKeywords(s) { return String(s || '').split(',').map((x) => x.trim(
  *  posiciones pares son contenido; las impares, el separador que sigue. */
 function tokenizeKeepSeps(base) { return base.split(/([-_.\s]+)/); }
 
-/** Busca el token que es un cebador — primero contra la tabla conocida
- *  (coincidencia exacta de token, insensible a mayúsculas/minúsculas, para
- *  no confundir un cebador con parte del nombre de la muestra), luego contra
- *  las palabras clave configuradas a mano (coincidencia por inclusión). */
+/** Busca el token que es un cebador — cruza tanto el diccionario estático
+ *  KNOWN_PRIMER_DIRECTION (prioridad absoluta para cebadores estándar) como
+ *  las palabras clave configuradas a mano por el usuario (fwdKw/revKw). */
 function findPrimerToken(tokens, fwdKw, revKw) {
-  for (let i = 0; i < tokens.length; i += 2) {
+  // 1. Coincidencia exacta contra catálogo estático (insensible a mayúsculas)
+  for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
     if (!tok) continue;
     const upper = tok.trim().toUpperCase();
@@ -129,29 +131,84 @@ function findPrimerToken(tokens, fwdKw, revKw) {
       return { direction: KNOWN_PRIMER_DIRECTION[upper], tokenIndex: i };
     }
   }
-  for (let i = 0; i < tokens.length; i += 2) {
+  // 2. Coincidencia exacta contra palabras clave de la interfaz
+  for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
     if (!tok) continue;
     const upper = tok.trim().toUpperCase();
-    if (fwdKw.some((k) => upper.includes(k))) return { direction: 'forward', tokenIndex: i };
-    if (revKw.some((k) => upper.includes(k))) return { direction: 'reverse', tokenIndex: i };
+    if (fwdKw.includes(upper)) return { direction: 'forward', tokenIndex: i };
+    if (revKw.includes(upper)) return { direction: 'reverse', tokenIndex: i };
+  }
+  // 3. Coincidencia por inclusión contra palabras clave de la interfaz
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    const upper = tok.trim().toUpperCase();
+    const isF = fwdKw.some((k) => upper.includes(k));
+    const isR = revKw.some((k) => upper.includes(k));
+    if (isF && !isR) return { direction: 'forward', tokenIndex: i };
+    if (isR && !isF) return { direction: 'reverse', tokenIndex: i };
+  }
+  // 4. Coincidencia por inclusión dentro del token contra catálogo estático
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    const upper = tok.trim().toUpperCase();
+    for (const [primer, dir] of Object.entries(KNOWN_PRIMER_DIRECTION)) {
+      if (upper.includes(primer)) {
+        return { direction: dir, tokenIndex: i, primerSub: primer };
+      }
+    }
   }
   return null;
 }
 
 /** A partir del nombre de archivo, adivina a la vez el id de muestra (todo
- *  menos el cebador) y el sentido (forward/reverse) — el cebador puede ir
- *  al principio, en medio o al final del nombre, en cualquier combinación
- *  de mayúsculas/minúsculas. */
+ *  menos el cebador) y el sentido (forward/reverse), cruzando fwdKw, revKw y
+ *  KNOWN_PRIMER_DIRECTION como respaldo absoluto. */
 function identifyRead(filename, fwdKw, revKw) {
   const base = baseName(filename);
   const tokens = tokenizeKeepSeps(base);
   const hit = findPrimerToken(tokens, fwdKw, revKw);
-  if (!hit) return { sampleId: base, direction: null };
+  if (!hit) {
+    // Respaldo global sobre el nombre base completo si no se aisló por separadores
+    const upper = base.toUpperCase();
+    for (const [primer, dir] of Object.entries(KNOWN_PRIMER_DIRECTION)) {
+      if (upper.includes(primer)) {
+        const re = new RegExp('([-_.]?)' + primer + '([-_.]?)', 'i');
+        const cleaned = base.replace(re, (m, p1, p2) => (p1 && p2 ? p1 : ''));
+        const sampleId = cleaned.replace(/^[-_.\s]+|[-_.\s]+$/g, '').trim() || base;
+        return { sampleId, direction: dir };
+      }
+    }
+    for (const k of fwdKw) {
+      if (upper.includes(k)) {
+        const re = new RegExp('([-_.]?)' + k + '([-_.]?)', 'i');
+        const cleaned = base.replace(re, (m, p1, p2) => (p1 && p2 ? p1 : ''));
+        const sampleId = cleaned.replace(/^[-_.\s]+|[-_.\s]+$/g, '').trim() || base;
+        return { sampleId, direction: 'forward' };
+      }
+    }
+    for (const k of revKw) {
+      if (upper.includes(k)) {
+        const re = new RegExp('([-_.]?)' + k + '([-_.]?)', 'i');
+        const cleaned = base.replace(re, (m, p1, p2) => (p1 && p2 ? p1 : ''));
+        const sampleId = cleaned.replace(/^[-_.\s]+|[-_.\s]+$/g, '').trim() || base;
+        return { sampleId, direction: 'reverse' };
+      }
+    }
+    return { sampleId: base, direction: null };
+  }
+
   const rest = tokens.slice();
-  rest.splice(hit.tokenIndex, 1);
-  if (rest[hit.tokenIndex] !== undefined && /^[-_.\s]+$/.test(rest[hit.tokenIndex])) rest.splice(hit.tokenIndex, 1);
-  else if (hit.tokenIndex > 0 && /^[-_.\s]+$/.test(rest[hit.tokenIndex - 1])) rest.splice(hit.tokenIndex - 1, 1);
+  if (hit.primerSub && rest[hit.tokenIndex] && rest[hit.tokenIndex].length > hit.primerSub.length) {
+    const re = new RegExp('([-_.]?)' + hit.primerSub + '([-_.]?)', 'i');
+    rest[hit.tokenIndex] = rest[hit.tokenIndex].replace(re, (m, p1, p2) => (p1 && p2 ? p1 : '')).trim();
+  } else {
+    rest.splice(hit.tokenIndex, 1);
+    if (rest[hit.tokenIndex] !== undefined && /^[-_.\s]+$/.test(rest[hit.tokenIndex])) rest.splice(hit.tokenIndex, 1);
+    else if (hit.tokenIndex > 0 && /^[-_.\s]+$/.test(rest[hit.tokenIndex - 1])) rest.splice(hit.tokenIndex - 1, 1);
+  }
   const sampleId = rest.join('').trim() || base;
   return { sampleId, direction: hit.direction };
 }
@@ -727,7 +784,7 @@ export function render(container) {
       return f;
     }
     kwGrid.appendChild(textField('sanger.fwdKeywordsLabel', s.fwdKeywords, (v) => { s.fwdKeywords = v; }, 'sanger.keywordsHelp'));
-    kwGrid.appendChild(textField('sanger.revKeywordsLabel', s.revKeywords, (v) => { s.revKeywords = v; }));
+    kwGrid.appendChild(textField('sanger.revKeywordsLabel', s.revKeywords, (v) => { s.revKeywords = v; }, 'sanger.revKeywordsHelp'));
     cfg.appendChild(kwGrid);
 
     const ampGrid = document.createElement('div');
