@@ -90,19 +90,68 @@ function save(s) {
 
 // ---------- emparejamiento por nombre de archivo ----------
 
+// Cebadores habituales y su sentido — se reconocen solos (en cualquier
+// posición del nombre: antes, en medio o después de la muestra), sin
+// necesidad de configurarlos a mano. Los campos de palabras clave de abajo
+// son solo para cebadores fuera de esta lista.
+const KNOWN_PRIMER_DIRECTION = {
+  // 16S (bacterias)
+  '27F': 'forward', '8F': 'forward', '338F': 'forward', '515F': 'forward', '519F': 'forward',
+  '785F': 'forward', '805F': 'forward',
+  '337R': 'reverse', '519R': 'reverse', '785R': 'reverse', '805R': 'reverse',
+  '907R': 'reverse', '1100R': 'reverse', '1492R': 'reverse',
+  // ITS (hongos)
+  ITS1: 'forward', ITS1F: 'forward', ITS3: 'forward', ITS5: 'forward',
+  ITS2: 'reverse', ITS4: 'reverse', ITS4B: 'reverse',
+  // clonación / vectores
+  M13F: 'forward', M13FWD: 'forward', T7: 'forward',
+  M13R: 'reverse', M13REV: 'reverse', T3: 'reverse',
+};
+
 function baseName(filename) { return String(filename).replace(/\.[^./\\]+$/, ''); }
-function guessSampleId(filename) {
-  const b = baseName(filename);
-  return (b.includes('-') ? b.split('-')[0] : b.split('_')[0]) || b;
-}
 function splitKeywords(s) { return String(s || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean); }
-function guessDirection(filename, fwdKw, revKw) {
-  const upper = String(filename).toUpperCase();
-  const isF = fwdKw.some((k) => upper.includes(k));
-  const isR = revKw.some((k) => upper.includes(k));
-  if (isF && !isR) return 'forward';
-  if (isR && !isF) return 'reverse';
+
+/** Divide el nombre en tokens conservando los separadores (para poder
+ *  reconstruir el id de muestra sin perder puntos, p. ej. "56.1"). Las
+ *  posiciones pares son contenido; las impares, el separador que sigue. */
+function tokenizeKeepSeps(base) { return base.split(/([-_.\s]+)/); }
+
+/** Busca el token que es un cebador — primero contra la tabla conocida
+ *  (coincidencia exacta de token, para no confundir un cebador con parte
+ *  del nombre de la muestra), luego contra las palabras clave configuradas
+ *  a mano (coincidencia por inclusión, como antes). */
+function findPrimerToken(tokens, fwdKw, revKw) {
+  for (let i = 0; i < tokens.length; i += 2) {
+    const tok = tokens[i];
+    if (tok && KNOWN_PRIMER_DIRECTION[tok.toUpperCase()]) {
+      return { direction: KNOWN_PRIMER_DIRECTION[tok.toUpperCase()], tokenIndex: i };
+    }
+  }
+  for (let i = 0; i < tokens.length; i += 2) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    const upper = tok.toUpperCase();
+    if (fwdKw.some((k) => upper.includes(k))) return { direction: 'forward', tokenIndex: i };
+    if (revKw.some((k) => upper.includes(k))) return { direction: 'reverse', tokenIndex: i };
+  }
   return null;
+}
+
+/** A partir del nombre de archivo, adivina a la vez el id de muestra (todo
+ *  menos el cebador) y el sentido (forward/reverse) — el cebador puede ir
+ *  al principio, en medio o al final del nombre, en cualquier combinación
+ *  de mayúsculas/minúsculas. */
+function identifyRead(filename, fwdKw, revKw) {
+  const base = baseName(filename);
+  const tokens = tokenizeKeepSeps(base);
+  const hit = findPrimerToken(tokens, fwdKw, revKw);
+  if (!hit) return { sampleId: base, direction: null };
+  const rest = tokens.slice();
+  rest.splice(hit.tokenIndex, 1);
+  if (rest[hit.tokenIndex] !== undefined && /^[-_.\s]+$/.test(rest[hit.tokenIndex])) rest.splice(hit.tokenIndex, 1);
+  else if (hit.tokenIndex > 0 && /^[-_.\s]+$/.test(rest[hit.tokenIndex - 1])) rest.splice(hit.tokenIndex - 1, 1);
+  const sampleId = rest.join('').trim() || base;
+  return { sampleId, direction: hit.direction };
 }
 
 // ---------- lectura de archivos ----------
@@ -230,6 +279,52 @@ function sendConsensusToPrimers(sampleId, consensus) {
  */
 function ncbiBlastUrl(sequence) {
   return 'https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Put&PROGRAM=blastn&DATABASE=nt&QUERY=' + encodeURIComponent(sequence);
+}
+
+/**
+ * Envía un lote de secuencias consenso a NCBI BLAST utilizando la técnica
+ * del formulario POST oculto (hidden form POST). Abre la interfaz web de
+ * BLAST en una pestaña nueva con el multi-FASTA pre-cargado en el campo QUERY,
+ * esquivando las restricciones de CORS del navegador y los límites de longitud
+ * de URL por GET.
+ */
+function sendBatchToNCBI(consensusList) {
+  if (!Array.isArray(consensusList) || !consensusList.length) return;
+  const valid = consensusList.filter((item) => item && (item.consensus || item.sequence));
+  if (!valid.length) return;
+
+  const multiFasta = valid
+    .map((item) => {
+      const name = item.id || item.sampleId || item.name || 'secuencia';
+      const seq = String(item.consensus || item.sequence || '').trim();
+      return `>${name}\n${seq}`;
+    })
+    .join('\n') + '\n';
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = 'https://blast.ncbi.nlm.nih.gov/Blast.cgi';
+  form.target = '_blank';
+  form.style.display = 'none';
+
+  const fields = {
+    CMD: 'Web',
+    PAGE_TYPE: 'BlastSearch',
+    PAGE: 'Megablast',
+    QUERY: multiFasta,
+  };
+
+  for (const [key, value] of Object.entries(fields)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = key;
+    input.value = value;
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
 }
 
 // ---------- visor de cromatograma ----------
@@ -399,8 +494,7 @@ export function render(container) {
     for (const file of fileList) {
       let read;
       try { read = await readReadFile(file); } catch (err) { pending.push({ fileKey: 'err' + (nextPendingKey++), error: (err && err.message) || String(err), fileName: file.name }); continue; }
-      const id = guessSampleId(file.name);
-      const direction = guessDirection(file.name, fwdKw, revKw);
+      const { sampleId: id, direction } = identifyRead(file.name, fwdKw, revKw);
       if (direction) upsertRead(id, direction, read);
       else pending.push({ fileKey: 'p' + (nextPendingKey++), read, fileName: file.name, id, direction: 'forward' });
     }
@@ -855,8 +949,11 @@ export function render(container) {
     scroll.appendChild(tbl);
     summary.appendChild(scroll);
 
+    const actionsRow = document.createElement('div');
+    actionsRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;';
+
     const exportBtn = document.createElement('button');
-    exportBtn.type = 'button'; exportBtn.className = 'ql-btn ql-btn-primary'; exportBtn.style.marginTop = '14px';
+    exportBtn.type = 'button'; exportBtn.className = 'ql-btn ql-btn-primary';
     exportBtn.textContent = t('sanger.exportFasta');
     exportBtn.addEventListener('click', () => {
       const fasta = results.filter((r) => r.consensus).map((r) => '>' + r.id + ' method=' + r.method + (r.needsReview ? ' NEEDS_REVIEW' : '') + '\n' + r.consensus).join('\n') + '\n';
@@ -866,7 +963,20 @@ export function render(container) {
       a.href = url; a.download = 'sanger-consenso.fasta'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     });
-    summary.appendChild(exportBtn);
+    actionsRow.appendChild(exportBtn);
+
+    const validResults = results.filter((r) => r.consensus);
+    const batchBlastBtn = document.createElement('button');
+    batchBlastBtn.type = 'button';
+    batchBlastBtn.className = 'ql-btn';
+    batchBlastBtn.textContent = t('sanger.blastBatch') + ' ↗';
+    batchBlastBtn.title = t('sanger.blastBatchTitle');
+    batchBlastBtn.disabled = !validResults.length;
+    batchBlastBtn.addEventListener('click', () => {
+      sendBatchToNCBI(validResults);
+    });
+    actionsRow.appendChild(batchBlastBtn);
+    summary.appendChild(actionsRow);
     stack.appendChild(summary);
 
     const detailWrap = document.createElement('section');
