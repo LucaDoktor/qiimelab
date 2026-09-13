@@ -28,6 +28,7 @@
 
 import { PALETTES, paletteColorAt } from './palettes.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
+import { openPanel as openModalPanel } from './modal.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const STYLE_ID = 'ce-styles';
@@ -64,7 +65,8 @@ const I18N = {
         paletteTitle: 'Paleta de la figura', paletteCategorical: 'Categórica', paletteSequential: 'Secuencial', paletteDivergent: 'Divergente',
         paletteWarnClash: (name) => 'parecido a "' + name + '" para algunos tipos de daltonismo',
         paletteWarnContrast: 'poco contraste sobre el fondo de la figura',
-        paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)' },
+        paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
+        fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -73,7 +75,8 @@ const I18N = {
         paletteTitle: 'Figure palette', paletteCategorical: 'Categorical', paletteSequential: 'Sequential', paletteDivergent: 'Divergent',
         paletteWarnClash: (name) => 'similar to "' + name + '" for some kinds of colour blindness',
         paletteWarnContrast: 'low contrast against the figure background',
-        paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)' },
+        paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
+        fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -83,6 +86,7 @@ const CE_ICONS = {
   edit: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.4 3.6a2 2 0 0 1 2.9 2.9L7.5 18.3 3.5 19.5l1.2-4Z"/></svg>',
   download: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0-3.5-3.5M12 14l3.5-3.5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
   reset: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 1 1-1.5 4.5"/><path d="M3.5 4.5v4.8h4.8"/></svg>',
+  fullscreen: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5a1 1 0 0 0-1 1v4M15 4h4a1 1 0 0 1 1 1v4M9 20H5a1 1 0 0 1-1-1v-4M15 20h4a1 1 0 0 0 1-1v-4"/></svg>',
 };
 
 function injectStyles() {
@@ -142,6 +146,10 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-pal-row input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
 .ce-pal-row input[type=text] { flex:0 0 84px; }
 .ce-pal-warn { font-size:11px; color:#8a5a00; flex:1 1 100%; margin:0; }
+.ce-fs-stage { display:flex; flex-direction:column; gap:14px; }
+.ce-fs-svgwrap { flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; overflow:auto; background:var(--page); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; }
+.ce-fs-svgwrap svg.ce-fs-svg { width:100% !important; height:auto !important; max-height:calc(100vh - 260px); }
+.ce-fs-stage .ce-toolbar { flex:none; margin-top:0; padding-top:14px; }
 `;
   document.head.appendChild(s);
 }
@@ -175,6 +183,7 @@ export function attachChartEditor(cfg) {
   let panel = null;
   let cePanelUid = 0; // ids para enlazar <label for> ↔ control dentro del panel
   const wraps = new Map(); // id -> { wrap, inner, def }
+  let fsHandle = null; // { close } del modal de pantalla completa, si está abierto
 
   function readStore() {
     try { return JSON.parse(localStorage.getItem(LSKEY)) || {}; }
@@ -259,6 +268,10 @@ export function attachChartEditor(cfg) {
     const bCustom = mkBtn(CE_ICONS.edit, editing ? T.done : T.customize, () => { setEditing(!editing); });
     bCustom.className = 'ql-btn' + (editing ? ' ce-on' : ' ce-cta');
     toolbar.appendChild(bCustom);
+
+    const bFull = mkBtn(CE_ICONS.fullscreen, fsHandle ? T.fullscreenExit : T.fullscreen, openFullscreen);
+    bFull.className = 'ql-btn' + (fsHandle ? ' ce-on' : '');
+    toolbar.appendChild(bFull);
 
     const bDl = mkBtn(CE_ICONS.download, T.download, downloadSvg);
     bDl.className = 'ql-btn';
@@ -391,6 +404,41 @@ export function attachChartEditor(cfg) {
     b.innerHTML = icon + '<span>' + label + '</span>';
     b.addEventListener('click', onClick);
     return b;
+  }
+
+  // ---- pantalla completa: mueve el <svg> real y la barra de herramientas
+  // (no una copia) a un modal ancho; al cerrar, vuelven exactamente a su
+  // sitio original. sync()/writeStore() no distinguen dónde vive el <svg>
+  // en el DOM, así que editar, arrastrar y exportar funcionan igual dentro.
+  function openFullscreen() {
+    if (fsHandle) { fsHandle.close(); return; }
+    const svgHome = { parent: svg.parentNode, next: svg.nextSibling };
+    const toolbarHome = { parent: toolbar.parentNode, next: toolbar.nextSibling };
+    if (!svgHome.parent || !toolbarHome.parent) return;
+    fsHandle = openModalPanel({
+      title: T.fullscreenTitle,
+      extraClass: 'ql-modal-wide',
+      closeLabel: T.close,
+      render(bodyEl) {
+        const stage = document.createElement('div');
+        stage.className = 'ce-fs-stage';
+        const svgWrap = document.createElement('div');
+        svgWrap.className = 'ce-fs-svgwrap';
+        svgWrap.appendChild(svg);
+        stage.appendChild(svgWrap);
+        stage.appendChild(toolbar);
+        bodyEl.appendChild(stage);
+        svg.classList.add('ce-fs-svg');
+        return () => {
+          fsHandle = null;
+          svg.classList.remove('ce-fs-svg');
+          try { svgHome.parent.insertBefore(svg, svgHome.next); } catch (e) { /* noop */ }
+          try { toolbarHome.parent.insertBefore(toolbar, toolbarHome.next); } catch (e) { /* noop */ }
+          renderToolbar();
+        };
+      },
+    });
+    renderToolbar();
   }
 
   function setEditing(on) {
@@ -892,6 +940,7 @@ export function attachChartEditor(cfg) {
     downloadPng,
     isDirty: () => Object.keys(store).length > 0,
     destroy() {
+      if (fsHandle) fsHandle.close(); // devuelve el <svg>/toolbar a casa antes de que el módulo limpie su contenedor
       clearTimeout(debTimer);
       closePanel();
       document.removeEventListener('pointerdown', onDocDown, true);

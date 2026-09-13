@@ -1,13 +1,38 @@
-// Modal de confirmación accesible, sin librería.
+// Modales accesibles, sin librería. Dos formas, la misma base de
+// accesibilidad para las dos (ver `trapFocus`):
 //   · role="dialog" + aria-modal="true" + aria-labelledby
 //   · el foco entra en el diálogo y queda ATRAPADO (Tab / Shift+Tab ciclan)
-//   · Escape o clic en el fondo cancelan
+//   · Escape o clic en el fondo cierran
 //   · al cerrar, el foco vuelve al elemento que lo tenía antes
 //
-// openConfirm({...}) -> Promise<boolean> (true = confirmado).
+// openConfirm({...}) -> Promise<boolean> (true = confirmado) — confirmar/cancelar.
+// openPanel({...}) -> { close() } — contenido interactivo persistente
+//   (el llamador monta DOM de verdad en el cuerpo, no un string; lo usa
+//   chartEditor.js para la vista a pantalla completa del editor de gráficos).
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** Atrapa el foco dentro de `dlg` (Tab/Shift+Tab ciclan, Escape llama a
+ *  `onEscape`) y devuelve la función a quitar de `document` al cerrar. */
+function trapFocus(dlg, onEscape) {
+  const focusables = () => Array.from(
+    dlg.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+  ).filter((el) => !el.disabled);
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); onEscape(); return; }
+    if (e.key === 'Tab') {
+      const f = focusables();
+      if (f.length === 0) { e.preventDefault(); return; }
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    }
+  }
+  document.addEventListener('keydown', onKey, true);
+  return () => document.removeEventListener('keydown', onKey, true);
 }
 
 /**
@@ -51,35 +76,86 @@ export function openConfirm(o = {}) {
     backdrop.appendChild(dlg);
     document.body.appendChild(backdrop);
 
-    const focusables = () => Array.from(
-      dlg.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
-    ).filter((el) => !el.disabled);
-
     function close(val) {
-      document.removeEventListener('keydown', onKey, true);
+      untrap();
       backdrop.remove();
       if (prevFocus && typeof prevFocus.focus === 'function') {
         try { prevFocus.focus(); } catch (e) { /* noop */ }
       }
       resolve(val);
     }
-    function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(false); return; }
-      if (e.key === 'Tab') {
-        const f = focusables();
-        if (f.length === 0) { e.preventDefault(); return; }
-        const first = f[0], last = f[f.length - 1];
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-        else if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
-      }
-    }
-
-    document.addEventListener('keydown', onKey, true);
+    const untrap = trapFocus(dlg, () => close(false));
     backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) close(false); });
     cancelBtn.addEventListener('click', () => close(false));
     okBtn.addEventListener('click', () => close(true));
 
     okBtn.focus();
   });
+}
+
+/**
+ * Modal para contenido interactivo PERSISTENTE (no un confirmar/cancelar de
+ * un solo uso): el llamador monta DOM de verdad en el cuerpo con
+ * `render(bodyEl)` — puede incluso mover ahí un nodo que ya existía en la
+ * página (no hace falta clonarlo). Si `render` devuelve una función, se
+ * llama al cerrar (para, por ejemplo, devolver ese nodo a su sitio
+ * original). Misma base de accesibilidad que openConfirm; se cierra con la
+ * × del título, con Escape o con clic en el fondo.
+ * @param {object} o
+ * @param {string} o.title
+ * @param {(bodyEl: HTMLElement) => (void|(() => void))} o.render
+ * @param {string} [o.extraClass] clase extra en `.ql-modal` (p. ej. un ancho mayor)
+ * @param {string} [o.closeLabel]
+ * @returns {{ close: () => void }}
+ */
+export function openPanel(o = {}) {
+  const prevFocus = document.activeElement;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'ql-modal-backdrop';
+
+  const dlg = document.createElement('div');
+  dlg.className = 'ql-modal ql-card ql-panel' + (o.extraClass ? ' ' + o.extraClass : '');
+  dlg.setAttribute('role', 'dialog');
+  dlg.setAttribute('aria-modal', 'true');
+  const titleId = 'ql-modal-t-' + Math.random().toString(36).slice(2, 9);
+  dlg.setAttribute('aria-labelledby', titleId);
+
+  const head = document.createElement('div');
+  head.className = 'ql-modal-panel-head';
+  const h2 = document.createElement('h2');
+  h2.id = titleId; h2.className = 'ql-modal-title'; h2.textContent = o.title || '';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button'; closeBtn.className = 'ql-modal-close';
+  closeBtn.setAttribute('aria-label', o.closeLabel || 'Cerrar');
+  closeBtn.innerHTML = '<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  head.append(h2, closeBtn);
+
+  const body = document.createElement('div');
+  body.className = 'ql-modal-body ql-modal-panel-body';
+
+  dlg.append(head, body);
+  backdrop.appendChild(dlg);
+  document.body.appendChild(backdrop);
+
+  let cleanup = null;
+  try { cleanup = o.render ? o.render(body) : null; } catch (e) { /* noop */ }
+
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    untrap();
+    if (typeof cleanup === 'function') { try { cleanup(); } catch (e) { /* noop */ } }
+    backdrop.remove();
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (e) { /* noop */ }
+    }
+  }
+  const untrap = trapFocus(dlg, close);
+  backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) close(); });
+  closeBtn.addEventListener('click', () => close());
+
+  closeBtn.focus();
+  return { close };
 }

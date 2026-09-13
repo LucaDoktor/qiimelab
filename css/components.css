@@ -350,6 +350,31 @@ svg.ql-brand-mark {
 .ql-modal-body p { margin: 0 0 8px; }
 .ql-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 
+/* ---------- modal "panel" (contenido interactivo persistente, p. ej. el
+   editor de gráficos a pantalla completa) ---------- */
+.ql-modal-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 10px;
+}
+.ql-modal-panel-head .ql-modal-title { margin-bottom: 0; }
+.ql-modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--ink-2); cursor: pointer;
+}
+.ql-modal-close:hover { background: var(--accent-soft); border-color: transparent; color: var(--ink); }
+.ql-modal-panel-body { min-height: 0; }
+.ql-modal.ql-modal-wide {
+  max-width: min(1400px, calc(100vw - 32px));
+  width: 100%;
+  max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+}
+.ql-modal.ql-modal-wide .ql-modal-panel-body {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+}
+
 /* ---------- enlace "saltar al contenido" ---------- */
 .ql-skip-link {
   position: absolute; left: 8px; top: 8px; z-index: 300;
