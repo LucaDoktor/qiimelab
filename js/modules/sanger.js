@@ -14,6 +14,7 @@ import { t, getLang } from '../lib/i18n.js';
 import { parseAb1 } from '../lib/ab1Parser.js';
 import { trimRead } from '../lib/sangerTrim.js';
 import { mergeReads, reverseComplement } from '../lib/sangerOverlap.js';
+import { listZipEntries, readZipEntry } from '../lib/minizip.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 
@@ -357,7 +358,43 @@ export function render(container) {
     samples.get(id)[direction] = read;
   }
 
+  /** Expande cualquier .zip de la lista a sus .ab1/.fastq/.fq/.fasta/.fa
+   *  internos (envueltos como pseudo-File con .name/.arrayBuffer()/.text());
+   *  el resto de archivos pasa tal cual. */
+  async function expandZips(fileList) {
+    const out = [];
+    for (const file of fileList) {
+      if (!/\.zip$/i.test(file.name)) { out.push(file); continue; }
+      try {
+        const buf = await file.arrayBuffer();
+        const entries = listZipEntries(buf).filter((e) => (
+          /\.(ab1|fastq|fq|fasta|fa)$/i.test(e.name)
+          && !e.name.endsWith('/')
+          && !/(^|\/)__MACOSX\//.test(e.name)
+          && !/(^|\/)\./.test(e.name.split('/').pop())
+        ));
+        if (!entries.length) {
+          pending.push({ fileKey: 'err' + (nextPendingKey++), error: t('sanger.errZipEmpty', { name: file.name }), fileName: file.name });
+          continue;
+        }
+        for (const entry of entries) {
+          const bytes = await readZipEntry(buf, entry);
+          const shortName = entry.name.split('/').pop();
+          out.push({
+            name: shortName,
+            arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+            text: async () => new TextDecoder('utf-8').decode(bytes),
+          });
+        }
+      } catch (err) {
+        pending.push({ fileKey: 'err' + (nextPendingKey++), error: (err && err.message) || String(err), fileName: file.name });
+      }
+    }
+    return out;
+  }
+
   async function handleFiles(fileList) {
+    fileList = await expandZips(fileList);
     const fwdKw = splitKeywords(s.fwdKeywords), revKw = splitKeywords(s.revKeywords);
     for (const file of fileList) {
       let read;
@@ -438,7 +475,7 @@ export function render(container) {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.ab1,.fastq,.fq,.fasta,.fa';
+    input.accept = '.ab1,.fastq,.fq,.fasta,.fa,.zip';
     dz.appendChild(input);
     input.addEventListener('change', () => { if (input.files.length) handleFiles([...input.files]); input.value = ''; });
     dz.addEventListener('click', (e) => { if (e.target !== input) input.click(); });

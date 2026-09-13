@@ -130,8 +130,10 @@ export function renderShell(container, currentRoute) {
   container.innerHTML = '';
   container.setAttribute('aria-label', t('shell.nav'));
 
-  const brand = document.createElement('div');
+  const brand = document.createElement('a');
   brand.className = 'ql-brand';
+  brand.href = '#/';
+  brand.title = t('nav.home');
   brand.innerHTML = BRAND_MARK + '<span class="ql-brand-name">QiimeLab</span>';
   container.appendChild(brand);
 
