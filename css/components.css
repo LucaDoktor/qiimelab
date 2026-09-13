@@ -833,6 +833,11 @@ svg.ql-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .ql-gridline { stroke: var(--gridline); stroke-width: 1; }
 .ql-baseline-line { stroke: var(--baseline); stroke-width: 1.25; }
 .ql-threshold-line { stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.9; }
+/* Árbol filogenético: punto en la punta de cada hoja (antes de la guía de
+   puntos hasta la etiqueta) + etiqueta con algo más de presencia que un
+   tick de eje genérico — mismo tono de accento que el resto de la app. */
+.ql-phylo-leafdot { fill: var(--accent); stroke: none; }
+.ql-phylo-leaflabel { fill: var(--ink); font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
 
 /* ---------- tablas ---------- */
 .ql-table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }

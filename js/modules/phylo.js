@@ -18,7 +18,7 @@ import { t, getLang } from '../lib/i18n.js';
 import { parseFasta } from '../lib/primerTemplate.js';
 import { needlemanWunsch, buildProgressiveAlignment } from '../lib/phyloAlign.js';
 import { pDistance, buildDistanceMatrix } from '../lib/phyloDistance.js';
-import { neighborJoining, toNewick, collectLeaves, computeDrawDepths } from '../lib/neighborJoining.js';
+import { neighborJoining, toNewick, collectLeaves, computeDrawDepths, nniRefine, midpointRoot } from '../lib/neighborJoining.js';
 import { upgma } from '../lib/stats.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 
@@ -41,7 +41,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect' }; }
+function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none' }; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -50,6 +50,8 @@ function load() {
         fastaText: raw.fastaText,
         correction: raw.correction === 'jc' ? 'jc' : 'p',
         layout: raw.layout === 'circular' ? 'circular' : 'rect',
+        nni: !!raw.nni,
+        rooting: raw.rooting === 'midpoint' ? 'midpoint' : 'none',
       };
     }
   } catch (e) { /* localStorage puede fallar */ }
@@ -122,9 +124,9 @@ function drawCladogramRect(svg, tree) {
   const leaves = collectLeaves(tree);
   const nLeaves = leaves.length;
   const { depths, maxDepth } = computeDrawDepths(tree);
-  const rowH = 20;
+  const rowH = 22;
   const marginL = 16, marginR = 190, marginT = 26, marginB = 40;
-  const plotW = 380;
+  const plotW = 480;
   const H = marginT + nLeaves * rowH + marginB;
   const W = marginL + plotW + marginR;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
@@ -163,7 +165,8 @@ function drawCladogramRect(svg, tree) {
     } else {
       const py = yOf(node);
       if (rightX - px > 2) linesG.appendChild(svgEl('line', { x1: px, y1: py, x2: rightX, y2: py, class: 'ql-threshold-line' }));
-      const lab = svgEl('text', { x: rightX + 6, y: py + 4, class: 'ql-tick-label' });
+      linesG.appendChild(svgEl('circle', { cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot' }));
+      const lab = svgEl('text', { x: rightX + 6, y: py + 4, class: 'ql-phylo-leaflabel' });
       lab.textContent = node.label;
       labelsG.appendChild(lab);
     }
@@ -200,8 +203,8 @@ function drawCladogramCircular(svg, tree) {
   const leaves = collectLeaves(tree);
   const n = leaves.length;
   const { depths, maxDepth } = computeDrawDepths(tree);
-  // radio mínimo por hoja ~ misma densidad que rowH=20 del rectangular
-  const plotR = Math.max(140, (n * 20) / (2 * Math.PI));
+  // radio mínimo por hoja ~ misma densidad que rowH=22 del rectangular
+  const plotR = Math.max(160, (n * 22) / (2 * Math.PI));
   const marginLabels = 170;
   const cx = plotR + marginLabels, cy = plotR + marginLabels;
   const W = 2 * (plotR + marginLabels), H = W;
@@ -252,11 +255,12 @@ function drawCladogramCircular(svg, tree) {
       const a = angleOf(node);
       const pLeaf = point(a, r), pOuter = point(a, plotR);
       if (plotR - r > 2) linesG.appendChild(svgEl('line', { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line' }));
+      linesG.appendChild(svgEl('circle', { cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot' }));
       const pLab = point(a, plotR + 6);
       const angleDeg = (a * 180) / Math.PI;
       const flip = angleDeg > 180;
       const lab = svgEl('text', {
-        x: pLab.x, y: pLab.y, class: 'ql-tick-label',
+        x: pLab.x, y: pLab.y, class: 'ql-phylo-leaflabel',
         'text-anchor': flip ? 'end' : 'start',
         'dominant-baseline': 'middle',
         transform: 'rotate(' + (angleDeg - 90 + (flip ? 180 : 0)) + ' ' + pLab.x + ' ' + pLab.y + ')',
@@ -549,6 +553,36 @@ export function render(container) {
     corrField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.correctionHelp') + '</p>');
     ctrl.appendChild(corrField);
 
+    const rootField = document.createElement('div');
+    rootField.className = 'ql-field';
+    rootField.innerHTML = '<label>' + t('phylo.rootingLabel') + '</label>';
+    const rootSeg = document.createElement('div');
+    rootSeg.className = 'ql-segmented';
+    [['none', t('phylo.rootingNone')], ['midpoint', t('phylo.rootingMidpoint')]].forEach(([v, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (s.rooting === v ? ' is-on' : '');
+      b.textContent = lbl;
+      b.addEventListener('click', () => { if (s.rooting !== v) { s.rooting = v; paint(); } });
+      rootSeg.appendChild(b);
+    });
+    rootField.appendChild(rootSeg);
+    rootField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.rootingHelp') + '</p>');
+    ctrl.appendChild(rootField);
+
+    const nniField = document.createElement('div');
+    nniField.className = 'ql-field';
+    const nniRow = document.createElement('label');
+    nniRow.className = 'ql-checkrow';
+    const nniCb = document.createElement('input');
+    nniCb.type = 'checkbox'; nniCb.checked = s.nni;
+    nniCb.addEventListener('change', () => { s.nni = nniCb.checked; paint(); });
+    nniRow.appendChild(nniCb);
+    nniRow.appendChild(document.createTextNode(' ' + t('phylo.nniLabel')));
+    nniField.appendChild(nniRow);
+    nniField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.nniHelp') + '</p>');
+    ctrl.appendChild(nniField);
+
     const statsBox = document.createElement('div');
     statsBox.className = 'ql-stats';
     statsBox.innerHTML = '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statSeqs') + '</div><div class="ql-stat-value" style="font-size:20px;">' + records.length + '</div></div>';
@@ -564,13 +598,25 @@ export function render(container) {
     if (alignCache && alignCache.key === key) {
       const alignedOrdered = alignCache.alignedOrdered;
       const { matrix, saturated } = buildDistanceMatrix(alignedOrdered, { correction: s.correction });
-      const tree = neighborJoining(matrix, records.map((r) => r.name));
+      let tree = neighborJoining(matrix, records.map((r) => r.name));
+      let nniInfo = null;
+      if (s.nni) { const res = nniRefine(tree, matrix, {}); tree = res.root; nniInfo = res; }
+      let rootInfo = null;
+      if (s.rooting === 'midpoint') { const res = midpointRoot(tree); tree = res.root; rootInfo = res; }
 
       statsBox.insertAdjacentHTML('beforeend',
         '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statWidth') + '</div><div class="ql-stat-value" style="font-size:20px;">' + alignedOrdered[0].length + '</div></div>');
       if (s.correction === 'jc' && saturated.length > 0) {
         statsBox.insertAdjacentHTML('beforeend',
           '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statSaturated') + '</div><div class="ql-stat-value" style="font-size:20px;color:var(--warning);">' + saturated.length + '</div></div>');
+      }
+      if (nniInfo) {
+        statsBox.insertAdjacentHTML('beforeend',
+          '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statNniSwaps') + '</div><div class="ql-stat-value" style="font-size:20px;">' + nniInfo.swaps + '</div></div>');
+      }
+      if (rootInfo) {
+        statsBox.insertAdjacentHTML('beforeend',
+          '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statDiameter') + '</div><div class="ql-stat-value" style="font-size:20px;">' + rootInfo.diameter.toFixed(3) + '</div></div>');
       }
 
       const isCircular = s.layout === 'circular';

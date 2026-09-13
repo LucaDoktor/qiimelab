@@ -109,6 +109,182 @@ export function collectLeaves(node, out) {
   return out;
 }
 
+function leafIdsUnder(node) { return collectLeaves(node, []).map((l) => l.id); }
+
+function avgDist(distMatrix, idsA, idsB) {
+  let sum = 0, n = 0;
+  for (const i of idsA) for (const j of idsB) { sum += distMatrix[i][j]; n++; }
+  return n ? sum / n : 0;
+}
+
+/**
+ * Longitudes de rama "de 4 puntos" para una topología con X,Y a un lado de
+ * la rama interna y Z,W al otro (fórmula aditiva estándar, la misma familia
+ * que la reestimación de longitudes al fusionar dos clústeres en NJ — aquí
+ * para 4 clústeres en vez de 2). `e` es la rama interna (entre los dos
+ * lados); lenX/lenY/lenZ/lenW las 4 ramas "pendientes" hacia cada clúster.
+ */
+function fourPointBranchLengths(distMatrix, X, Y, Z, W) {
+  const dXY = avgDist(distMatrix, X, Y), dZW = avgDist(distMatrix, Z, W);
+  const dXZ = avgDist(distMatrix, X, Z), dYW = avgDist(distMatrix, Y, W);
+  const dXW = avgDist(distMatrix, X, W), dYZ = avgDist(distMatrix, Y, Z);
+  const e = ((dXZ + dYW) + (dXW + dYZ) - 2 * (dXY + dZW)) / 4;
+  return {
+    e,
+    lenX: (dXZ + dXW - dZW) / 2 - e,
+    lenY: (dYZ + dYW - dZW) / 2 - e,
+    lenZ: (dXZ + dYZ - dXY) / 2 - e,
+    lenW: (dXW + dYW - dXY) / 2 - e,
+  };
+}
+
+/**
+ * NNI (Nearest-Neighbor Interchange) de refinamiento tras Neighbor-Joining,
+ * por el criterio de "evolución mínima": para cada rama INTERNA (entre dos
+ * nodos que no son hojas), hay 3 formas de repartir los 4 subárboles vecinos
+ * en dos grupos de dos — la actual y otras dos. Con una propiedad conocida
+ * de los árboles aditivos, la longitud TOTAL del árbol para cada reparto es
+ * (S + 2·P) / 4, donde P es la suma de las dos distancias del reparto
+ * (promedio entre hojas de cada clúster, sobre la matriz de distancias
+ * original) y S la suma de las otras 4 — así que minimizar la longitud
+ * total equivale a minimizar P. Si un reparto distinto del actual da una P
+ * menor, se aplica ese intercambio (y se recalculan las 5 ramas locales con
+ * la misma fórmula de 4 puntos) y se repite hasta que ninguna rama interna
+ * mejore, o se llegue al tope de pasadas.
+ *
+ * Es un refinamiento LOCAL, no una búsqueda de máxima verosimilitud ni un
+ * reajuste global de todas las longitudes de rama: la rama de entrada de un
+ * nodo (hacia su propio padre) no se toca al evaluar sus ramas internas
+ * salientes — es justo el "lado B" implícito en la fórmula, no hace falta
+ * un nodo concreto para él, así que nunca se reescribe directamente. Por
+ * eso mismo, el criterio de P (basado en distancias MEDIAS, no en las
+ * longitudes de rama reales que ya hay) es una guía muy buena pero no
+ * perfecta en datos ruidosos/no aditivos — así que al final se comprueba la
+ * longitud total REAL antes y después de todas las pasadas; si por lo que
+ * sea saliera peor, se descartan todos los cambios y se devuelve el árbol
+ * de entrada tal cual (con swaps:0) en vez de arriesgarse a empeorarlo.
+ *
+ * Trabaja sobre una COPIA del árbol (nunca muta el que se le pasa): así, si
+ * al final hay que descartar los cambios, basta con devolver el original.
+ * @param {object} root
+ * @param {number[][]} distMatrix
+ * @param {{ maxPasses?: number, eps?: number }} [opts]
+ * @returns {{ root: object, swaps: number, passes: number }}
+ */
+function cloneTree(node) {
+  return { id: node.id, label: node.label, children: node.children.map((c) => ({ node: cloneTree(c.node), length: c.length })) };
+}
+function totalLength(node) {
+  let sum = 0;
+  for (const { node: child, length } of node.children) { sum += length; sum += totalLength(child); }
+  return sum;
+}
+export function nniRefine(originalRoot, distMatrix, opts = {}) {
+  const maxPasses = opts.maxPasses ?? 50;
+  const eps = opts.eps ?? 1e-9;
+  const root = cloneTree(originalRoot);
+  const allIds = leafIdsUnder(root);
+
+  function swapAt(U, V) {
+    const others = U.children.filter((c) => c.node !== V);
+    const Aentry = others[0];
+    const Bentry = others.length === 2 ? others[1] : null;
+    const Aids = leafIdsUnder(Aentry.node);
+    const Bids = Bentry ? leafIdsUnder(Bentry.node) : (() => {
+      const used = new Set([...Aids, ...leafIdsUnder(V)]);
+      return allIds.filter((x) => !used.has(x));
+    })();
+    const vEntry = U.children.find((c) => c.node === V);
+    const vIdx = U.children.indexOf(vEntry);
+    const [Centry, Dentry] = V.children;
+    const Cids = leafIdsUnder(Centry.node), Dids = leafIdsUnder(Dentry.node);
+    const aIdx = U.children.indexOf(Aentry);
+
+    // Las 3 reparticiones posibles de los 4 clústeres, por el criterio de
+    // "evolución mínima" (ver comentario de nniRefine): P = suma de las dos
+    // distancias MEDIAS del reparto — la que tenga P menor tiene la longitud
+    // total menor. No hace falta el término del lado B virtual aquí: al ser
+    // el mismo en los tres repartos (su arista no cambia de sitio, tal como
+    // se explica más abajo), no afecta a CUÁL es menor.
+    const P = {
+      false: avgDist(distMatrix, Aids, Bids) + avgDist(distMatrix, Cids, Dids), // sin cambios: {A,B}|{C,D}
+      AC: avgDist(distMatrix, Bids, Cids) + avgDist(distMatrix, Aids, Dids), // -> {B,C}|{A,D}
+      AD: avgDist(distMatrix, Bids, Dids) + avgDist(distMatrix, Aids, Cids), // -> {B,D}|{A,C}
+    };
+    const candidates = [
+      { key: false, swapped: false, uSide: ['A', 'B'], vSide: ['C', 'D'] },
+      { key: 'AC', swapped: true, uSide: ['B', 'C'], vSide: ['A', 'D'] },
+      { key: 'AD', swapped: true, uSide: ['B', 'D'], vSide: ['A', 'C'] },
+    ];
+    const winner = candidates.reduce((best, c) => (P[c.key] < P[best.key] ? c : best));
+    if (!(P[winner.key] < P[false] - eps)) return false; // ningún reparto distinto mejora de verdad: no se toca nada
+
+    // Se reajustan las 5 longitudes locales a la topología ganadora SIEMPRE
+    // (incluso si formalmente "gana" la actual, lo que aquí ya no puede
+    // pasar porque el `if` de arriba corta antes) para que el árbol quede
+    // consistente con el mismo criterio en toda su extensión.
+    const { e, lenX, lenY, lenZ, lenW } = winner.key === false
+      ? fourPointBranchLengths(distMatrix, Aids, Bids, Cids, Dids)
+      : winner.key === 'AC'
+        ? fourPointBranchLengths(distMatrix, Bids, Cids, Aids, Dids)
+        : fourPointBranchLengths(distMatrix, Bids, Dids, Aids, Cids);
+    const lenOf = { [winner.uSide[0]]: lenX, [winner.uSide[1]]: lenY, [winner.vSide[0]]: lenZ, [winner.vSide[1]]: lenW };
+    winner.lenOf = lenOf; winner.e = e;
+
+    // B nunca aparece en `vSide` en ninguno de los 3 repartos (el lado que
+    // queda "hacia el padre de U" no puede pasar a ser hijo de V) — así que
+    // solo hace falta colocar sitio a sitio los miembros CONCRETOS de
+    // `uSide`: si B es virtual, uSide trae un único concreto (va al hueco
+    // de A); si B es un hijo real (U es la raíz), trae dos, uno para cada
+    // hueco. B en sí nunca se coloca en ningún sitio — sigue "donde estaba"
+    // (vía el padre de U), tal cual explica el comentario de más arriba.
+    const nodeOf = { A: Aentry.node, B: Bentry ? Bentry.node : null, C: Centry.node, D: Dentry.node };
+    const uConcreteSlots = [aIdx, ...(Bentry ? [U.children.indexOf(Bentry)] : [])];
+    const uConcreteLabels = winner.uSide.filter((label) => label !== 'B' || Bentry);
+    uConcreteSlots.forEach((slot, i) => {
+      const label = uConcreteLabels[i];
+      U.children[slot] = { node: nodeOf[label], length: winner.lenOf[label] };
+    });
+    U.children[vIdx] = { node: V, length: winner.e };
+    V.children = [
+      { node: nodeOf[winner.vSide[0]], length: winner.lenOf[winner.vSide[0]] },
+      { node: nodeOf[winner.vSide[1]], length: winner.lenOf[winner.vSide[1]] },
+    ];
+    return winner.swapped;
+  }
+
+  // Lista de todas las ramas internas (parejas padre-hijo con el hijo no
+  // hoja) tal como están AL EMPEZAR la pasada. Un intercambio en una rama
+  // mueve nodos de sitio, así que antes de aplicar cada uno se comprueba
+  // que la pareja siga siendo una rama real del árbol EN ESE MOMENTO — si
+  // ya no lo es (un intercambio anterior en esta misma pasada movió alguno
+  // de los dos), se salta en vez de mutar con referencias obsoletas.
+  function collectInternalEdges(node, out) {
+    out = out || [];
+    for (const { node: child } of node.children) {
+      if (child.children.length) { out.push([node, child]); collectInternalEdges(child, out); }
+    }
+    return out;
+  }
+
+  let swaps = 0, passes = 0;
+  for (; passes < maxPasses; passes++) {
+    const edges = collectInternalEdges(root);
+    let didThisPass = false;
+    for (const [U, V] of edges) {
+      if (!U.children.some((c) => c.node === V)) continue; // ya no es una rama real (movida antes en esta pasada)
+      if (swapAt(U, V)) { swaps++; didThisPass = true; }
+    }
+    if (!didThisPass) break;
+  }
+
+  // salvaguarda final: el criterio de P (distancias medias) es una guía, no
+  // una garantía exacta fuera de árboles perfectamente aditivos — si el
+  // resultado real saliera peor que el original, se descarta entero.
+  if (totalLength(root) > totalLength(originalRoot) + eps) return { root: originalRoot, swaps: 0, passes: 0 };
+  return { root, swaps, passes };
+}
+
 /**
  * Profundidad acumulada (suma de longitudes de rama desde la raíz) de cada
  * nodo. Las longitudes negativas (artefacto conocido de NJ con datos
@@ -131,6 +307,109 @@ export function computeDrawDepths(root) {
   }
   recurse(root, 0);
   return { depths, clipped, maxDepth };
+}
+
+function buildEdges(root) {
+  const edges = []; // {a,b,length} — no dirigidas
+  const nodesById = new Map();
+  function record(node) {
+    nodesById.set(node.id, node);
+    for (const { node: child, length } of node.children) {
+      edges.push({ a: node.id, b: child.id, length });
+      record(child);
+    }
+  }
+  record(root);
+  return { edges, nodesById };
+}
+
+function buildAdjacency(edges) {
+  const adj = new Map();
+  const add = (u, v, length) => { if (!adj.has(u)) adj.set(u, []); adj.get(u).push({ to: v, length }); };
+  edges.forEach(({ a, b, length }) => { add(a, b, length); add(b, a, length); });
+  return adj;
+}
+
+/** Distancias (suma de longitudes de rama) desde `startId` a todos los
+ *  demás nodos alcanzables, más el nodo "padre" de cada uno en ese
+ *  recorrido — un árbol solo tiene un camino entre cada par, así que un
+ *  recorrido simple (sin Dijkstra) ya da la distancia correcta. */
+function pathDistancesFrom(startId, adj) {
+  const dist = new Map([[startId, 0]]);
+  const parent = new Map([[startId, null]]);
+  const stack = [startId];
+  while (stack.length) {
+    const u = stack.pop();
+    for (const { to, length } of adj.get(u) || []) {
+      if (!dist.has(to)) { dist.set(to, dist.get(u) + length); parent.set(to, u); stack.push(to); }
+    }
+  }
+  return { dist, parent };
+}
+
+/**
+ * Reenraiza el árbol en su PUNTO MEDIO: el punto (posiblemente a mitad de
+ * una rama, no necesariamente en un nodo existente) equidistante de las dos
+ * hojas más separadas del árbol (su "diámetro") — el criterio estándar
+ * cuando no se tiene o no se quiere elegir un outgroup a mano.
+ *
+ * Doble barrido (algoritmo estándar del diámetro de un árbol): desde una
+ * hoja cualquiera, la hoja más lejana es un extremo del diámetro; desde esa,
+ * la más lejana es el otro extremo. El punto medio de ese camino pasa a ser
+ * la nueva raíz (con 2 hijos, a diferencia de la trifurcación sin raíz que
+ * da Neighbor-Joining) — se reconstruye el árbol entero a partir de la
+ * lista de aristas no dirigidas, sin mutar el original.
+ * @param {object} root
+ * @returns {{ root: object, diameter: number }}
+ */
+export function midpointRoot(root) {
+  const { edges, nodesById } = buildEdges(root);
+  const leaves = leafIdsUnder(root);
+  if (leaves.length < 2) return { root, diameter: 0 };
+  const adj = buildAdjacency(edges);
+
+  const { dist: d0 } = pathDistancesFrom(leaves[0], adj);
+  let P = leaves[0], bestD = -1;
+  for (const id of leaves) if (d0.get(id) > bestD) { bestD = d0.get(id); P = id; }
+  const { dist: d1, parent: parentFromP } = pathDistancesFrom(P, adj);
+  let Q = P; bestD = -1;
+  for (const id of leaves) if (d1.get(id) > bestD) { bestD = d1.get(id); Q = id; }
+  const diameter = d1.get(Q);
+
+  const path = [];
+  for (let u = Q; u !== null; u = parentFromP.get(u)) path.push(u);
+  path.reverse(); // path[0] = P … path[last] = Q
+
+  const half = diameter / 2;
+  let acc = 0, edgeA = null, edgeB = null, edgeLen = 0, into = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1];
+    const len = adj.get(a).find((e) => e.to === b).length;
+    if (acc + len >= half - 1e-9) { edgeA = a; edgeB = b; edgeLen = len; into = half - acc; break; }
+    acc += len;
+  }
+  if (edgeA == null) { // por redondeo, el propio Q
+    edgeA = path[path.length - 2]; edgeB = path[path.length - 1];
+    edgeLen = adj.get(edgeA).find((e) => e.to === edgeB).length; into = edgeLen;
+  }
+  into = Math.max(0, Math.min(edgeLen, into));
+
+  const midId = Math.max(...nodesById.keys()) + 1;
+  const newEdges = edges.filter((e) => !((e.a === edgeA && e.b === edgeB) || (e.a === edgeB && e.b === edgeA)));
+  newEdges.push({ a: edgeA, b: midId, length: into });
+  newEdges.push({ a: midId, b: edgeB, length: edgeLen - into });
+  const newAdj = buildAdjacency(newEdges);
+
+  function dfs(id, cameFrom) {
+    const orig = nodesById.get(id);
+    const node = { id, label: orig ? orig.label : null, children: [] };
+    for (const { to, length } of newAdj.get(id) || []) {
+      if (to === cameFrom) continue;
+      node.children.push({ node: dfs(to, id), length });
+    }
+    return node;
+  }
+  return { root: dfs(midId, null), diameter };
 }
 
 function escapeNewickLabel(label) {
