@@ -21,6 +21,9 @@ import { pDistance, buildDistanceMatrix } from '../lib/phyloDistance.js';
 import { neighborJoining, toNewick, collectLeaves, computeDrawDepths, nniRefine, midpointRoot } from '../lib/neighborJoining.js';
 import { upgma } from '../lib/stats.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { getSlot, subscribe } from '../state.js';
+import { CATEGORICAL } from '../lib/palettes.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
 
 const STORE_KEY = 'qiimelab.phylo';
 const EXAMPLE_URL = 'datos-ejemplo/phylo/secuencias_ejemplo.fasta';
@@ -41,7 +44,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none' }; }
+function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none', colorCol: '' }; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -52,10 +55,44 @@ function load() {
         layout: raw.layout === 'circular' ? 'circular' : 'rect',
         nni: !!raw.nni,
         rooting: raw.rooting === 'midpoint' ? 'midpoint' : 'none',
+        colorCol: typeof raw.colorCol === 'string' ? raw.colorCol : '',
       };
     }
   } catch (e) { /* localStorage puede fallar */ }
   return defaultState();
+}
+
+function createMetadataResolver(meta, groupCol) {
+  if (!meta || !Array.isArray(meta.rows) || !groupCol) return null;
+  const idKey = meta.sampleIdKey || (meta.headers && meta.headers[0]);
+  if (!idKey) return null;
+  const metaWithKey = meta.sampleIdKey ? meta : { ...meta, sampleIdKey: idKey };
+  const standardResolver = makeGroupResolver(metaWithKey, groupCol);
+
+  const lowerMap = new Map();
+  meta.rows.forEach((r) => {
+    const id = String(r[idKey] ?? '').trim();
+    const val = String(r[groupCol] ?? '').trim();
+    if (id && val) lowerMap.set(id.toLowerCase(), val);
+  });
+
+  return (leafLabel) => {
+    if (!leafLabel) return null;
+    const direct = standardResolver(leafLabel);
+    if (direct != null) return direct;
+
+    const cleanLabel = leafLabel.split(';')[0].trim();
+    if (cleanLabel && cleanLabel !== leafLabel) {
+      const fromClean = standardResolver(cleanLabel);
+      if (fromClean != null) return fromClean;
+    }
+
+    const lower = leafLabel.toLowerCase();
+    if (lowerMap.has(lower)) return lowerMap.get(lower);
+    if (cleanLabel && lowerMap.has(cleanLabel.toLowerCase())) return lowerMap.get(cleanLabel.toLowerCase());
+
+    return null;
+  };
 }
 function save(s) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) { /* noop */ }
@@ -120,13 +157,19 @@ function niceScaleValue(maxDepth) {
 
 /** Cladograma rectangular: x = distancia acumulada desde la raíz, y = orden
  *  de hojas (los internos, en el punto medio de sus hijos). */
-function drawCladogramRect(svg, tree) {
+function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCategories = [], categoryColorMap = new Map(), colorCol = '', resolveCat = () => null } = {}) {
   const leaves = collectLeaves(tree);
   const nLeaves = leaves.length;
   const { depths, maxDepth } = computeDrawDepths(tree);
   const rowH = 22;
-  const marginL = 16, marginR = 190, marginT = 26, marginB = 40;
+  const marginL = 16, marginR = 190, marginT = 26;
   const plotW = 480;
+
+  const perRow = Math.max(1, Math.floor(plotW / 140));
+  const legRows = matchedCategories.length > 0 ? Math.ceil(matchedCategories.length / perRow) : 0;
+  const legendH = matchedCategories.length > 0 ? (24 + legRows * 18 + 8) : 0;
+  const marginB = 40 + legendH;
+
   const H = marginT + nLeaves * rowH + marginB;
   const W = marginL + plotW + marginR;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
@@ -159,14 +202,43 @@ function drawCladogramRect(svg, tree) {
       linesG.appendChild(svgEl('line', { x1: px, y1: Math.min(...childYs), x2: px, y2: Math.max(...childYs), class: 'ql-baseline-line' }));
       node.children.forEach((ch) => {
         const cy = yOf(ch.node);
-        linesG.appendChild(svgEl('line', { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line' }));
+        const isLeaf = !ch.node.children.length;
+        const leafColor = isLeaf ? colorForLeaf(ch.node.label) : null;
+        const lineAttrs = { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line' };
+        if (leafColor) {
+          lineAttrs.stroke = leafColor;
+          lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
+        }
+        linesG.appendChild(svgEl('line', lineAttrs));
         drawNode(ch.node);
       });
     } else {
       const py = yOf(node);
-      if (rightX - px > 2) linesG.appendChild(svgEl('line', { x1: px, y1: py, x2: rightX, y2: py, class: 'ql-threshold-line' }));
-      linesG.appendChild(svgEl('circle', { cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot' }));
-      const lab = svgEl('text', { x: rightX + 6, y: py + 4, class: 'ql-phylo-leaflabel' });
+      const leafColor = colorForLeaf(node.label);
+
+      if (rightX - px > 2) {
+        const guideAttrs = { x1: px, y1: py, x2: rightX, y2: py, class: 'ql-threshold-line' };
+        if (leafColor) {
+          guideAttrs.stroke = leafColor;
+          guideAttrs.style = 'stroke:' + leafColor + ';opacity:0.75;';
+        }
+        linesG.appendChild(svgEl('line', guideAttrs));
+      }
+
+      const dotAttrs = { cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot' };
+      if (leafColor) {
+        dotAttrs.fill = leafColor;
+        dotAttrs.stroke = leafColor;
+        dotAttrs.style = 'fill:' + leafColor + ';stroke:' + leafColor + ';';
+      }
+      linesG.appendChild(svgEl('circle', dotAttrs));
+
+      const labAttrs = { x: rightX + 6, y: py + 4, class: 'ql-phylo-leaflabel' };
+      if (leafColor) {
+        labAttrs.fill = leafColor;
+        labAttrs.style = 'fill:' + leafColor + ';';
+      }
+      const lab = svgEl('text', labAttrs);
       lab.textContent = node.label;
       labelsG.appendChild(lab);
     }
@@ -180,7 +252,7 @@ function drawCladogramRect(svg, tree) {
   // barra de escala
   const scaleVal = niceScaleValue(maxDepth);
   if (scaleVal > 0) {
-    const x0 = marginL, y0 = H - 14, w = scaleVal * xScale;
+    const x0 = marginL, y0 = H - 14 - legendH, w = scaleVal * xScale;
     const g = svgEl('g', {});
     g.appendChild(svgEl('line', { x1: x0, y1: y0, x2: x0 + w, y2: y0, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0, y1: y0 - 4, x2: x0, y2: y0 + 4, class: 'ql-baseline-line' }));
@@ -189,6 +261,55 @@ function drawCladogramRect(svg, tree) {
     lab.textContent = scaleVal + ' (' + t('phylo.scaleCaption') + ')';
     g.appendChild(lab);
     svg.appendChild(g);
+  }
+
+  // Leyenda en SVG (recuadro)
+  if (matchedCategories.length > 0) {
+    const legG = svgEl('g', { 'data-ce': 'legend', class: 'ql-legend' });
+    const legBoxX = marginL;
+    const legBoxY = H - legendH + 6;
+    const legBoxW = plotW;
+    const legBoxH = legendH - 12;
+
+    const bgRect = svgEl('rect', {
+      x: legBoxX, y: legBoxY, width: legBoxW, height: legBoxH,
+      rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)',
+      'stroke-width': 1, class: 'ql-legend-box',
+    });
+    legG.appendChild(bgRect);
+
+    const titleText = svgEl('text', {
+      x: legBoxX + 10, y: legBoxY + 16,
+      class: 'ql-tick-label',
+      style: 'font-weight:600;fill:var(--ink);font-size:11.5px;',
+    });
+    titleText.textContent = (colorCol || t('phylo.legendTitle')) + ':';
+    legG.appendChild(titleText);
+
+    const colW = Math.max(120, Math.floor((legBoxW - 20) / perRow));
+    matchedCategories.forEach((cat, i) => {
+      const col = i % perRow;
+      const rw = Math.floor(i / perRow);
+      const xx = legBoxX + 10 + col * colW;
+      const yy = legBoxY + 34 + rw * 18;
+      const c = categoryColorMap.get(cat);
+
+      legG.appendChild(svgEl('rect', {
+        x: xx, y: yy - 9, width: 10, height: 10, rx: 2,
+        fill: c, style: 'fill:' + c + ';',
+        'data-ce-series-fill': 's' + i,
+      }));
+
+      const lt = svgEl('text', {
+        x: xx + 15, y: yy,
+        class: 'ql-tick-label',
+        style: 'fill:var(--ink-2);font-size:11.5px;',
+      });
+      lt.textContent = cat.length > 18 ? cat.slice(0, 17) + '…' : cat;
+      legG.appendChild(lt);
+    });
+
+    svg.appendChild(legG);
   }
 }
 
@@ -199,7 +320,7 @@ function drawCladogramRect(svg, tree) {
  *  que collectLeaves, así que los hijos de un nodo caen siempre en un arco
  *  contiguo, sin envolver el punto 0°/360°); los internos van al ángulo
  *  medio de sus hijos, igual que en el rectangular. */
-function drawCladogramCircular(svg, tree) {
+function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCategories = [], categoryColorMap = new Map(), colorCol = '', resolveCat = () => null } = {}) {
   const leaves = collectLeaves(tree);
   const n = leaves.length;
   const { depths, maxDepth } = computeDrawDepths(tree);
@@ -248,23 +369,52 @@ function drawCladogramCircular(svg, tree) {
       node.children.forEach((ch) => {
         const a = angleOf(ch.node);
         const pIn = point(a, r), pOut = point(a, rOf(ch.node.id));
-        linesG.appendChild(svgEl('line', { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line' }));
+        const isLeaf = !ch.node.children.length;
+        const leafColor = isLeaf ? colorForLeaf(ch.node.label) : null;
+        const lineAttrs = { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line' };
+        if (leafColor) {
+          lineAttrs.stroke = leafColor;
+          lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
+        }
+        linesG.appendChild(svgEl('line', lineAttrs));
         drawNode(ch.node);
       });
     } else {
       const a = angleOf(node);
       const pLeaf = point(a, r), pOuter = point(a, plotR);
-      if (plotR - r > 2) linesG.appendChild(svgEl('line', { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line' }));
-      linesG.appendChild(svgEl('circle', { cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot' }));
+      const leafColor = colorForLeaf(node.label);
+
+      if (plotR - r > 2) {
+        const guideAttrs = { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line' };
+        if (leafColor) {
+          guideAttrs.stroke = leafColor;
+          guideAttrs.style = 'stroke:' + leafColor + ';opacity:0.75;';
+        }
+        linesG.appendChild(svgEl('line', guideAttrs));
+      }
+
+      const dotAttrs = { cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot' };
+      if (leafColor) {
+        dotAttrs.fill = leafColor;
+        dotAttrs.stroke = leafColor;
+        dotAttrs.style = 'fill:' + leafColor + ';stroke:' + leafColor + ';';
+      }
+      linesG.appendChild(svgEl('circle', dotAttrs));
+
       const pLab = point(a, plotR + 6);
       const angleDeg = (a * 180) / Math.PI;
       const flip = angleDeg > 180;
-      const lab = svgEl('text', {
+      const labAttrs = {
         x: pLab.x, y: pLab.y, class: 'ql-phylo-leaflabel',
         'text-anchor': flip ? 'end' : 'start',
         'dominant-baseline': 'middle',
         transform: 'rotate(' + (angleDeg - 90 + (flip ? 180 : 0)) + ' ' + pLab.x + ' ' + pLab.y + ')',
-      });
+      };
+      if (leafColor) {
+        labAttrs.fill = leafColor;
+        labAttrs.style = 'fill:' + leafColor + ';';
+      }
+      const lab = svgEl('text', labAttrs);
       lab.textContent = node.label;
       labelsG.appendChild(lab);
     }
@@ -285,6 +435,51 @@ function drawCladogramCircular(svg, tree) {
     lab.textContent = scaleVal + ' (' + t('phylo.scaleCaption') + ')';
     g.appendChild(lab);
     svg.appendChild(g);
+  }
+
+  // Leyenda en SVG (recuadro)
+  if (matchedCategories.length > 0) {
+    const legG = svgEl('g', { 'data-ce': 'legend', class: 'ql-legend' });
+    const legBoxX = 20;
+    const legBoxY = 20;
+    const legBoxW = 160;
+    const legBoxH = 26 + matchedCategories.length * 18 + 8;
+
+    const bgRect = svgEl('rect', {
+      x: legBoxX, y: legBoxY, width: legBoxW, height: legBoxH,
+      rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)',
+      'stroke-width': 1, class: 'ql-legend-box',
+    });
+    legG.appendChild(bgRect);
+
+    const titleText = svgEl('text', {
+      x: legBoxX + 10, y: legBoxY + 16,
+      class: 'ql-tick-label',
+      style: 'font-weight:600;fill:var(--ink);font-size:11.5px;',
+    });
+    titleText.textContent = (colorCol || t('phylo.legendTitle')) + ':';
+    legG.appendChild(titleText);
+
+    matchedCategories.forEach((cat, i) => {
+      const yy = legBoxY + 34 + i * 18;
+      const c = categoryColorMap.get(cat);
+
+      legG.appendChild(svgEl('rect', {
+        x: legBoxX + 10, y: yy - 9, width: 10, height: 10, rx: 2,
+        fill: c, style: 'fill:' + c + ';',
+        'data-ce-series-fill': 's' + i,
+      }));
+
+      const lt = svgEl('text', {
+        x: legBoxX + 25, y: yy,
+        class: 'ql-tick-label',
+        style: 'fill:var(--ink-2);font-size:11.5px;',
+      });
+      lt.textContent = cat.length > 18 ? cat.slice(0, 17) + '…' : cat;
+      legG.appendChild(lt);
+    });
+
+    svg.appendChild(legG);
   }
 }
 
@@ -518,8 +713,21 @@ export function render(container) {
     chartPanel.appendChild(chartWrap);
     grid.appendChild(chartPanel);
 
+    const meta = getSlot('metadata');
+    const idKey = (meta && meta.sampleIdKey) || (meta && meta.headers && meta.headers[0]) || '';
+    let metaCols = (meta && Array.isArray(meta.headers))
+      ? meta.headers.filter((h) => h !== idKey)
+      : [];
+    if (!metaCols.length && meta && Array.isArray(meta.headers) && meta.headers.length > 0) {
+      metaCols = meta.headers.slice();
+    }
+    if (s.colorCol && !metaCols.includes(s.colorCol)) {
+      s.colorCol = '';
+    }
+    const resolveGroup = createMetadataResolver(meta, s.colorCol);
+
     const ctrl = document.createElement('aside');
-    ctrl.className = 'ql-card ql-panel';
+    ctrl.className = 'ql-card ql-panel ql-tree-toolbar';
     ctrl.innerHTML = '<h2>' + t('phylo.modelTitle') + '</h2>';
 
     const layoutField = document.createElement('div');
@@ -537,6 +745,36 @@ export function render(container) {
     });
     layoutField.appendChild(layoutSeg);
     ctrl.appendChild(layoutField);
+
+    const colorField = document.createElement('div');
+    colorField.className = 'ql-field ql-toolbar toolbar';
+    colorField.innerHTML = '<label for="phylo-color-col">' + t('phylo.colorByLabel') + '</label>';
+    const colorSel = document.createElement('select');
+    colorSel.id = 'phylo-color-col';
+    colorSel.name = 'metadata-column';
+    colorSel.className = 'ql-select';
+    colorSel.setAttribute('aria-label', t('phylo.colorByLabel'));
+    const defOpt = document.createElement('option');
+    defOpt.value = '';
+    defOpt.textContent = t('phylo.colorNone');
+    if (!s.colorCol) defOpt.selected = true;
+    colorSel.appendChild(defOpt);
+    metaCols.forEach((col) => {
+      const o = document.createElement('option');
+      o.value = col;
+      o.textContent = col;
+      if (col === s.colorCol) o.selected = true;
+      colorSel.appendChild(o);
+    });
+    colorSel.addEventListener('change', () => {
+      s.colorCol = colorSel.value;
+      paint();
+    });
+    colorField.appendChild(colorSel);
+    if (!metaCols.length) {
+      colorField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.noMetaHelp') + '</p>');
+    }
+    ctrl.appendChild(colorField);
 
     const corrField = document.createElement('div');
     corrField.className = 'ql-field';
@@ -619,15 +857,64 @@ export function render(container) {
           '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statDiameter') + '</div><div class="ql-stat-value" style="font-size:20px;">' + rootInfo.diameter.toFixed(3) + '</div></div>');
       }
 
+      const leaves = collectLeaves(tree);
+      const matchedCategories = s.colorCol ? Array.from(new Set(
+        leaves.map((l) => (resolveGroup ? resolveGroup(l.label) : null)).filter(Boolean)
+      )).sort() : [];
+
+      const categoryColorMap = new Map();
+      matchedCategories.forEach((cat, idx) => {
+        categoryColorMap.set(cat, CATEGORICAL[idx % CATEGORICAL.length]);
+      });
+
+      function colorForLeaf(label) {
+        if (!resolveGroup) return null;
+        const group = resolveGroup(label);
+        if (!group) return null;
+        return categoryColorMap.get(group) || null;
+      }
+
+      const colorOpts = {
+        colorForLeaf,
+        matchedCategories,
+        categoryColorMap,
+        colorCol: s.colorCol,
+        resolveCat: (label) => (resolveGroup ? resolveGroup(label) : null),
+      };
+
       const isCircular = s.layout === 'circular';
-      if (isCircular) drawCladogramCircular(svg, tree); else drawCladogramRect(svg, tree);
+      if (isCircular) drawCladogramCircular(svg, tree, colorOpts); else drawCladogramRect(svg, tree, colorOpts);
+
+      if (s.colorCol && matchedCategories.length > 0) {
+        const htmlLegend = document.createElement('div');
+        htmlLegend.id = 'phylo-legend';
+        htmlLegend.className = 'ql-legend';
+        htmlLegend.style.cssText = 'margin-top:14px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;flex-wrap:wrap;gap:14px;align-items:center;';
+        const legTitle = document.createElement('strong');
+        legTitle.style.cssText = 'font-size:12px;color:var(--ink);';
+        legTitle.textContent = s.colorCol + ':';
+        htmlLegend.appendChild(legTitle);
+
+        matchedCategories.forEach((cat) => {
+          const item = document.createElement('span');
+          item.className = 'ql-legend-item';
+          const c = categoryColorMap.get(cat);
+          item.innerHTML = '<span class="ql-legend-swatch ql-sq" style="background:' + c + '"></span>' +
+            '<span>' + escapeHtml(cat) + '</span>';
+          htmlLegend.appendChild(item);
+        });
+        chartPanel.appendChild(htmlLegend);
+      }
+
       editor = attachChartEditor({
         key: isCircular ? 'phylo-circular' : 'phylo', svg, mount: chartPanel, lang: getLang(),
         filename: t('phylo.figTitle') + (isCircular ? '-' + t('phylo.layoutCircular') : ''),
         elements: [
           { id: 'title', create: { text: t('phylo.figTitle'), x: 8, y: 14, anchor: 'start', cls: 'ce-title' } },
           { id: 'leaflabels', selector: '[data-ce="leaflabels"]', kind: 'group' },
+          ...(matchedCategories.length > 0 ? [{ id: 'legend', selector: '[data-ce="legend"]', kind: 'group' }] : []),
         ],
+        onReset: () => paint(),
       });
 
       const newickCard = document.createElement('section');
@@ -674,6 +961,7 @@ export function render(container) {
     }
   }
 
+  const stopSub = subscribe(paint);
   paint();
-  return () => { alignProgress = null; if (editor) editor.destroy(); };
+  return () => { stopSub(); alignProgress = null; if (editor) editor.destroy(); };
 }

@@ -117,6 +117,10 @@ export function setSlot(slot, value) {
   notify();
 }
 
+export function getSlot(slot) {
+  return state[slot];
+}
+
 export function addAlphaMetric(name, sourceFileId, values) {
   if (!state.alphaDiversity) state.alphaDiversity = { metrics: {} };
   state.alphaDiversity.metrics[name] = { sourceFileId, values };

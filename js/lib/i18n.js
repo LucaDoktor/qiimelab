@@ -994,6 +994,10 @@ const DICTS = {
       copyBtn: 'Copiar', copiedBtn: 'Copiado ✓', downloadBtn: 'Descargar .nwk',
       scaleCaption: 'distancia',
       figTitle: 'Árbol filogenético (Neighbor-Joining)',
+      colorByLabel: 'Colorear por metadatos',
+      colorNone: 'Sin colorear',
+      noMetaHelp: 'No hay metadatos cargados en el estado global.',
+      legendTitle: 'Leyenda',
     },
     sanger: {
       eyebrow: 'Cromatogramas Sanger', title: 'Secuenciación Sanger',
@@ -2256,6 +2260,10 @@ const DICTS = {
       copyBtn: 'Copy', copiedBtn: 'Copied ✓', downloadBtn: 'Download .nwk',
       scaleCaption: 'distance',
       figTitle: 'Phylogenetic tree (Neighbor-Joining)',
+      colorByLabel: 'Color by metadata',
+      colorNone: 'Uncolored',
+      noMetaHelp: 'No metadata loaded in global state.',
+      legendTitle: 'Legend',
     },
     sanger: {
       eyebrow: 'Sanger chromatograms', title: 'Sanger sequencing',
