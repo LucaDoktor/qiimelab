@@ -17,6 +17,7 @@ import { mergeReads, reverseComplement } from '../lib/sangerOverlap.js';
 import { listZipEntries, readZipEntry } from '../lib/minizip.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { alignWithWorker } from '../lib/aligner.js';
 
 const STORE_KEY = 'qiimelab.sanger';
 const PRIMERS_STORE_KEY = 'qiimelab.primers';
@@ -46,6 +47,87 @@ function svgEl(tag, attrs) {
   return e;
 }
 function fmtPct(x) { return Number.isFinite(x) ? (x * 100).toFixed(1) + '%' : '—'; }
+
+export function cleanFastaOrPlain(text) {
+  if (!text || typeof text !== 'string') return '';
+  const lines = text.trim().split(/\r?\n/);
+  const seqLines = lines.filter((line) => !line.trim().startsWith('>'));
+  return seqLines.join('').replace(/[^A-Za-z-]/g, '').toUpperCase();
+}
+
+export function renderAlignmentHTML(result, opts = {}) {
+  if (!result || !result.alignedA || !result.alignedB || result.score <= 0) {
+    return '<pre class="ql-code ql-align-result-pre"><code>' + t('sanger.alignNoResult') + '</code></pre>';
+  }
+
+  const { lineLength = 60 } = opts;
+  const { alignedA, alignedB, startA, startB, score, identity, length, matches, mismatches, gaps, cigar } = result;
+
+  const headerLine = `Score: ${score} | ${t('sanger.colLen')}: ${length} pb | ${t('sanger.colIdentity')}: ${(identity * 100).toFixed(1)}% (${matches}/${length}) | ${t('sanger.alignMismatches')}: ${mismatches} | ${t('sanger.alignGaps')}: ${gaps}${cigar ? ` | CIGAR: ${cigar}` : ''}`;
+
+  const lines = [headerLine];
+
+  let curA = startA;
+  let curB = startB;
+
+  for (let offset = 0; offset < alignedA.length; offset += lineLength) {
+    const chunkA = alignedA.slice(offset, offset + lineLength);
+    const chunkB = alignedB.slice(offset, offset + lineLength);
+
+    let htmlA = '';
+    let htmlB = '';
+    let matchLine = '';
+
+    let basesA = 0;
+    let basesB = 0;
+
+    let inMisA = false;
+    let inMisB = false;
+    let inMisM = false;
+
+    for (let k = 0; k < chunkA.length; k++) {
+      const ca = chunkA[k];
+      const cb = chunkB[k];
+      if (ca !== '-') basesA++;
+      if (cb !== '-') basesB++;
+
+      const isGap = ca === '-' || cb === '-';
+      const isMatch = !isGap && ca.toUpperCase() === cb.toUpperCase();
+      const misA = !isMatch;
+      const misB = !isMatch;
+      const misM = !isMatch && !isGap;
+
+      if (misA && !inMisA) { htmlA += '<span class="ql-mismatch">'; inMisA = true; }
+      else if (!misA && inMisA) { htmlA += '</span>'; inMisA = false; }
+      htmlA += escapeHtml(ca);
+
+      if (misB && !inMisB) { htmlB += '<span class="ql-mismatch">'; inMisB = true; }
+      else if (!misB && inMisB) { htmlB += '</span>'; inMisB = false; }
+      htmlB += escapeHtml(cb);
+
+      if (misM && !inMisM) { matchLine += '<span class="ql-mismatch">'; inMisM = true; }
+      else if (!misM && inMisM) { matchLine += '</span>'; inMisM = false; }
+      matchLine += isMatch ? '|' : (isGap ? ' ' : '.');
+    }
+    if (inMisA) htmlA += '</span>';
+    if (inMisB) htmlB += '</span>';
+    if (inMisM) matchLine += '</span>';
+
+    const endPosA = curA + basesA;
+    const endPosB = curB + basesB;
+    const padLen = Math.max(6, String(Math.max(endPosA, endPosB)).length);
+
+    lines.push('');
+    lines.push(`Consenso   ${String(curA).padStart(padLen)}  ${htmlA}  ${endPosA}`);
+    lines.push(`${' '.repeat(11 + padLen + 2)}${matchLine}`);
+    lines.push(`Referencia ${String(curB).padStart(padLen)}  ${htmlB}  ${endPosB}`);
+
+    curA = endPosA;
+    curB = endPosB;
+  }
+
+  return `<pre class="ql-code ql-align-result-pre"><code>${lines.join('\n')}</code></pre>`;
+}
 
 function defaultState() {
   return {
@@ -987,8 +1069,105 @@ export function render(container) {
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     tbl.innerHTML = '<thead><tr><th>' + t('sanger.colSample') + '</th><th>' + t('sanger.colMethod') + '</th>' +
-      '<th>' + t('sanger.colOverlap') + '</th><th>' + t('sanger.colIdentity') + '</th><th>' + t('sanger.colLen') + '</th><th>' + t('sanger.colReview') + '</th></tr></thead>';
+      '<th>' + t('sanger.colOverlap') + '</th><th>' + t('sanger.colIdentity') + '</th><th>' + t('sanger.colLen') + '</th><th>' + t('sanger.colReview') + '</th><th></th></tr></thead>';
     const tbody = document.createElement('tbody');
+
+    function createComparePanel(resultItem) {
+      const panel = document.createElement('div');
+      panel.className = 'ql-ref-compare-panel';
+
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+      head.innerHTML = '<strong>' + t('sanger.compareWithRef') + ': ' + escapeHtml(resultItem.id) + '</strong>';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ql-btn ql-btn-ghost ql-btn-sm';
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Cerrar');
+      closeBtn.addEventListener('click', () => {
+        const pTr = panel.closest('tr.ql-ref-compare-row');
+        if (pTr) pTr.remove(); else panel.remove();
+      });
+      head.appendChild(closeBtn);
+      panel.appendChild(head);
+
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:12.5px;color:var(--ink);font-weight:500;';
+      lbl.textContent = t('sanger.pasteRef');
+      panel.appendChild(lbl);
+
+      const ta = document.createElement('textarea');
+      ta.className = 'ql-textarea';
+      ta.rows = 3;
+      ta.placeholder = t('sanger.refPlaceholder');
+      panel.appendChild(ta);
+
+      const actRow = document.createElement('div');
+      actRow.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;';
+
+      const alignBtn = document.createElement('button');
+      alignBtn.type = 'button';
+      alignBtn.className = 'ql-btn ql-btn-primary';
+      alignBtn.textContent = t('sanger.alignBtn');
+
+      const statusMsg = document.createElement('span');
+      statusMsg.style.cssText = 'font-size:12px;color:var(--ink-muted);display:none;';
+      statusMsg.textContent = t('sanger.aligning');
+
+      actRow.appendChild(alignBtn);
+      actRow.appendChild(statusMsg);
+      panel.appendChild(actRow);
+
+      const out = document.createElement('div');
+      panel.appendChild(out);
+
+      alignBtn.addEventListener('click', async () => {
+        const cleanRef = cleanFastaOrPlain(ta.value);
+        if (!cleanRef) {
+          out.innerHTML = '<p class="ql-field-help" style="color:var(--critical);margin-top:6px;">' + t('sanger.alignEmptyRef') + '</p>';
+          return;
+        }
+        if (!resultItem.consensus) {
+          out.innerHTML = '<p class="ql-field-help" style="color:var(--critical);margin-top:6px;">' + t('sanger.noConsensus') + '</p>';
+          return;
+        }
+
+        alignBtn.disabled = true;
+        statusMsg.style.display = 'inline';
+        out.innerHTML = '<div style="padding:10px 0;color:var(--ink-muted);font-style:italic;">' + t('sanger.aligning') + '</div>';
+
+        try {
+          const aln = await alignWithWorker(resultItem.consensus, cleanRef);
+          out.innerHTML = renderAlignmentHTML(aln);
+        } catch (err) {
+          out.innerHTML = '<p class="ql-field-help" style="color:var(--critical);margin-top:6px;">' + escapeHtml(err && err.message ? err.message : String(err)) + '</p>';
+        } finally {
+          alignBtn.disabled = false;
+          statusMsg.style.display = 'none';
+        }
+      });
+
+      return panel;
+    }
+
+    function toggleCompareRow(targetTr, resultItem) {
+      const next = targetTr.nextElementSibling;
+      if (next && next.classList.contains('ql-ref-compare-row')) {
+        next.remove();
+        return;
+      }
+      tbody.querySelectorAll('.ql-ref-compare-row').forEach((el) => el.remove());
+
+      const compTr = document.createElement('tr');
+      compTr.className = 'ql-ref-compare-row';
+      const td = document.createElement('td');
+      td.colSpan = 7;
+      td.appendChild(createComparePanel(resultItem));
+      compTr.appendChild(td);
+      targetTr.after(compTr);
+    }
+
     results.forEach((r) => {
       const tr = document.createElement('tr');
       if (r.needsReview) tr.style.background = 'color-mix(in srgb, var(--warning) 10%, transparent)';
@@ -999,7 +1178,23 @@ export function render(container) {
         '<td>' + (r.overlapLen || '—') + '</td>' +
         '<td>' + (r.overlapLen ? fmtPct(r.identity) : '—') + '</td>' +
         '<td>' + (r.consensus.length || '—') + '</td>' +
-        '<td>' + (r.needsReview ? '<span class="ql-badge ql-badge-warn">' + t('sanger.reviewNeeded') + '</span>' : t('sanger.reviewOk')) + '</td>';
+        '<td>' + (r.needsReview ? '<span class="ql-badge ql-badge-warn">' + t('sanger.reviewNeeded') + '</span>' : t('sanger.reviewOk')) + '</td>' +
+        '<td style="text-align:right;"></td>';
+      if (r.consensus) {
+        const compBtn = document.createElement('button');
+        compBtn.type = 'button';
+        compBtn.className = 'ql-btn ql-btn-sm';
+        compBtn.textContent = t('sanger.compareWithRef');
+        compBtn.title = t('sanger.compareWithRef');
+        compBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          s.selectedSampleId = r.id;
+          save(s);
+          paintDetail(r);
+          toggleCompareRow(tr, r);
+        });
+        tr.lastElementChild.appendChild(compBtn);
+      }
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => { s.selectedSampleId = r.id; save(s); paintDetail(r); });
       tbody.appendChild(tr);
@@ -1089,6 +1284,22 @@ export function render(container) {
       sendBtn.addEventListener('click', () => sendConsensusToPrimers(r.id, r.consensus));
       btnRow.appendChild(copyBtn); btnRow.appendChild(sendBtn);
       if (r.consensus) {
+        const compDetailBtn = document.createElement('button');
+        compDetailBtn.type = 'button';
+        compDetailBtn.className = 'ql-btn';
+        compDetailBtn.textContent = t('sanger.compareWithRef');
+        let detailPanel = null;
+        compDetailBtn.addEventListener('click', () => {
+          if (detailPanel && detailPanel.parentElement) {
+            detailPanel.remove();
+            detailPanel = null;
+          } else {
+            detailPanel = createComparePanel(r);
+            detailWrap.appendChild(detailPanel);
+          }
+        });
+        btnRow.appendChild(compDetailBtn);
+
         const blastLink = document.createElement('a');
         blastLink.className = 'ql-btn';
         blastLink.href = ncbiBlastUrl(r.consensus);
