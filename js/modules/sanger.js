@@ -1103,14 +1103,15 @@ export function formatConfidence(conf) {
  * marcadores de recorte arrastrables. Devuelve un manejador para engancharlo
  * al arrastre y a los inputs numéricos de respaldo (accesibles por teclado).
  */
-function drawChromatogram(svg, read, trimRange) {
+export function drawChromatogram(svg, read, trimRange) {
   svg.innerHTML = '';
   const nBases = read.sequence.length;
   const hasTrace = !!read.trace;
   const pxPerBase = hasTrace ? 7 : 5;
   const W = Math.max(600, nBases * pxPerBase);
-  const marginL = 44, marginR = 16, marginT = 26, traceH = hasTrace ? 150 : 0, gap = hasTrace ? 14 : 0, qualH = 70;
-  const H = marginT + traceH + gap + qualH + 34;
+  const marginL = 56, marginR = 16, marginT = 26, traceH = hasTrace ? 150 : 0, gap = hasTrace ? 16 : 0, qualH = 70;
+  const marginB = 36;
+  const H = marginT + traceH + gap + qualH + marginB;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   // ancho en px FIJO, por encima del reset global `svg { max-width:100% }`
   // (css/base.css, pensado para que ninguna figura desborde en móvil): con
@@ -1164,6 +1165,54 @@ function drawChromatogram(svg, read, trimRange) {
   }
   svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: qualBase, y2: qualBase, stroke: 'var(--border)', 'stroke-width': '1' }));
 
+  // Etiquetas descriptivas y unidades físicas en los ejes
+  const labels = {};
+  if (hasTrace) {
+    const yTraceCenter = marginT + traceH / 2;
+    const xTrace = 20;
+    const labelIntensity = svgEl('text', {
+      x: xTrace,
+      y: yTraceCenter,
+      class: 'ql-axis-label ql-chroma-axis-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+      transform: 'rotate(-90 ' + xTrace + ' ' + yTraceCenter + ')',
+      'data-axis': 'y-trace',
+    });
+    labelIntensity.textContent = t('sanger.axisIntensity') || 'Intensidad (RFU)';
+    svg.appendChild(labelIntensity);
+    labels.intensity = labelIntensity;
+  }
+
+  const yQualCenter = marginT + traceH + gap + qualH / 2;
+  const xQual = 20;
+  const labelQuality = svgEl('text', {
+    x: xQual,
+    y: yQualCenter,
+    class: 'ql-axis-label ql-chroma-axis-label',
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+    transform: 'rotate(-90 ' + xQual + ' ' + yQualCenter + ')',
+    'data-axis': 'y-qual',
+  });
+  labelQuality.textContent = t('sanger.axisQuality') || 'Calidad (Phred Q)';
+  svg.appendChild(labelQuality);
+  labels.quality = labelQuality;
+
+  const xMid = marginL + (W - marginL - marginR) / 2;
+  const yPos = qualBase + 26;
+  const labelPosition = svgEl('text', {
+    x: xMid.toFixed(1),
+    y: yPos.toFixed(1),
+    class: 'ql-axis-label ql-chroma-axis-label',
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+    'data-axis': 'x-pos',
+  });
+  labelPosition.textContent = t('sanger.axisPosition') || 'Posición (pb)';
+  svg.appendChild(labelPosition);
+  labels.position = labelPosition;
+
   // línea de guía interactiva (crosshair)
   const guideLine = svgEl('line', {
     class: 'ql-chroma-crosshair',
@@ -1194,7 +1243,7 @@ function drawChromatogram(svg, read, trimRange) {
     handles[which] = g;
   });
 
-  return { xOfBase, handles, W, H, nBases, guideLine };
+  return { xOfBase, handles, W, H, nBases, guideLine, labels };
 }
 
 /**

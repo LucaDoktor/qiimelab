@@ -22,6 +22,7 @@ import {
   nearestBaseIndexAtX,
   clientXToSvgX,
   attachChromatogramTooltip,
+  drawChromatogram,
 } from '../js/modules/sanger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -269,6 +270,106 @@ console.log('\n--- 5. Verificación de Estilos CSS (css/components.css) ---');
   check('crosshair tiene pointer-events: none', /\.ql-chroma-crosshair\s*\{[^}]*pointer-events:\s*none/s.test(css));
 }
 
+console.log('\n--- 6. Verificación de Etiquetas y Unidades Físicas de Ejes (drawChromatogram) ---');
+{
+  class MockElement {
+    constructor(tagName) {
+      this.tagName = tagName;
+      this.children = [];
+      this.parentNode = null;
+      this.style = {};
+      this.attributes = {};
+      this.textContent = '';
+    }
+    setAttribute(k, v) { this.attributes[k] = String(v); }
+    getAttribute(k) { return this.attributes[k]; }
+    appendChild(el) {
+      el.parentNode = this;
+      this.children.push(el);
+      return el;
+    }
+    querySelector(sel) {
+      if (sel.startsWith('.')) {
+        const cls = sel.slice(1);
+        for (const c of this.children) {
+          if (c.className === cls || (c.getAttribute && c.getAttribute('class') === cls)) return c;
+        }
+      }
+      return null;
+    }
+  }
+
+  const origDoc = globalThis.document;
+  globalThis.document = {
+    createElement: (tag) => new MockElement(tag),
+    createElementNS: (ns, tag) => new MockElement(tag),
+  };
+
+  try {
+    const svg = new MockElement('svg');
+    const mockReadWithTrace = {
+      sequence: 'ACGTACGT',
+      quality: new Uint8Array([30, 20, 40, 10, 30, 25, 35, 15]),
+      trace: {
+        A: [10, 50, 10, 0, 10, 50, 10, 0],
+        C: [0, 10, 50, 10, 0, 10, 50, 10],
+        G: [10, 0, 10, 50, 10, 0, 10, 50],
+        T: [50, 10, 0, 10, 50, 10, 0, 10],
+      },
+      peakLocations: new Int16Array([50, 100, 150, 200, 250, 300, 350, 400]),
+    };
+
+    const chart = drawChromatogram(svg, mockReadWithTrace, { start: 1, end: 7 });
+
+    check('drawChromatogram genera el objeto labels', Boolean(chart.labels));
+
+    // 1. Eje Y panel superior: Intensidad (RFU)
+    const lblIntensity = chart.labels.intensity;
+    check('existe etiqueta de Intensidad (panel superior)', Boolean(lblIntensity));
+    check('texto exacto es "Intensidad (RFU)"', lblIntensity.textContent === 'Intensidad (RFU)');
+    check('rotado -90 grados', (lblIntensity.getAttribute('transform') || '').includes('rotate(-90'));
+    check('anclado centrado (text-anchor="middle")', lblIntensity.getAttribute('text-anchor') === 'middle');
+    check('en margen izquierdo (x=20 <= 25)', parseFloat(lblIntensity.getAttribute('x')) <= 25);
+    check('clase .ql-chroma-axis-label', (lblIntensity.getAttribute('class') || '').includes('ql-chroma-axis-label'));
+
+    // 2. Eje Y panel inferior: Calidad (Phred Q)
+    const lblQuality = chart.labels.quality;
+    check('existe etiqueta de Calidad (panel inferior)', Boolean(lblQuality));
+    check('texto exacto es "Calidad (Phred Q)"', lblQuality.textContent === 'Calidad (Phred Q)');
+    check('rotado -90 grados', (lblQuality.getAttribute('transform') || '').includes('rotate(-90'));
+    check('anclado centrado (text-anchor="middle")', lblQuality.getAttribute('text-anchor') === 'middle');
+    check('en margen izquierdo (x=20 <= 25)', parseFloat(lblQuality.getAttribute('x')) <= 25);
+    check('clase .ql-chroma-axis-label', (lblQuality.getAttribute('class') || '').includes('ql-chroma-axis-label'));
+
+    // 3. Eje X general: Posición (pb)
+    const lblPos = chart.labels.position;
+    check('existe etiqueta de Posición (eje X general)', Boolean(lblPos));
+    check('texto exacto es "Posición (pb)"', lblPos.textContent === 'Posición (pb)');
+    check('centrado horizontalmente (text-anchor="middle")', lblPos.getAttribute('text-anchor') === 'middle');
+    check('en margen inferior (y > 250)', parseFloat(lblPos.getAttribute('y')) > 250);
+    check('clase .ql-chroma-axis-label', (lblPos.getAttribute('class') || '').includes('ql-chroma-axis-label'));
+
+    // Caso sin traza (FASTQ/FASTA sin canales electroforéticos)
+    const svgNoTrace = new MockElement('svg');
+    const mockReadNoTrace = {
+      sequence: 'ACGTACGT',
+      quality: new Uint8Array([30, 20, 40, 10, 30, 25, 35, 15]),
+    };
+    const chartNoTrace = drawChromatogram(svgNoTrace, mockReadNoTrace, { start: 1, end: 7 });
+    check('sin traza no dibuja etiqueta de Intensidad (RFU)', !chartNoTrace.labels.intensity);
+    check('sin traza sí dibuja etiqueta de Calidad (Phred Q)', Boolean(chartNoTrace.labels.quality));
+    check('sin traza sí dibuja etiqueta de Posición (pb)', Boolean(chartNoTrace.labels.position));
+
+    // Verificación CSS para .ql-chroma-axis-label
+    const css = readFileSync(APP_ROOT + '/css/components.css', 'utf-8');
+    check('CSS contiene selector .ql-chroma-axis-label', css.includes('.ql-chroma-axis-label'));
+    check('.ql-chroma-axis-label usa color secundario var(--ink-muted)', /\.ql-chroma-axis-label\s*\{[^}]*fill:\s*var\(--ink-muted/s.test(css));
+    check('.ql-chroma-axis-label usa fuente pequeña (<= 12px)', /\.ql-chroma-axis-label\s*\{[^}]*font-size:\s*(1[0-2]|9|8)(\.\d+)?px/s.test(css));
+  } finally {
+    globalThis.document = origDoc;
+  }
+}
+
 console.log('\n----------------------------------------');
 if (failed) {
   console.error('RESULTADO: ALGUNOS TESTS FALLARON');
@@ -277,3 +378,4 @@ if (failed) {
   console.log('RESULTADO: TODOS LOS TESTS PASARON EXITOSAMENTE (PASS)');
   process.exit(0);
 }
+

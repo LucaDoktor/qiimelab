@@ -45,6 +45,23 @@ try {
   }
   check('el cromatograma dibuja las 4 trazas', drawn);
 
+  const axisLabels = await c.ev(`(() => {
+    const list = [...document.querySelectorAll('svg[role=img] text.ql-chroma-axis-label')];
+    return list.map(el => ({
+      text: el.textContent.trim(),
+      axis: el.getAttribute('data-axis'),
+      transform: el.getAttribute('transform') || '',
+      anchor: el.getAttribute('text-anchor') || '',
+    }));
+  })()`);
+  check('el cromatograma contiene las 3 etiquetas de ejes con unidades físicas',
+    Array.isArray(axisLabels) &&
+    axisLabels.some(l => l.axis === 'y-trace' && l.text === 'Intensidad (RFU)') &&
+    axisLabels.some(l => l.axis === 'y-qual' && l.text === 'Calidad (Phred Q)') &&
+    axisLabels.some(l => l.axis === 'x-pos' && l.text === 'Posición (pb)'),
+    JSON.stringify(axisLabels)
+  );
+
   const wide = await c.ev(`(() => {
     const svg = document.querySelector('svg[role=img]');
     const wrap = svg.closest('div');
