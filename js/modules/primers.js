@@ -17,7 +17,8 @@ import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/
 import { parseTable } from '../lib/csv.js';
 import { designPrimers, MODES as DESIGN_MODES } from '../lib/primerDesign.js';
 
-const STORE_KEY = 'qiimelab.primers';
+const STORE_KEY = 'smart-175.primers';
+const LEGACY_STORE_KEY = 'qiimelab.primers';
 const MIN_PRIMER_LEN = 4;
 const EXAMPLE_REF_FASTA_URL = 'datos-ejemplo/primers/referencia_ejemplo.fasta';
 const EXAMPLE_TAX_URL = 'datos-ejemplo/primers/taxonomia_ejemplo.tsv';
@@ -152,7 +153,7 @@ function defaultState() {
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
     if (raw && Array.isArray(raw.primers)) {
       return {
         tab: typeof raw.tab === 'string' ? raw.tab : 'primers',

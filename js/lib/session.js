@@ -12,9 +12,9 @@
 //     El objeto `report` de sequenceQC ya es JSON plano (arrays y números —
 //     ver js/lib/fastq.js); solo se descarta el `File` crudo, que no es
 //     serializable y solo hace falta para RE-analizar (no para mostrar).
-//   · Todas las claves de localStorage con prefijo "qiimelab.chartStyle."
+//   · Todas las claves de localStorage con prefijo "smart-175.chartStyle."
 //     (enumeradas con Object.keys — no hay lista de módulos que mantener).
-//   · qiimelab.profileName y qiimelab.lang (se leen tal cual; profile.js /
+//   · smart-175.profileName y smart-175.lang (se leen tal cual; profile.js /
 //     i18n.js siguen siendo los dueños de esas claves).
 
 import {
@@ -64,14 +64,15 @@ function migrateSession(sess) {
   return { sess: cur, from, migrated, tooNew: false };
 }
 
-const CHART_STYLE_PREFIX = 'qiimelab.chartStyle.';
-const PROFILE_KEY = 'qiimelab.profileName';
-const LANG_KEY = 'qiimelab.lang';
+const CHART_STYLE_PREFIX = 'smart-175.chartStyle.';
+const LEGACY_CHART_STYLE_PREFIX = 'qiimelab.chartStyle.';
+const PROFILE_KEY = 'smart-175.profileName';
+const LANG_KEY = 'smart-175.lang';
 
 const jclone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 
 export function sessionFilename() {
-  return 'qiimelab-sesion-' + new Date().toISOString().slice(0, 10) + '.json';
+  return 'smart-175-sesion-' + new Date().toISOString().slice(0, 10) + '.json';
 }
 
 /** Objeto JSON con toda la sesión. */
@@ -80,7 +81,7 @@ export function exportSession() {
     schemaVersion: SCHEMA_VERSION,
     sessionFormat: SCHEMA_VERSION, // histórico, para lectores viejos
     generatedAt: new Date().toISOString(),
-    app: 'QiimeLab',
+    app: 'Smart-175',
     state: {},
   };
 
@@ -104,15 +105,15 @@ export function exportSession() {
   out.chartStyles = {};
   try {
     Object.keys(localStorage).forEach((k) => {
-      if (k.indexOf(CHART_STYLE_PREFIX) === 0) {
+      if (k.indexOf(CHART_STYLE_PREFIX) === 0 || k.indexOf(LEGACY_CHART_STYLE_PREFIX) === 0) {
         const raw = localStorage.getItem(k);
         try { out.chartStyles[k] = JSON.parse(raw); } catch (e) { out.chartStyles[k] = raw; }
       }
     });
   } catch (e) { /* localStorage puede lanzar en modo privado */ }
 
-  try { out.profileName = localStorage.getItem(PROFILE_KEY); } catch (e) { out.profileName = null; }
-  try { out.lang = localStorage.getItem(LANG_KEY); } catch (e) { out.lang = null; }
+  try { out.profileName = localStorage.getItem(PROFILE_KEY) || localStorage.getItem('qiimelab.profileName'); } catch (e) { out.profileName = null; }
+  try { out.lang = localStorage.getItem(LANG_KEY) || localStorage.getItem('qiimelab.lang'); } catch (e) { out.lang = null; }
 
   return out;
 }
@@ -162,13 +163,13 @@ export function describeSession(sess) {
 export function importSession(rawSess) {
   const warnings = [];
   if (!rawSess || typeof rawSess !== 'object' || typeof rawSess.state !== 'object' || !rawSess.state) {
-    return { ok: false, warnings: ['El archivo no parece una sesión de QiimeLab.'] };
+    return { ok: false, warnings: ['El archivo no parece una sesión de Smart-175.'] };
   }
 
   // migrar a la versión de esquema actual antes de tocar nada
   const { sess, from, migrated, tooNew } = migrateSession(rawSess);
   if (tooNew) {
-    warnings.push('La sesión es de una versión de QiimeLab más nueva (esquema ' + from +
+    warnings.push('La sesión es de una versión de Smart-175 más nueva (esquema ' + from +
       ', esta build usa el ' + SCHEMA_VERSION + '). Se restaura lo que case por nombre de slot.');
   } else if (migrated) {
     warnings.push('Sesión migrada del esquema ' + from + ' al ' + SCHEMA_VERSION + '.');
@@ -211,13 +212,18 @@ export function importSession(rawSess) {
   // 4. estilos de gráfico: quita los actuales, mete los guardados
   try {
     Object.keys(localStorage).forEach((key) => {
-      if (key.indexOf(CHART_STYLE_PREFIX) === 0) localStorage.removeItem(key);
+      if (key.indexOf(CHART_STYLE_PREFIX) === 0 || key.indexOf(LEGACY_CHART_STYLE_PREFIX) === 0) localStorage.removeItem(key);
     });
     const cs = sess.chartStyles || {};
     Object.keys(cs).forEach((key) => {
-      if (key.indexOf(CHART_STYLE_PREFIX) !== 0) return;
+      let targetKey = key;
+      if (key.indexOf(LEGACY_CHART_STYLE_PREFIX) === 0) {
+        targetKey = CHART_STYLE_PREFIX + key.slice(LEGACY_CHART_STYLE_PREFIX.length);
+      } else if (key.indexOf(CHART_STYLE_PREFIX) !== 0) {
+        return;
+      }
       const val = cs[key];
-      localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
+      localStorage.setItem(targetKey, typeof val === 'string' ? val : JSON.stringify(val));
     });
   } catch (e) { warnings.push('No se han podido restaurar los estilos de gráfico (localStorage no disponible).'); }
 

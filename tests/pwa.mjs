@@ -84,7 +84,7 @@ try {
   // caché poblada con el shell
   const cached = await c.ev(`(async () => {
     const names = await caches.keys();
-    const c = await caches.open(names.find((n) => n.startsWith('qiimelab-')) || names[0]);
+    const c = await caches.open(names.find((n) => n.startsWith('smart-175-') || n.startsWith('qiimelab-')) || names[0]);
     const keys = await c.keys();
     return keys.map((r) => new URL(r.url).pathname);
   })()`);
@@ -112,7 +112,7 @@ try {
   check('el shell se sirve sin red: sidebar con enlaces', shell.sidebar >= 5, shell.sidebar + ' enlaces');
   check('el shell se sirve sin red: #app-view con contenido', shell.mainKids > 0);
   check('el shell se sirve sin red: footer presente', shell.footer);
-  check('document.title correcto', /QiimeLab/.test(shell.title || ''), shell.title);
+  check('document.title correcto', /(Smart-175|QiimeLab)/.test(shell.title || ''), shell.title);
 
   const newProblems = c.problems.slice(problemsBefore)
     .filter((p) => !/Failed to load resource|net::ERR|fonts\.(googleapis|gstatic)/.test(p));

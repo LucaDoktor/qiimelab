@@ -25,7 +25,8 @@ import { getSlot, subscribe } from '../state.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 
-const STORE_KEY = 'qiimelab.phylo';
+const STORE_KEY = 'smart-175.phylo';
+const LEGACY_STORE_KEY = 'qiimelab.phylo';
 const EXAMPLE_URL = 'datos-ejemplo/phylo/secuencias_ejemplo.fasta';
 const MIN_SEQUENCES = 3;
 const MIN_SEQ_LEN = 20;
@@ -47,7 +48,7 @@ function escapeHtml(s) {
 function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none', colorCol: '' }; }
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
     if (raw && typeof raw.fastaText === 'string') {
       return {
         fastaText: raw.fastaText,
@@ -942,7 +943,7 @@ export function render(container) {
       const dlBtn = document.createElement('button');
       dlBtn.type = 'button'; dlBtn.className = 'ql-btn';
       dlBtn.textContent = t('phylo.downloadBtn');
-      dlBtn.addEventListener('click', () => download('arbol-qiimelab.nwk', nwk, 'text/plain;charset=utf-8'));
+      dlBtn.addEventListener('click', () => download('arbol-smart-175.nwk', nwk, 'text/plain;charset=utf-8'));
       nwkBtnRow.appendChild(dlBtn);
       newickCard.appendChild(nwkBtnRow);
       container.appendChild(newickCard);

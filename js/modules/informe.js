@@ -315,7 +315,7 @@ export function render(container) {
       htmlBtn.addEventListener('click', async () => {
         htmlBtn.disabled = true;
         const html = await buildStandaloneHtml(report, getLang());
-        download('informe-qiimelab-' + dateStr + '.html', html, 'text/html;charset=utf-8');
+        download('informe-smart-175-' + dateStr + '.html', html, 'text/html;charset=utf-8');
         htmlBtn.disabled = false;
       });
       actions.appendChild(printBtn);

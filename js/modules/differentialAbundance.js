@@ -40,7 +40,7 @@ function niceStep(range, targetTicks) {
 function buildRScript(taxonCol, lfcCol, padjCol, lfcThresh, padjThresh, sourceFileName, isKO) {
   const ent = isKO ? 'ko' : 'taxon';       // solo cambia el texto, no la lógica
   const entPl = isKO ? 'kos' : 'taxones';
-  return `# Volcano plot de abundancia diferencial${isKO ? ' funcional (KOs)' : ''} — generado por QiimeLab
+  return `# Volcano plot de abundancia diferencial${isKO ? ' funcional (KOs)' : ''} — generado por Smart-175
 # Reproduce, en R, el mismo gráfico y los mismos umbrales que has usado aquí.
 
 library(ggplot2)
@@ -53,7 +53,7 @@ res <- read.csv("${sourceFileName || 'tu_tabla.csv'}", check.names = FALSE)
 ## res\$log2FoldChange  <- res\$${lfcCol}
 ## res\$padj            <- res\$${padjCol}
 
-## 2. Umbrales (los mismos que en QiimeLab)
+## 2. Umbrales (los mismos que en Smart-175)
 lfc_threshold  <- ${lfcThresh}
 padj_threshold <- ${padjThresh}
 

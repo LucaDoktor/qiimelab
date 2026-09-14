@@ -50,8 +50,8 @@ export function methodsText(selectedIds) {
     if (state.taxonomy) bits.push(en ? 'a taxonomy assignment table' : 'una tabla de asignación taxonómica');
     if (bits.length) {
       P.push(en
-        ? `Analyses were run in QiimeLab (browser-only, no server) on ${bits.join(', ')}.`
-        : `Los análisis se hicieron en QiimeLab (solo en el navegador, sin servidor) sobre ${bits.join(', ')}.`);
+        ? `Analyses were run in Smart-175 (browser-only, no server) on ${bits.join(', ')}.`
+        : `Los análisis se hicieron en Smart-175 (solo en el navegador, sin servidor) sobre ${bits.join(', ')}.`);
     }
   }
 
@@ -92,8 +92,8 @@ export function methodsText(selectedIds) {
   if (sel.has('diferencial') && state.differentialAbundance) {
     const isKO = state.differentialAbundance.entityType === 'ko';
     P.push(en
-      ? `Differential abundance of ${isKO ? 'KEGG orthologs' : 'taxa'} was taken from a pre-computed table (DESeq2/ANCOM-BC-style: identifier, log2 fold-change, adjusted p-value). QiimeLab does not re-run the test; features were flagged using the log2 fold-change and adjusted-p thresholds set in the module.`
-      : `La abundancia diferencial de ${isKO ? 'ortólogos KEGG' : 'taxones'} se tomó de una tabla precalculada (estilo DESeq2/ANCOM-BC: identificador, log2 fold-change, p-valor ajustado). QiimeLab no re-ejecuta el test; las entidades se marcaron con los umbrales de log2 fold-change y p ajustado fijados en el módulo.`);
+      ? `Differential abundance of ${isKO ? 'KEGG orthologs' : 'taxa'} was taken from a pre-computed table (DESeq2/ANCOM-BC-style: identifier, log2 fold-change, adjusted p-value). Smart-175 does not re-run the test; features were flagged using the log2 fold-change and adjusted-p thresholds set in the module.`
+      : `La abundancia diferencial de ${isKO ? 'ortólogos KEGG' : 'taxones'} se tomó de una tabla precalculada (estilo DESeq2/ANCOM-BC: identificador, log2 fold-change, p-valor ajustado). Smart-175 no re-ejecuta el test; las entidades se marcaron con los umbrales de log2 fold-change y p ajustado fijados en el módulo.`);
   }
   if (sel.has('diferencial') && Array.isArray(state.diffComparisons) && state.diffComparisons.length >= 2) {
     P.push(en

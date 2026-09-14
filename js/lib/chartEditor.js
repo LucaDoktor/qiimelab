@@ -8,7 +8,7 @@
 //    (puntos, barras, líneas) NO se mueven nunca.
 //  - Panel flotante por elemento: color de texto, familia de fuente (las 3
 //    ya cargadas + genéricas del sistema), negrita/cursiva, tamaño.
-//  - Persistencia en localStorage por módulo (qiimelab.chartStyle.<key>),
+//  - Persistencia en localStorage por módulo (smart-175.chartStyle.<key>),
 //    re-aplicada al recargar. Botón "Restablecer".
 //  - "Descargar SVG": exporta la figura tal cual se ve, con los estilos
 //    inline resueltos (sin depender de la hoja de estilos de la app).
@@ -32,10 +32,14 @@ import { openPanel as openModalPanel } from './modal.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const STYLE_ID = 'ce-styles';
-const CHARTSTYLE_PREFIX = 'qiimelab.chartStyle.';
+const CHARTSTYLE_PREFIX = 'smart-175.chartStyle.';
+const LEGACY_CHARTSTYLE_PREFIX = 'qiimelab.chartStyle.';
 
 function readChartStyleRaw(key) {
-  try { return JSON.parse(localStorage.getItem(CHARTSTYLE_PREFIX + key)) || {}; }
+  try {
+    const raw = localStorage.getItem(CHARTSTYLE_PREFIX + key) || localStorage.getItem(LEGACY_CHARTSTYLE_PREFIX + key);
+    return JSON.parse(raw) || {};
+  }
   catch (e) { return {}; }
 }
 
@@ -156,7 +160,7 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 
 /**
  * @param {object} cfg
- * @param {string} cfg.key      clave de módulo (localStorage qiimelab.chartStyle.<key>)
+ * @param {string} cfg.key      clave de módulo (localStorage smart-175.chartStyle.<key>)
  * @param {SVGSVGElement} cfg.svg
  * @param {HTMLElement} cfg.mount   dónde se cuelga la barra de herramientas
  * @param {string} cfg.filename     nombre del .svg exportado
@@ -175,7 +179,8 @@ export function attachChartEditor(cfg) {
   const paletteMax = cfg.paletteMax; // tope de tonos simultáneos (scatter/red: 3-4, no los 8)
   const lang = cfg.lang || 'es';
   const T = tr(lang);
-  const LSKEY = 'qiimelab.chartStyle.' + key;
+  const LSKEY = 'smart-175.chartStyle.' + key;
+  const LEGACY_LSKEY = 'qiimelab.chartStyle.' + key;
 
   let store = readStore();
   let editing = false;
@@ -186,13 +191,21 @@ export function attachChartEditor(cfg) {
   let fsHandle = null; // { close } del modal de pantalla completa, si está abierto
 
   function readStore() {
-    try { return JSON.parse(localStorage.getItem(LSKEY)) || {}; }
+    try {
+      const raw = localStorage.getItem(LSKEY) || localStorage.getItem(LEGACY_LSKEY);
+      return JSON.parse(raw) || {};
+    }
     catch (e) { return {}; }
   }
   function writeStore() {
     try {
-      if (Object.keys(store).length) localStorage.setItem(LSKEY, JSON.stringify(store));
-      else localStorage.removeItem(LSKEY);
+      if (Object.keys(store).length) {
+        localStorage.setItem(LSKEY, JSON.stringify(store));
+        localStorage.removeItem(LEGACY_LSKEY);
+      } else {
+        localStorage.removeItem(LSKEY);
+        localStorage.removeItem(LEGACY_LSKEY);
+      }
     } catch (e) { /* modo privado */ }
     if (cfg.onChange) try { cfg.onChange(); } catch (e) { /* noop */ }
     renderToolbar();
@@ -803,7 +816,10 @@ export function attachChartEditor(cfg) {
   // ---- reset ----
   function resetAll() {
     store = {};
-    try { localStorage.removeItem(LSKEY); } catch (e) { /* noop */ }
+    try {
+      localStorage.removeItem(LSKEY);
+      localStorage.removeItem(LEGACY_LSKEY);
+    } catch (e) { /* noop */ }
     closePanel();
     selectedId = null;
     if (cfg.onReset) { cfg.onReset(); return; } // el módulo re-renderiza

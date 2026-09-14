@@ -26,7 +26,7 @@ const SNAP = `(async () => {
   const groups = {};
   Object.entries(av).forEach(([sid, v]) => { const g = meta[sid]; if (g) (groups[g] = groups[g] || []).push(v); });
   const kw = kruskalWallis(Object.values(groups));
-  let csN = 0; Object.keys(localStorage).forEach(k => { if (k.indexOf('qiimelab.chartStyle.') === 0) csN++; });
+  let csN = 0; Object.keys(localStorage).forEach(k => { if (k.indexOf('smart-175.chartStyle.') === 0 || k.indexOf('qiimelab.chartStyle.') === 0) csN++; });
   const ids = new Set(state.files.map(f => f.id));
   const dangling = [];
   const walk = (o, p) => {
@@ -44,7 +44,7 @@ const SNAP = `(async () => {
     nTaxa: tc.rows.length, nSamplesCounts: tc.headers.length - 1, minN,
     pv0: state.ordination ? state.ordination.proportionExplained[0] : null,
     kwH: kw.H, kwP: kw.p, files: state.files.length, csN,
-    lang: localStorage.getItem('qiimelab.lang'),
+    lang: localStorage.getItem('smart-175.lang') || localStorage.getItem('qiimelab.lang'),
     diffRows: state.differentialAbundance.rows.length,
     diffComparisons: (state.diffComparisons || []).map(c => c.rows.length),
     microbialCounts: (state.microbialCounts || []).map(s => s.label + ':' + s.rows.length + ':' + (s.mapping.groupCols || []).join('-') + ':' + s.mapping.valueCol),
@@ -65,7 +65,7 @@ try {
   await waitQC(c);
 
   // que la sesión lleve algo que restaurar: un estilo de gráfico y el idioma
-  await c.ev(`localStorage.setItem('qiimelab.chartStyle.__test__', JSON.stringify({ title: { dx: 5, dy: -3 } }))`);
+  await c.ev(`localStorage.setItem('smart-175.chartStyle.__test__', JSON.stringify({ title: { dx: 5, dy: -3 } }))`);
   await c.ev(`(async () => { const { setLang } = await import('/js/lib/i18n.js'); setLang('en'); })()`);
   await sleep(400);
 

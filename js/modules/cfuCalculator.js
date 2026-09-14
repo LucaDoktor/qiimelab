@@ -11,7 +11,8 @@ import { t } from '../lib/i18n.js';
 import { mean, stdDev, standardError } from '../lib/stats.js';
 import { registerFile, addMicrobialCountSeries } from '../state.js';
 
-const STORE_KEY = 'qiimelab.ufcCalc';
+const STORE_KEY = 'smart-175.ufcCalc';
+const LEGACY_STORE_KEY = 'qiimelab.ufcCalc';
 
 // modo de dilución: cómo interpreta el usuario el número de cada fila
 //   exp    -> 10^(-n)            (n = 3  →  10⁻³)
@@ -48,7 +49,7 @@ function defaultState() {
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
     if (raw && Array.isArray(raw.rows) && raw.rows.length) {
       return {
         volume: Number.isFinite(+raw.volume) && +raw.volume > 0 ? +raw.volume : 0.1,

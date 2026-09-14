@@ -48,7 +48,7 @@ export function render(container) {
       '<div class="ql-hero-motif">' + domainMotif() + '</div>' +
       '<div class="ql-hero-body">' +
       '<p class="ql-eyebrow">' + (who ? t('shell.greeting', { name: escapeHtml(who) }) + ' · ' : '') + t('home.eyebrow') + '</p>' +
-      '<h1 class="ql-hero-title">QiimeLab</h1>' +
+      '<h1 class="ql-hero-title">Smart-175</h1>' +
       '<p class="ql-hero-sub">' + t('home.subtitle') + '</p>' +
       '</div>';
     container.appendChild(header);

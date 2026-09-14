@@ -1,4 +1,4 @@
-// Simulación de daltonismo (dicromacia) sobre la paleta de datos de QiimeLab.
+// Simulación de daltonismo (dicromacia) sobre la paleta de datos de Smart-175.
 // Sin dependencias. Colores desde css/tokens.css.
 //
 // Método: sRGB → RGB lineal → matriz de dicromacia de Machado et al. (2009),

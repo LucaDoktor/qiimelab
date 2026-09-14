@@ -12,7 +12,7 @@ export function renderFooter(el) {
   if (!el) return;
   el.innerHTML =
     '<div class="ql-footer-inner">' +
-    '<span class="ql-footer-brand">QiimeLab</span>' +
+    '<span class="ql-footer-brand">Smart-175</span>' +
     '<span class="ql-footer-sep" aria-hidden="true">·</span>' +
     '<span class="ql-footer-by">' + t('footer.by') + ' <strong>BioInCode</strong></span>' +
     '<a class="ql-footer-link" href="mailto:' + CONTACT + '">' + CONTACT + '</a>' +

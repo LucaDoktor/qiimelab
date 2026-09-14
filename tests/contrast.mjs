@@ -1,4 +1,4 @@
-// Contraste WCAG AA de los pares texto/fondo y componente/fondo de QiimeLab,
+// Contraste WCAG AA de los pares texto/fondo y componente/fondo de Smart-175,
 // en claro y oscuro. Sin dependencias. Los colores se resuelven desde
 // css/tokens.css (tests/lib/tokens.mjs), así que el test sigue al archivo.
 //

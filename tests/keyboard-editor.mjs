@@ -70,7 +70,7 @@ try {
 
   await c.ev(`location.hash = '#/beta'`); await sleep(500);
   await c.ev(`location.hash = '#/barplots'`); await sleep(1500);
-  const persisted = await c.ev(`(() => { const raw = localStorage.getItem('qiimelab.chartStyle.taxaBarplot'); return raw ? JSON.parse(raw) : null; })()`);
+  const persisted = await c.ev(`(() => { const raw = localStorage.getItem('smart-175.chartStyle.taxaBarplot') || localStorage.getItem('qiimelab.chartStyle.taxaBarplot'); return raw ? JSON.parse(raw) : null; })()`);
   check('la posición persiste tras recargar la ruta', !!persisted && Object.keys(persisted).length > 0, JSON.stringify(persisted));
 
   check('sin errores de consola', c.problems.length === 0, c.problems.join('; '));

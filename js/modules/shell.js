@@ -81,14 +81,14 @@ export const GROUPS = [
 // state) — lectura mínima para la insignia, sin importar el módulo entero.
 function primersHaveData() {
   try {
-    const raw = JSON.parse(localStorage.getItem('qiimelab.primers') || 'null');
+    const raw = JSON.parse(localStorage.getItem('smart-175.primers') || localStorage.getItem('qiimelab.primers') || 'null');
     return !!(raw && Array.isArray(raw.primers) && raw.primers.some((p) => String(p.raw || '').trim().length >= 4));
   } catch (e) { return false; }
 }
 
 function phyloHasData() {
   try {
-    const raw = JSON.parse(localStorage.getItem('qiimelab.phylo') || 'null');
+    const raw = JSON.parse(localStorage.getItem('smart-175.phylo') || localStorage.getItem('qiimelab.phylo') || 'null');
     return !!(raw && typeof raw.fastaText === 'string' && raw.fastaText.trim().length > 0);
   } catch (e) { return false; }
 }
@@ -97,7 +97,7 @@ function phyloHasData() {
 // (la traza/calidad crudas viven en memoria de esa pestaña, no aquí).
 function sangerHasData() {
   try {
-    const raw = JSON.parse(localStorage.getItem('qiimelab.sanger') || 'null');
+    const raw = JSON.parse(localStorage.getItem('smart-175.sanger') || localStorage.getItem('qiimelab.sanger') || 'null');
     return !!(raw && Array.isArray(raw.results) && raw.results.length > 0);
   } catch (e) { return false; }
 }
@@ -134,7 +134,7 @@ export function renderShell(container, currentRoute) {
   brand.className = 'ql-brand';
   brand.href = '#/';
   brand.title = t('nav.home');
-  brand.innerHTML = BRAND_MARK + '<span class="ql-brand-name">QiimeLab</span>';
+  brand.innerHTML = BRAND_MARK + '<span class="ql-brand-name">Smart-175</span>';
   container.appendChild(brand);
 
   const who = getProfileName();

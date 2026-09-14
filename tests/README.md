@@ -1,6 +1,6 @@
 # tests/
 
-Verificación de QiimeLab. Todo es Node ESM sin dependencias de `npm`
+Verificación de Smart-175. Todo es Node ESM sin dependencias de `npm`
 (`node ≥ 20`). Los tests de navegador usan Chrome/Chromium headless vía CDP;
 los de estadística comparan contra R cuando está disponible (`stats/primertm.mjs`
 compara contra Biopython en vez de R, mismo patrón GOLDEN + recálculo en vivo).

@@ -124,7 +124,7 @@ export function loadExampleCommunityData() {
   });
 
   const fileId = registerFile(
-    'ejemplo_comunidad.qiimelab',
+    'ejemplo_comunidad.smart-175',
     0,
     'Datos sintéticos generados en el navegador (metadatos + barplot + alfa + beta), para probar los módulos sin subir nada.'
   );

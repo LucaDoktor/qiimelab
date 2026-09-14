@@ -10,7 +10,7 @@
 // rangos taxonómicos, nombres de género, KO/KEGG…) NO se traducen: se dejan
 // igual en los 5 idiomas y solo se traduce la interfaz alrededor.
 
-const STORAGE_KEY = 'qiimelab.lang';
+const STORAGE_KEY = 'smart-175.lang';
 const DEFAULT_LANG = 'es';
 
 // Autónimos (el nombre de cada idioma en ese mismo idioma), sin banderas.
@@ -47,7 +47,7 @@ const DICTS = {
     pwa: {
       install: 'Instalar app',
       offline: 'Sin conexión — los datos que ya cargaste siguen aquí; todo se procesa en tu navegador.',
-      updateReady: 'Hay una versión nueva de QiimeLab.',
+      updateReady: 'Hay una versión nueva de Smart-175.',
       reload: 'Recargar',
     },
     slots: {
@@ -131,7 +131,7 @@ const DICTS = {
     },
     home: {
       eyebrow: 'Análisis de microbioma · sin servidor',
-      subtitle: 'Sube tus resultados de QIIME2 (o los archivos ya exportados) y obtén las figuras y tablas estándar al instante — barplots, diversidad alfa y beta, abundancia diferencial. Todo se calcula en tu navegador: nada se envía a ningún servidor.',
+      subtitle: 'Plataforma bioinformática integral 100% en cliente. Analiza metabarcoding, procesa cromatogramas Sanger, ejecuta alineamientos Smith-Waterman y visualiza filogenias y dinámicas temporales. Privacidad absoluta: todos los cálculos se realizan localmente en tu navegador.',
       ctaLoadedTitle: 'Ya tienes datos cargados en esta sesión',
       ctaLoadedNote: 'Entra en un módulo del menú para ver el análisis, o sube más archivos.',
       ctaEmptyTitle: 'Empieza subiendo tus resultados de QIIME2',
@@ -328,7 +328,7 @@ const DICTS = {
       confirmBody: 'Esto reemplaza por completo la sesión actual: {files} archivo(s) y {slots} módulo(s) con datos. Lo que tengas cargado ahora se pierde.',
       confirmFormat: 'La sesión está en formato {fmt} y esta versión usa otro; se restaurará lo que case por nombre.',
       confirmMigrate: 'La sesión es de un esquema anterior (v{fmt}); se migrará al actual (v{cur}) al cargarla.',
-      confirmTooNew: 'La sesión es de una versión de QiimeLab más nueva (esquema v{fmt}); se restaurará lo que case por nombre.',
+      confirmTooNew: 'La sesión es de una versión de Smart-175 más nueva (esquema v{fmt}); se restaurará lo que case por nombre.',
       confirmYes: 'Reemplazar sesión',
     },
     exdl: {
@@ -351,7 +351,7 @@ const DICTS = {
       pickNote: 'Se listan los módulos con datos cargados ahora mismo. El informe usa el mismo cálculo y el mismo dibujo que cada módulo — no recalcula nada.',
       generate: 'Generar informe',
       generating: 'Generando…',
-      docTitle: 'Informe de análisis — QiimeLab',
+      docTitle: 'Informe de análisis — Smart-175',
       metaDate: 'Generado el {date}',
       metaLang: 'idioma: {lang}',
       emptyTitle: 'Todavía no hay nada que informar',
@@ -497,9 +497,9 @@ const DICTS = {
         volcano: 'Un punto por taxón: en el eje X, el log2FC (cuánto cambia); en el eje Y, el −log10 del p ajustado (cuán seguro es el cambio). Los taxones interesantes quedan arriba y hacia los lados; el montón del centro no cambia o no es fiable.',
         biomarkers: 'Busca qué taxón está claramente enriquecido en cada grupo: Kruskal-Wallis por taxón sobre la abundancia relativa, corrección por FDR, y dos tamaños de efecto a elegir — delta de Cliff, o un LDA univariante (una sola variable, no multivariante) estabilizado con bootstrap, la idea que da nombre a LEfSe. Está inspirado en LEfSe pero sigue sin ser la herramienta original — es una variante propia, simplificada. La propia pestaña lo explica.',
         correlation: 'Miden si dos variables suben y bajan juntas, en un número de −1 a +1. Pearson mide relación lineal (una recta). Spearman trabaja sobre los rangos, así que capta cualquier relación creciente o decreciente aunque no sea recta y le afectan menos los valores extremos.',
-        kegg: 'KEGG es una base de datos que agrupa genes por la función que hacen. Un KO (KEGG Orthology, con código K#####) es un grupo de genes equivalentes de distintos organismos. PICRUSt2 estima qué KOs hay a partir de los taxones; QiimeLab enlaza cada KO a su ficha en kegg.jp pero no incluye la base de datos.',
+        kegg: 'KEGG es una base de datos que agrupa genes por la función que hacen. Un KO (KEGG Orthology, con código K#####) es un grupo de genes equivalentes de distintos organismos. PICRUSt2 estima qué KOs hay a partir de los taxones; Smart-175 enlaza cada KO a su ficha en kegg.jp pero no incluye la base de datos.',
         cliff: 'Un tamaño de efecto no paramétrico entre dos grupos: la probabilidad de que un valor al azar de un grupo supere a uno del otro, menos la probabilidad contraria. Va de −1 a +1; 0 significa que los dos grupos se solapan del todo. No supone ninguna forma de distribución.',
-        microbialCounts: 'Dos maneras de contar microbios vivos en una muestra. En placa se siembra una dilución conocida, se cuentan las colonias y se calcula UFC (unidades formadoras de colonia) por mL o por gramo. Por NMP se hace crecer la muestra en varios tubos y, según cuántos dan positivo, una tabla estadística da el número más probable. QiimeLab no calcula ninguno de los dos: parte del valor que ya da el laboratorio y solo lo resume por grupo.',
+        microbialCounts: 'Dos maneras de contar microbios vivos en una muestra. En placa se siembra una dilución conocida, se cuentan las colonias y se calcula UFC (unidades formadoras de colonia) por mL o por gramo. Por NMP se hace crecer la muestra en varios tubos y, según cuántos dan positivo, una tabla estadística da el número más probable. Smart-175 no calcula ninguno de los dos: parte del valor que ya da el laboratorio y solo lo resume por grupo.',
         mpn: 'Número Más Probable (Most Probable Number). Estima cuántas células viables hay cuando no se pueden contar colonias una a una: se inoculan varios tubos con diluciones seriadas, se mira en cuáles hay crecimiento y una tabla de probabilidad devuelve la concentración más verosímil, con su intervalo. Es lo habitual para coliformes en agua y alimentos.',
         sdvsse: 'La desviación estándar (SD) mide cuánto se dispersan las réplicas entre sí — no baja aunque midas más. El error estándar (SE = SD ÷ √n) mide la precisión de la MEDIA — baja al añadir réplicas. Confundirlos es un error clásico: unas barras de error con ±SE parecen mucho más ajustadas que las de ±SD sobre los mismos datos. Di siempre cuál pintas.',
         iupacDegenerate: 'Cuando una posición de un primer no es siempre la misma base, se escribe con una letra que representa varias posibles: Y = C o T, R = A o G, M = A o C, N = cualquiera… Los primers universales de 16S (515F/806R) casi siempre llevan alguna, porque el gen varía ligeramente entre especies en esa posición.',
@@ -737,7 +737,7 @@ const DICTS = {
       statsTitle: 'Estadísticas por primer',
       statsNote: 'Los valores marcados con ≈ son una estimación (promedio sobre las resoluciones posibles de las bases degeneradas). La Tm de un primer degenerado se da como rango (mínimo–máximo entre todas sus resoluciones concretas), no como un solo número.',
       estimateNote: 'estimación, ver ≈ arriba',
-      reportTitle: 'Informe de primers — QiimeLab',
+      reportTitle: 'Informe de primers — Smart-175',
       reportGeneratedAt: 'Generado: {date}',
       reportCopy: 'Copiar informe', reportCopied: 'Copiado ✓', reportDownload: 'Descargar informe (.txt)',
       designTemplateLen: 'plantilla de {n} nt',
@@ -793,7 +793,7 @@ const DICTS = {
       ampliconRow: '{a} (+) → {b} (−): {start}–{end} nt ({size} pb)',
       tabCoverage: 'Cobertura',
       coverageTitle: 'Cobertura contra tu propia referencia',
-      coverageNote: 'Sube un FASTA de referencia (tu panel de secuencias, un recorte de una base de datos, lo que sea) y opcionalmente un archivo de taxonomía. QiimeLab busca cada primer (o pareja) contra esas secuencias, con tolerancia a mismatches, y da el % de cobertura, la lista de las que no encajaron, y si hay taxonomía, la cobertura agrupada por grupo taxonómico.',
+      coverageNote: 'Sube un FASTA de referencia (tu panel de secuencias, un recorte de una base de datos, lo que sea) y opcionalmente un archivo de taxonomía. Smart-175 busca cada primer (o pareja) contra esas secuencias, con tolerancia a mismatches, y da el % de cobertura, la lista de las que no encajaron, y si hay taxonomía, la cobertura agrupada por grupo taxonómico.',
       coverageDisclaimer: 'Esto es cobertura contra la referencia que TÚ has subido — no es una búsqueda contra bases de datos públicas completas como GenBank, SILVA o Greengenes.',
       covRefDropLabel: 'Arrastra un FASTA de referencia aquí o haz clic para elegirlo',
       covTaxDropLabel: 'Taxonomía (opcional): arrastra un .tsv/.csv aquí o haz clic',
@@ -923,7 +923,7 @@ const DICTS = {
     validacion: {
       eyebrow: 'Confianza en los números',
       title: 'Validación estadística',
-      subtitle: 'QiimeLab calcula toda la estadística en tu navegador, sin R ni Python. Esta página ejecuta ahora mismo cada fórmula sobre una entrada fija y la compara con el valor que da R, para que veas el error numérico tú mismo.',
+      subtitle: 'Smart-175 calcula toda la estadística en tu navegador, sin R ni Python. Esta página ejecuta ahora mismo cada fórmula sobre una entrada fija y la compara con el valor que da R, para que veas el error numérico tú mismo.',
       allPass: 'Las {n} de {total} comprobaciones coinciden con R.',
       someFail: '{n} de {total} comprobaciones coinciden con R.',
       recomputed: 'Recalculado en tu navegador al abrir esta página.',
@@ -1375,7 +1375,7 @@ const DICTS = {
     pwa: {
       install: 'Install app',
       offline: 'Offline — the data you already loaded is still here; everything runs in your browser.',
-      updateReady: 'A new version of QiimeLab is available.',
+      updateReady: 'A new version of Smart-175 is available.',
       reload: 'Reload',
     },
     slots: {
@@ -1459,7 +1459,7 @@ const DICTS = {
     },
     home: {
       eyebrow: 'Microbiome analysis · no server',
-      subtitle: 'Upload your QIIME2 results (or the already-exported files) and get the standard figures and tables instantly — barplots, alpha and beta diversity, differential abundance. Everything is computed in your browser: nothing is sent to any server.',
+      subtitle: 'Comprehensive 100% client-side bioinformatics platform. Analyze metabarcoding, process Sanger chromatograms, execute Smith-Waterman alignments, and visualize phylogenies and temporal dynamics. Absolute privacy: all computations are performed locally in your browser.',
       ctaLoadedTitle: 'You already have data loaded in this session',
       ctaLoadedNote: 'Open a module from the menu to see the analysis, or upload more files.',
       ctaEmptyTitle: 'Start by uploading your QIIME2 results',
@@ -1656,7 +1656,7 @@ const DICTS = {
       confirmBody: 'This fully replaces the current session: {files} file(s) and {slots} module(s) with data. Whatever you have loaded now is lost.',
       confirmFormat: 'The session is in format {fmt} and this version uses a different one; what matches by name will be restored.',
       confirmMigrate: 'The session uses an older schema (v{fmt}); it will be migrated to the current one (v{cur}) on load.',
-      confirmTooNew: 'The session is from a newer QiimeLab version (schema v{fmt}); what matches by name will be restored.',
+      confirmTooNew: 'The session is from a newer Smart-175 version (schema v{fmt}); what matches by name will be restored.',
       confirmYes: 'Replace session',
     },
     exdl: {
@@ -1679,7 +1679,7 @@ const DICTS = {
       pickNote: 'The modules with data loaded right now are listed. The report uses each module’s own computation and drawing — nothing is recalculated.',
       generate: 'Generate report',
       generating: 'Generating…',
-      docTitle: 'Analysis report — QiimeLab',
+      docTitle: 'Analysis report — Smart-175',
       metaDate: 'Generated on {date}',
       metaLang: 'language: {lang}',
       emptyTitle: 'Nothing to report yet',
@@ -1825,9 +1825,9 @@ const DICTS = {
         volcano: 'One point per taxon: the X axis is log2FC (how much it changes), the Y axis is −log10 of the adjusted p-value (how sure the change is). The interesting taxa sit high and to the sides; the central cloud does not change or is not reliable.',
         biomarkers: 'Finds which taxon is clearly enriched in each group: Kruskal-Wallis per taxon on relative abundance, FDR correction, and a choice of two effect sizes — Cliff’s delta, or a univariate (single-variable, not multivariate) LDA stabilised with bootstrap, the idea behind LEfSe’s name. It is inspired by LEfSe but is still not the original tool — a simplified, custom variant. The tab itself explains this.',
         correlation: 'They measure whether two variables rise and fall together, as a number from −1 to +1. Pearson measures a linear (straight-line) relationship. Spearman works on the ranks, so it catches any increasing or decreasing relationship even if it is not a line, and is less swayed by outliers.',
-        kegg: 'KEGG is a database that groups genes by the function they perform. A KO (KEGG Orthology, code K#####) is a set of equivalent genes across organisms. PICRUSt2 estimates which KOs are present from the taxa; QiimeLab links each KO to its kegg.jp page but does not bundle the database.',
+        kegg: 'KEGG is a database that groups genes by the function they perform. A KO (KEGG Orthology, code K#####) is a set of equivalent genes across organisms. PICRUSt2 estimates which KOs are present from the taxa; Smart-175 links each KO to its kegg.jp page but does not bundle the database.',
         cliff: 'A non-parametric effect size between two groups: the probability that a random value from one group beats one from the other, minus the opposite probability. It runs from −1 to +1; 0 means the two groups fully overlap. It assumes no distribution shape.',
-        microbialCounts: 'Two ways of counting live microbes in a sample. On a plate you spread a known dilution, count the colonies and work out CFU (colony-forming units) per mL or per gram. By MPN you grow the sample in several tubes and, from how many turn positive, a statistical table gives the most probable number. QiimeLab computes neither: it starts from the value the lab already reports and only summarises it per group.',
+        microbialCounts: 'Two ways of counting live microbes in a sample. On a plate you spread a known dilution, count the colonies and work out CFU (colony-forming units) per mL or per gram. By MPN you grow the sample in several tubes and, from how many turn positive, a statistical table gives the most probable number. Smart-175 computes neither: it starts from the value the lab already reports and only summarises it per group.',
         mpn: 'Most Probable Number. Estimates how many viable cells there are when colonies cannot be counted one by one: several tubes are inoculated with serial dilutions, you see which ones grow, and a probability table returns the most likely concentration, with its interval. It is the usual method for coliforms in water and food.',
         sdvsse: 'The standard deviation (SD) measures how much the replicates scatter from each other — it does not shrink as you measure more. The standard error (SE = SD ÷ √n) measures the precision of the MEAN — it shrinks as you add replicates. Confusing them is a classic mistake: ±SE error bars look far tighter than ±SD bars on the same data. Always say which one you are drawing.',
         iupacDegenerate: "When a primer position is not always the same base, it is written with a letter standing for several possibilities: Y = C or T, R = A or G, M = A or C, N = any of the four… Universal 16S primers (515F/806R) almost always carry one, because the gene varies slightly between species at that spot.",
@@ -2062,7 +2062,7 @@ const DICTS = {
       statsTitle: 'Per-primer statistics',
       statsNote: 'Values marked with ≈ are an estimate (averaged over the possible resolutions of the degenerate bases). The Tm of a degenerate primer is given as a range (minimum–maximum over all its concrete resolutions), not a single number.',
       estimateNote: 'estimate, see ≈ above',
-      reportTitle: 'Primer report — QiimeLab',
+      reportTitle: 'Primer report — Smart-175',
       reportGeneratedAt: 'Generated: {date}',
       reportCopy: 'Copy report', reportCopied: 'Copied ✓', reportDownload: 'Download report (.txt)',
       designTemplateLen: '{n} nt template',
@@ -2118,7 +2118,7 @@ const DICTS = {
       ampliconRow: '{a} (+) → {b} (−): {start}–{end} nt ({size} bp)',
       tabCoverage: 'Coverage',
       coverageTitle: 'Coverage against your own reference',
-      coverageNote: "Upload a reference FASTA (your own sequence panel, a slice of a database, whatever it is) and optionally a taxonomy file. QiimeLab searches each primer (or pair) against those sequences, with a mismatch tolerance, and gives the % covered, the list of ones that didn't match, and, if there's taxonomy, coverage grouped by taxonomic group.",
+      coverageNote: "Upload a reference FASTA (your own sequence panel, a slice of a database, whatever it is) and optionally a taxonomy file. Smart-175 searches each primer (or pair) against those sequences, with a mismatch tolerance, and gives the % covered, the list of ones that didn't match, and, if there's taxonomy, coverage grouped by taxonomic group.",
       coverageDisclaimer: 'This is coverage against the reference YOU uploaded — not a search against full public databases such as GenBank, SILVA or Greengenes.',
       covRefDropLabel: 'Drag a reference FASTA here or click to choose one',
       covTaxDropLabel: 'Taxonomy (optional): drag a .tsv/.csv here or click',
@@ -2248,7 +2248,7 @@ const DICTS = {
     validacion: {
       eyebrow: 'Trust in the numbers',
       title: 'Statistical validation',
-      subtitle: 'QiimeLab runs all the statistics in your browser, without R or Python. This page runs each formula right now on a fixed input and compares it with the value R returns, so you can see the numeric error yourself.',
+      subtitle: 'Smart-175 runs all the statistics in your browser, without R or Python. This page runs each formula right now on a fixed input and compares it with the value R returns, so you can see the numeric error yourself.',
       allPass: 'All {n} of {total} checks match R.',
       someFail: '{n} of {total} checks match R.',
       recomputed: 'Recomputed in your browser when you opened this page.',
@@ -2698,7 +2698,7 @@ const DICTS = {
     pwa: {
       install: 'Installa app',
       offline: 'Offline — i dati che hai già caricato restano qui; tutto viene elaborato nel tuo browser.',
-      updateReady: 'È disponibile una nuova versione di QiimeLab.',
+      updateReady: 'È disponibile una nuova versione di Smart-175.',
       reload: 'Ricarica',
     },
     slots: {
@@ -2714,7 +2714,7 @@ const DICTS = {
     },
     home: {
       eyebrow: 'Analisi del microbioma · senza server',
-      subtitle: 'Carica i risultati di QIIME2 (o i file già esportati) e ottieni subito le figure e le tabelle standard — barplot, diversità alfa e beta, abbondanza differenziale. Tutto viene calcolato nel tuo browser: nulla viene inviato a un server.',
+      subtitle: 'Piattaforma bioinformatica completa al 100% lato client. Analizza metabarcoding, elabora cromatogrammi Sanger, esegue allineamenti Smith-Waterman e visualizza filogenesi e dinamiche temporali. Privacy assoluta: tutti i calcoli vengono eseguiti localmente nel tuo browser.',
       ctaLoadedTitle: 'Hai già dei dati caricati in questa sessione',
       ctaLoadedNote: "Apri un modulo dal menu per vedere l'analisi, oppure carica altri file.",
       ctaEmptyTitle: 'Inizia caricando i risultati di QIIME2',
@@ -2801,7 +2801,7 @@ const DICTS = {
     pwa: {
       install: 'App installieren',
       offline: 'Offline — die bereits geladenen Daten bleiben erhalten; alles läuft in deinem Browser.',
-      updateReady: 'Eine neue Version von QiimeLab ist verfügbar.',
+      updateReady: 'Eine neue Version von Smart-175 ist verfügbar.',
       reload: 'Neu laden',
     },
     slots: {
@@ -2817,7 +2817,7 @@ const DICTS = {
     },
     home: {
       eyebrow: 'Mikrobiom-Analyse · ohne Server',
-      subtitle: 'Lade deine QIIME2-Ergebnisse hoch (oder die bereits exportierten Dateien) und erhalte sofort die üblichen Abbildungen und Tabellen — Barplots, Alpha- und Beta-Diversität, differenzielle Abundanz. Alles wird in deinem Browser berechnet: nichts wird an einen Server gesendet.',
+      subtitle: 'Umfassende 100% clientseitige Bioinformatik-Plattform. Analysiere Metabarcoding, verarbeite Sanger-Chromatogramme, führe Smith-Waterman-Alignments durch und visualisiere Phylogenien und zeitliche Dynamiken. Absolute Privatsphäre: Alle Berechnungen erfolgen lokal in deinem Browser.',
       ctaLoadedTitle: 'Du hast in dieser Sitzung bereits Daten geladen',
       ctaLoadedNote: 'Öffne ein Modul im Menü, um die Analyse zu sehen, oder lade weitere Dateien hoch.',
       ctaEmptyTitle: 'Beginne mit dem Hochladen deiner QIIME2-Ergebnisse',
@@ -2904,7 +2904,7 @@ const DICTS = {
     pwa: {
       install: '安装应用',
       offline: '离线 — 已加载的数据仍然可用；所有处理都在你的浏览器中进行。',
-      updateReady: 'QiimeLab 有新版本可用。',
+      updateReady: 'Smart-175 有新版本可用。',
       reload: '重新加载',
     },
     slots: {
@@ -2920,7 +2920,7 @@ const DICTS = {
     },
     home: {
       eyebrow: '微生物组分析 · 无服务器',
-      subtitle: '上传你的 QIIME2 结果（或已导出的文件），立即获得标准图表——条形图、Alpha 和 Beta 多样性、差异丰度。所有计算都在你的浏览器中完成：不会发送到任何服务器。',
+      subtitle: '全功能 100% 客户端生物信息学平台。分析宏条形码、处理 Sanger 色谱图、执行 Smith-Waterman 比对，并可视化系统发育与时间动态。绝对隐私：所有计算均在浏览器本地完成。',
       ctaLoadedTitle: '本次会话已加载数据',
       ctaLoadedNote: '从菜单打开一个模块查看分析，或上传更多文件。',
       ctaEmptyTitle: '先上传你的 QIIME2 结果',
@@ -2990,7 +2990,7 @@ const listeners = new Set();
 
 function readStoredLang() {
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
+    const v = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('qiimelab.lang');
     if (v && DICTS[v]) return v;
   } catch (e) { /* localStorage puede lanzar en modo privado */ }
   return DEFAULT_LANG;

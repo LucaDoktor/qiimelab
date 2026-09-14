@@ -1,4 +1,4 @@
-/* Service worker de QiimeLab — caché en tiempo de ejecución, sin lista fija.
+/* Service worker de Smart-175 — caché en tiempo de ejecución, sin lista fija.
  *
  * La app es "un módulo ES por archivo" y no tiene build step: una lista de
  * precache escrita a mano se desincronizaría con cada módulo nuevo. En su
@@ -17,7 +17,7 @@
 // Súbelo a mano cuando quieras forzar un vaciado de caché (normalmente no hace
 // falta: el propio cambio de bytes de este archivo ya instala un SW nuevo).
 const VERSION = 'v2';
-const CACHE = 'qiimelab-' + VERSION;
+const CACHE = 'smart-175-' + VERSION;
 
 // El shell mínimo que garantiza que la app arranca sin red la primera vez que
 // ya se visitó. Son rutas estables (no módulos de análisis): si alguna falla
@@ -50,7 +50,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith('qiimelab-') && k !== CACHE).map((k) => caches.delete(k)));
+    await Promise.all(keys.filter((k) => (k.startsWith('smart-175-') || k.startsWith('qiimelab-')) && k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
