@@ -1532,4 +1532,39 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
   will-change: left, width;
 }
 
+/* --- Diagramas Aluviales Temporales (SVG puro) --- */
+.ql-alluvial-link {
+  fill-opacity: 0.4;
+  transition: opacity 0.18s ease, fill-opacity 0.18s ease;
+  cursor: pointer;
+}
+
+.ql-alluvial-node {
+  transition: opacity 0.18s ease, stroke 0.18s ease;
+  cursor: pointer;
+}
+
+.ql-alluvial-link:hover {
+  fill-opacity: 0.85;
+}
+
+/* Interacción de linaje: al hacer hover sobre un taxón, su flujo sube al 100% y el resto cae al 10% */
+.ql-svg.is-highlighting .ql-alluvial-link:not(.is-highlighted),
+.ql-svg.is-highlighting .ql-alluvial-node:not(.is-highlighted) {
+  opacity: 0.1 !important;
+  fill-opacity: 0.1 !important;
+}
+
+.ql-svg.is-highlighting .ql-alluvial-link.is-highlighted {
+  opacity: 1 !important;
+  fill-opacity: 1 !important;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.3));
+}
+
+.ql-svg.is-highlighting .ql-alluvial-node.is-highlighted {
+  opacity: 1 !important;
+  stroke: var(--surface, #ffffff);
+  stroke-width: 1.5px;
+}
+
 
