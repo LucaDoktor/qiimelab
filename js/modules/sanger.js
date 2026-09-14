@@ -130,16 +130,17 @@ export function renderAlignmentHTML(result, opts = {}) {
 }
 
 /**
- * Renderiza el solapamiento entre la lectura Forward recortada y el Reverse
- * Complement recortado sobre el Consenso, apilados en bloques monoespaciados
- * con coordenadas 1-indexadas, resaltado de zonas no solapadas (solo Forward /
- * solo RevComp) y marcado de mismatches resueltos en el consenso.
+ * Renderiza el solapamiento entre Forward y Reverse Complement en una
+ * visualización horizontal de "doble cadena" estilo Genome Browser, con
+ * contenedor scrollable (overflow-x: auto), carril Flexbox con dos bloques
+ * apilados por posición de nucleótido, etiquetas direccionales 5' y 3' y
+ * bloques vacíos en los extremos no solapados.
  *
  * @param {string|Object} fwdOrData - Secuencia Forward recortada o un objeto { fwdSeq, revCompSeq, consensus, ... }
  * @param {string} [revCompSeq] - Secuencia Reverse Complement recortada
  * @param {string} [consensus] - Secuencia consenso resultante
- * @param {Object} [opts] - Opciones (lineLength, colsA, colsB, fStart, rStart, etc.)
- * @returns {string} HTML seguro con el bloque <pre class="ql-code ql-overlap-pre"><code>...</code></pre>
+ * @param {Object} [opts] - Opciones adicionales
+ * @returns {string} HTML seguro del carril de doble cadena horizontal
  */
 export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
   let fwdSeq = '';
@@ -159,10 +160,8 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
   }
 
   if (!fwdSeq && !rcSeq && !consSeq) {
-    return `<pre class="ql-code ql-overlap-pre"><code>${t('sanger.overlapNoData')}</code></pre>`;
+    return `<div class="ql-ds-container"><p class="ql-field-help" style="padding:12px;margin:0;">${t('sanger.overlapNoData')}</p></div>`;
   }
-
-  const { lineLength = 60 } = options;
 
   let colsA = options.colsA || '';
   let colsB = options.colsB || '';
@@ -207,22 +206,21 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
     }
   }
 
-  // Construcción de la matriz de columnas común
+  // Construcción de columnas
   const cols = [];
 
   if (isOverlap) {
-    // A. Flanco 5' que sobrepase en RevComp (raro)
+    // Flanco 5' que sobrepase en RevComp (raro)
     for (let j = 0; j < rStart; j++) {
-      cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+      cols.push({ f: ' ', r: rcSeq[j], type: 'rev-only ql-overlap-rev' });
     }
 
-    // B. Flanco 5' solo Forward
+    // Flanco 5' solo Forward
     for (let i = 0; i < fStart; i++) {
-      cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+      cols.push({ f: fwdSeq[i], r: ' ', type: 'fwd-only ql-overlap-fwd' });
     }
 
-    // C. Región de solapamiento
-    let consPos = cols.length;
+    // Zona de solapamiento
     let fBases = 0, rBases = 0;
     for (let k = 0; k < colsA.length; k++) {
       const ca = colsA[k];
@@ -232,153 +230,125 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
 
       const isMatch = ca === cb && ca !== '-';
       const isMismatch = ca !== cb && ca !== '-' && cb !== '-';
+      const type = isMatch
+        ? 'overlap-match ql-overlap-match'
+        : (isMismatch ? 'overlap-mismatch ql-overlap-mismatch' : 'ql-ds-gap');
 
-      let cc = consSeq && consPos < consSeq.length ? consSeq[consPos] : (isMatch ? ca : (ca === '-' ? cb : (cb === '-' ? ca : ca)));
-      if (cc !== '-') consPos++;
-
-      cols.push({
-        f: ca,
-        r: cb,
-        m: isMatch ? '|' : (isMismatch ? '·' : ' '),
-        c: cc,
-        type: isMatch ? 'overlap-match' : (isMismatch ? 'overlap-mismatch' : 'overlap-gap'),
-      });
+      cols.push({ f: ca, r: cb, type });
     }
 
-    // D. Flanco 3' de Forward si sobrara (raro)
+    // Flanco 3' de Forward si sobrara (raro)
     for (let i = fStart + fBases; i < fwdSeq.length; i++) {
-      cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+      cols.push({ f: fwdSeq[i], r: ' ', type: 'fwd-only ql-overlap-fwd' });
     }
 
-    // E. Flanco 3' solo RevComp
+    // Flanco 3' solo RevComp
     for (let j = rStart + rBases; j < rcSeq.length; j++) {
-      cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+      cols.push({ f: ' ', r: rcSeq[j], type: 'rev-only ql-overlap-rev' });
     }
   } else {
     // Modo sin solapamiento (stitched o lecturas separadas)
     if (fwdSeq) {
       for (let i = 0; i < fwdSeq.length; i++) {
-        cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+        cols.push({ f: fwdSeq[i], r: ' ', type: 'fwd-only ql-overlap-fwd' });
       }
     }
     const nBridgeMatch = consSeq ? consSeq.slice(fwdSeq.length).match(/^N+/) : null;
     const nGap = nBridgeMatch ? nBridgeMatch[0].length : (fwdSeq && rcSeq ? 10 : 0);
     for (let k = 0; k < nGap; k++) {
-      cols.push({ f: ' ', r: ' ', m: ' ', c: 'N', type: 'gap-stitch' });
+      cols.push({ f: ' ', r: ' ', type: 'ql-ds-gap' });
     }
     if (rcSeq) {
       for (let j = 0; j < rcSeq.length; j++) {
-        cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+        cols.push({ f: ' ', r: rcSeq[j], type: 'rev-only ql-overlap-rev' });
       }
     }
   }
 
-  // Estadísticas del solapamiento
-  let overlapBases = 0;
-  let matches = 0;
-  let mismatches = 0;
+  // Métricas del solapamiento
+  let overlapBases = 0, matches = 0, mismatches = 0;
   for (let i = 0; i < cols.length; i++) {
-    if (cols[i].type === 'overlap-match') { overlapBases++; matches++; }
-    else if (cols[i].type === 'overlap-mismatch') { overlapBases++; mismatches++; }
-    else if (cols[i].type === 'overlap-gap') { overlapBases++; }
+    if (cols[i].type.includes('overlap-match')) { overlapBases++; matches++; }
+    else if (cols[i].type.includes('overlap-mismatch')) { overlapBases++; mismatches++; }
+    else if (cols[i].type.includes('ql-ds-gap') && cols[i].f !== ' ' && cols[i].r !== ' ') { overlapBases++; }
   }
   const identityPct = overlapBases > 0 ? ((matches / overlapBases) * 100).toFixed(1) + '%' : '—';
-  const headerLine = `Forward: ${fwdSeq.length} pb | RevComp: ${rcSeq.length} pb | ${t('sanger.overlapStatOverlapLen')}: ${overlapBases} pb | ${t('sanger.overlapStatIdentity')}: ${identityPct} (${matches}/${overlapBases}) | ${t('sanger.overlapStatMismatches')}: ${mismatches} | ${t('sanger.overlapStatConsensusLen')}: ${consSeq.length || cols.length} pb`;
 
-  const lines = [headerLine];
-
-  const maxCoord = Math.max(fwdSeq.length, rcSeq.length, consSeq.length, cols.length);
-  const padLen = Math.max(5, String(maxCoord).length);
-
-  function padNum(n) {
-    return n != null ? String(n).padStart(padLen) : ' '.repeat(padLen);
+  // Identificar posiciones iniciales y finales de cada lectura para etiquetas 5' y 3'
+  const firstFwdIdx = cols.findIndex((c) => c.f !== ' ' && c.f !== '-');
+  let lastFwdIdx = -1;
+  for (let i = cols.length - 1; i >= 0; i--) {
+    if (cols[i].f !== ' ' && cols[i].f !== '-') { lastFwdIdx = i; break; }
+  }
+  const firstRevIdx = cols.findIndex((c) => c.r !== ' ' && c.r !== '-');
+  let lastRevIdx = -1;
+  for (let i = cols.length - 1; i >= 0; i--) {
+    if (cols[i].r !== ' ' && cols[i].r !== '-') { lastRevIdx = i; break; }
   }
 
-  function formatRow(chunk, getCharAndClass) {
-    let out = '';
-    let curClass = '';
-    for (let i = 0; i < chunk.length; i++) {
-      const { ch, cls } = getCharAndClass(chunk[i]);
-      const safeCh = ch === ' ' ? ' ' : escapeHtml(ch);
-      if (cls !== curClass) {
-        if (curClass) out += '</span>';
-        if (cls) out += `<span class="${cls}">`;
-        curClass = cls;
-      }
-      out += safeCh;
-    }
-    if (curClass) out += '</span>';
-    return out;
+  const colHtmls = [];
+
+  // Etiqueta 5' inicial
+  const initFwdTag = firstFwdIdx === 0 ? '<div class="ql-ds-tag" title="Extremo 5\' Forward">5\'</div>' : '<div class="ql-ds-block ql-ds-empty"></div>';
+  const initRevTag = firstRevIdx === 0 ? '<div class="ql-ds-tag" title="Extremo 5\' Reverse Complement">5\'</div>' : '<div class="ql-ds-block ql-ds-empty"></div>';
+  if (firstFwdIdx === 0 || firstRevIdx === 0) {
+    colHtmls.push('<div class="ql-ds-col ql-ds-col-tag">' + initFwdTag + initRevTag + '</div>');
   }
 
-  let fCounter = 0;
-  let rCounter = 0;
-  let cCounter = 0;
+  // Columnas con bloques apilados
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
+    const pos = i + 1;
 
-  for (let offset = 0; offset < cols.length; offset += lineLength) {
-    const chunk = cols.slice(offset, offset + lineLength);
-
-    let startF = null, endF = null;
-    let startR = null, endR = null;
-    let startC = null, endC = null;
-
-    for (let i = 0; i < chunk.length; i++) {
-      const col = chunk[i];
-      if (col.f !== ' ' && col.f !== '-') {
-        fCounter++;
-        if (startF === null) startF = fCounter;
-        endF = fCounter;
-      }
-      if (col.r !== ' ' && col.r !== '-') {
-        rCounter++;
-        if (startR === null) startR = rCounter;
-        endR = rCounter;
-      }
-      if (col.c !== ' ' && col.c !== '-') {
-        cCounter++;
-        if (startC === null) startC = cCounter;
-        endC = cCounter;
-      }
+    // Bloque superior (Forward)
+    let uHtml = '';
+    if (c.f !== ' ' && c.f !== '-') {
+      uHtml = `<div class="ql-ds-block ${c.type}" title="Pos: ${pos} | Forward: ${escapeHtml(c.f)}">${escapeHtml(c.f)}</div>`;
+    } else if (i === lastFwdIdx + 1) {
+      uHtml = '<div class="ql-ds-tag" title="Extremo 3\' Forward">3\'</div>';
+    } else {
+      uHtml = '<div class="ql-ds-block ql-ds-empty"></div>';
     }
 
-    const htmlFwd = formatRow(chunk, (col) => {
-      if (col.f === ' ') return { ch: ' ', cls: '' };
-      if (col.type === 'fwd-only') return { ch: col.f, cls: 'ql-overlap-fwd' };
-      if (col.type === 'overlap-mismatch') return { ch: col.f, cls: 'ql-overlap-mismatch' };
-      return { ch: col.f, cls: '' };
-    });
+    // Bloque inferior (Reverse Complement)
+    let lHtml = '';
+    if (c.r !== ' ' && c.r !== '-') {
+      lHtml = `<div class="ql-ds-block ${c.type}" title="Pos: ${pos} | RevComp: ${escapeHtml(c.r)}">${escapeHtml(c.r)}</div>`;
+    } else if (i === firstRevIdx - 1) {
+      lHtml = '<div class="ql-ds-tag" title="Extremo 5\' Reverse Complement">5\'</div>';
+    } else {
+      lHtml = '<div class="ql-ds-block ql-ds-empty"></div>';
+    }
 
-    const htmlMat = formatRow(chunk, (col) => {
-      if (col.type === 'overlap-mismatch') return { ch: col.m, cls: 'ql-overlap-mismatch-mark' };
-      return { ch: col.m, cls: '' };
-    });
-
-    const htmlRev = formatRow(chunk, (col) => {
-      if (col.r === ' ') return { ch: ' ', cls: '' };
-      if (col.type === 'rev-only') return { ch: col.r, cls: 'ql-overlap-rev' };
-      if (col.type === 'overlap-mismatch') return { ch: col.r, cls: 'ql-overlap-mismatch' };
-      return { ch: col.r, cls: '' };
-    });
-
-    const htmlCons = formatRow(chunk, (col) => {
-      if (col.type === 'fwd-only') return { ch: col.c, cls: 'ql-overlap-fwd' };
-      if (col.type === 'rev-only') return { ch: col.c, cls: 'ql-overlap-rev' };
-      if (col.type === 'overlap-mismatch') return { ch: col.c, cls: 'ql-overlap-resolved' };
-      return { ch: col.c, cls: '' };
-    });
-
-    const endFLabel = endF != null ? `  ${endF}` : '';
-    const endRLabel = endR != null ? `  ${endR}` : '';
-    const endCLabel = endC != null ? `  ${endC}` : '';
-
-    lines.push('');
-    lines.push(`Forward   ${padNum(startF)}  ${htmlFwd}${endFLabel}`);
-    lines.push(`          ${padNum(null)}  ${htmlMat}`);
-    lines.push(`RevComp   ${padNum(startR)}  ${htmlRev}${endRLabel}`);
-    lines.push(`Consenso  ${padNum(startC)}  ${htmlCons}${endCLabel}`);
+    colHtmls.push(`<div class="ql-ds-col" data-pos="${pos}">${uHtml}${lHtml}</div>`);
   }
 
-  return `<pre class="ql-code ql-overlap-pre"><code>${lines.join('\n')}</code></pre>`;
+  // Etiqueta 3' final si Forward o RevComp llegan hasta el último bloque
+  const endFwdTag = lastFwdIdx === cols.length - 1 ? '<div class="ql-ds-tag" title="Extremo 3\' Forward">3\'</div>' : '<div class="ql-ds-block ql-ds-empty"></div>';
+  const endRevTag = lastRevIdx === cols.length - 1 ? '<div class="ql-ds-tag" title="Extremo 3\' Reverse Complement">3\'</div>' : '<div class="ql-ds-block ql-ds-empty"></div>';
+  if (lastFwdIdx === cols.length - 1 || lastRevIdx === cols.length - 1) {
+    colHtmls.push('<div class="ql-ds-col ql-ds-col-tag">' + endFwdTag + endRevTag + '</div>');
+  }
+
+  return `<div class="ql-ds-wrapper">
+    <div class="ql-ds-header">
+      <span>Forward: <strong>${fwdSeq.length} pb</strong></span>
+      <span>RevComp: <strong>${rcSeq.length} pb</strong></span>
+      <span>${t('sanger.overlapStatOverlapLen')}: <strong>${overlapBases} pb</strong></span>
+      <span>${t('sanger.overlapStatIdentity')}: <strong>${identityPct}</strong> (${matches}/${overlapBases})</span>
+      <span>${t('sanger.overlapStatMismatches')}: <strong>${mismatches}</strong></span>
+      <span>${t('sanger.overlapStatConsensusLen')}: <strong>${consSeq.length || cols.length} pb</strong></span>
+    </div>
+    <div class="ql-ds-container" tabindex="0" role="region" aria-label="Visor de doble cadena de solapamiento">
+      <div class="ql-ds-track">
+        <div class="ql-ds-labels">
+          <div class="ql-ds-lane-label">Forward</div>
+          <div class="ql-ds-lane-label">RevComp</div>
+        </div>
+        ${colHtmls.join('')}
+      </div>
+    </div>
+  </div>`;
 }
 
 function defaultState() {
@@ -1467,8 +1437,8 @@ export function render(container) {
       legend.className = 'ql-overlap-legend';
       legend.innerHTML =
         '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#0284c7;"></span> ' + t('sanger.legendFwdOnly') + '</span>' +
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:var(--ink-muted);"></span> ' + t('sanger.legendOverlap') + '</span>' +
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:var(--critical);"></span> ' + t('sanger.legendMismatch') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#059669;"></span> ' + t('sanger.legendOverlap') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#dc2626;"></span> ' + t('sanger.legendMismatch') + '</span>' +
         '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#9333ea;"></span> ' + t('sanger.legendRevOnly') + '</span>';
       panel.appendChild(legend);
 

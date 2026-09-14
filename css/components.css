@@ -1157,9 +1157,10 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
   font-family: inherit;
 }
 
-/* --- Inspector de Solapamiento Sanger --- */
+/* --- Inspector de Solapamiento Sanger (Visualización Doble Cadena Horizontal) --- */
 .ql-overlap-row td {
   padding: 0 !important;
+  max-width: 0;
   background: var(--surface-2, color-mix(in srgb, var(--page) 40%, var(--surface)));
 }
 
@@ -1170,65 +1171,197 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.ql-overlap-pre {
+/* Contenedor general del carril de doble cadena */
+.ql-ds-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ql-ds-header {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--ink-muted);
+  padding: 2px 0;
+}
+
+.ql-ds-header strong {
+  color: var(--ink);
+}
+
+/* Contenedor scrollable horizontal que no rompe el ancho de pantalla */
+.ql-ds-container {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
-  padding: 12px;
-  max-height: 380px;
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  padding: 14px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.ql-ds-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.ql-ds-container::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+/* Carril continuo con Flexbox */
+.ql-ds-track {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+  min-width: min-content;
+}
+
+/* Etiquetas fijas en el borde izquierdo al hacer scroll */
+.ql-ds-labels {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 10px;
+  margin-right: 6px;
+  background: var(--surface);
+  border-right: 2px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.ql-ds-lane-label {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--ink);
-  white-space: pre;
+  white-space: nowrap;
 }
 
-.ql-overlap-pre code {
-  font-family: inherit;
+/* Columna de alineamiento: bloque Forward arriba + bloque RevComp abajo */
+.ql-ds-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
 }
 
-.ql-overlap-fwd {
-  color: #0284c7;
-  background: color-mix(in srgb, #0284c7 12%, transparent);
-  border-radius: 2px;
-}
-
-.ql-overlap-rev {
-  color: #9333ea;
-  background: color-mix(in srgb, #9333ea 12%, transparent);
-  border-radius: 2px;
-}
-
-.ql-overlap-mismatch {
-  background: color-mix(in srgb, var(--critical) 24%, transparent);
-  color: var(--critical);
+/* Bloque individual de nucleótido */
+.ql-ds-block {
+  width: 22px;
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
   font-weight: 700;
-  border-radius: 2px;
+  border-radius: 3px;
+  user-select: all;
+  line-height: 1;
+  color: #ffffff;
+  transition: transform 0.08s ease;
 }
 
-.ql-overlap-mismatch-mark {
-  color: var(--critical);
-  font-weight: 700;
+.ql-ds-col:hover .ql-ds-block:not(.ql-ds-empty) {
+  transform: scale(1.1);
+  z-index: 2;
 }
 
-.ql-overlap-resolved {
-  background: color-mix(in srgb, var(--warning) 30%, transparent);
-  color: var(--warning);
-  font-weight: 700;
-  border-radius: 2px;
+/* Bloque vacío / transparente para extremos no solapados */
+.ql-ds-block.ql-ds-empty {
+  background-color: transparent !important;
+  color: transparent !important;
+  border: 1px dashed color-mix(in srgb, var(--border) 50%, transparent);
+  pointer-events: none;
 }
 
+.ql-ds-block.ql-ds-gap {
+  background-color: color-mix(in srgb, var(--border) 60%, var(--surface));
+  color: var(--ink-muted);
+  border: 1px dashed var(--border);
+}
+
+/* Colores de fondo de las regiones de solapamiento */
+.ql-ds-block.ql-overlap-fwd,
+.ql-ds-block.fwd-only {
+  background-color: #0284c7;
+  color: #ffffff;
+}
+
+.ql-ds-block.ql-overlap-rev,
+.ql-ds-block.rev-only {
+  background-color: #9333ea;
+  color: #ffffff;
+}
+
+.ql-ds-block.ql-overlap-match,
+.ql-ds-block.overlap-match {
+  background-color: #059669;
+  color: #ffffff;
+}
+
+.ql-ds-block.ql-overlap-mismatch,
+.ql-ds-block.overlap-mismatch {
+  background-color: #dc2626;
+  color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 0 0 1px #b91c1c;
+}
+
+/* Etiquetas direccionales 5' y 3' */
+.ql-ds-tag {
+  width: 22px;
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 3px;
+  background-color: var(--surface-2, #f1f5f9);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  line-height: 1;
+  user-select: none;
+}
+
+/* Leyenda */
 .ql-overlap-legend {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
   align-items: center;
   font-size: 12px;
   color: var(--ink);
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
@@ -1242,9 +1375,10 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
 
 .ql-overlap-legend-box {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   vertical-align: middle;
 }
+
 

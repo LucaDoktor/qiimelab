@@ -1,6 +1,7 @@
-// Test unitario para el inspector visual de solapamiento Sanger (renderOverlapHTML).
-// Valida el alineamiento apilado, bloques monoespaciados, coordenadas 1-indexadas,
-// y resaltado de extremos no solapados (solo Forward / solo RevComp) y mismatches resueltos.
+// Test unitario para el rediseño horizontal de doble cadena Sanger (renderOverlapHTML).
+// Valida el contenedor scrollable (ql-ds-container), el carril continuo (ql-ds-track),
+// las columnas con bloques apilados (Forward arriba y RevComp abajo), las etiquetas
+// direccionales 5' y 3', los bloques vacíos en extremos no solapados y los colores de fondo.
 //
 // Ejecución:
 //   node tests/sangerinspector.mjs
@@ -36,7 +37,7 @@ function loadTrimmed(path) {
   };
 }
 
-console.log('\n--- 1. Caso real: B13 (fusión merged con solapamiento amplio) ---');
+console.log('\n--- 1. Caso real: B13 (doble cadena con solapamiento amplio) ---');
 {
   const f = loadTrimmed(APP_ROOT + '/datos-ejemplo/sanger/B13-27F.ab1');
   const r = loadTrimmed(APP_ROOT + '/datos-ejemplo/sanger/B13-1492R.ab1');
@@ -46,14 +47,21 @@ console.log('\n--- 1. Caso real: B13 (fusión merged con solapamiento amplio) --
 
   const html = renderOverlapHTML(fSeq, rcSeq, res.consensus);
 
-  check('genera bloque pre con clase ql-overlap-pre', html.includes('<pre class="ql-code ql-overlap-pre"><code>'));
-  check('incluye etiquetas de filas apiladas (Forward, RevComp, Consenso)',
-    html.includes('Forward') && html.includes('RevComp') && html.includes('Consenso'));
-  check('resalta el extremo 5\' exclusivo de Forward', html.includes('class="ql-overlap-fwd"'));
-  check('resalta el extremo 3\' exclusivo de RevComp', html.includes('class="ql-overlap-rev"'));
-  check('incluye marcas de coincidencia | en la zona de solape', html.includes('|'));
+  check('genera contenedor con clase ql-ds-container', html.includes('class="ql-ds-container"'));
+  check('genera carril con clase ql-ds-track', html.includes('class="ql-ds-track"'));
+  check('incluye etiquetas fijas Forward y RevComp', html.includes('Forward') && html.includes('RevComp'));
+  check('contiene columnas de nucleótidos ql-ds-col', html.includes('class="ql-ds-col"'));
+  check('bloques con clase fwd-only (flanco 5\' Forward)',
+    html.includes('fwd-only') || html.includes('ql-overlap-fwd'));
+  check('bloques con clase rev-only (flanco 3\' RevComp)',
+    html.includes('rev-only') || html.includes('ql-overlap-rev'));
+  check('bloques con clase overlap-match en zona de solape',
+    html.includes('overlap-match') || html.includes('ql-overlap-match'));
+  check('incluye bloques vacíos ql-ds-empty en extremos opuestos', html.includes('ql-ds-empty'));
+  check('incluye etiquetas 5\' y 3\' de direccionalidad de ADN',
+    html.includes(">5'<") && html.includes(">3'<"));
   check('muestra la longitud de las secuencias en la cabecera',
-    html.includes(`Forward: ${fSeq.length} pb`) && html.includes(`RevComp: ${rcSeq.length} pb`));
+    html.includes(`Forward: <strong>${fSeq.length} pb</strong>`) && html.includes(`RevComp: <strong>${rcSeq.length} pb</strong>`));
   check('muestra la longitud del consenso en la cabecera',
     html.includes(`${res.consensus.length} pb`));
 }
@@ -67,11 +75,13 @@ console.log('\n--- 2. Caso sintético con mismatch en la zona de solapamiento --
 
   const html = renderOverlapHTML(fwdSeq, rcSeq, consSeq);
 
-  check('resalta el mismatch con ql-overlap-mismatch', html.includes('class="ql-overlap-mismatch"'));
-  check('marca el mismatch en la línea intermedia con ql-overlap-mismatch-mark', html.includes('class="ql-overlap-mismatch-mark"'));
-  check('resalta la base resuelta en consenso con ql-overlap-resolved', html.includes('class="ql-overlap-resolved"'));
-  check('mantiene los flancos no solapados correspondientes',
-    html.includes('class="ql-overlap-fwd"') && html.includes('class="ql-overlap-rev"'));
+  check('resalta el mismatch con overlap-mismatch',
+    html.includes('overlap-mismatch') || html.includes('ql-overlap-mismatch'));
+  check('contiene bloques fwd-only y rev-only en los flancos',
+    (html.includes('fwd-only') || html.includes('ql-overlap-fwd')) &&
+    (html.includes('rev-only') || html.includes('ql-overlap-rev')));
+  check('contiene etiquetas 5\' y 3\' en posiciones de arranque y final',
+    html.includes(">5'<") && html.includes(">3'<"));
 }
 
 console.log('\n--- 3. Formato de entrada tipo objeto { fwdSeq, rcSeq, consensus } ---');
@@ -83,7 +93,7 @@ console.log('\n--- 3. Formato de entrada tipo objeto { fwdSeq, rcSeq, consensus 
   };
   const html = renderOverlapHTML(obj);
   check('acepta invocación con objeto único como primer argumento',
-    html.includes('<pre class="ql-code ql-overlap-pre">') && html.includes('Forward') && html.includes('RevComp'));
+    html.includes('class="ql-ds-container"') && html.includes('ql-ds-track'));
 }
 
 console.log('\n--- 4. Caso stitched / sin solapamiento directo ---');
@@ -93,14 +103,17 @@ console.log('\n--- 4. Caso stitched / sin solapamiento directo ---');
   const consSeq = 'AAAAAANNNNNNNNNNCCCCCC';
 
   const html = renderOverlapHTML(fwdSeq, rcSeq, consSeq);
-  check('maneja secuencias stitched sin error', html.includes('Forward') && html.includes('Consenso'));
-  check('muestra ambos flancos en stitched', html.includes('class="ql-overlap-fwd"') && html.includes('class="ql-overlap-rev"'));
+  check('maneja secuencias stitched en doble cadena sin error',
+    html.includes('class="ql-ds-container"') && html.includes('ql-ds-track'));
+  check('muestra ambos flancos y etiquetas en stitched',
+    html.includes('fwd-only') && html.includes('rev-only') && html.includes(">5'<") && html.includes(">3'<"));
 }
 
 console.log('\n--- 5. Entradas vacías o nulas (modo seguro) ---');
 {
   const htmlEmpty = renderOverlapHTML('', '', '');
-  check('devuelve mensaje sin lanzar excepción cuando no hay datos', htmlEmpty.includes('ql-overlap-pre'));
+  check('devuelve contenedor con mensaje sin lanzar excepción cuando no hay datos',
+    htmlEmpty.includes('ql-ds-container'));
 }
 
 console.log('\nRESULTADO INSPECTOR SANGER: ' + (failed ? 'FAIL' : 'PASS'));
