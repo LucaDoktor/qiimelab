@@ -877,6 +877,7 @@ export function render(container) {
 
   function renderStackedBarplot(card, matrix, opts) {
     card.innerHTML = '';
+    const isPhenotypes = selectedDbType === 'phenotypes';
     const grouped = groupTaxaByAbundance(matrix, opts.minAbundance, opts.topN, {
       minPrev: opts.minPrev,
       isPercentage: true,
@@ -1103,7 +1104,7 @@ export function render(container) {
       key: 'inference-barplot',
       svg,
       mount: card,
-      filename: 'inferencia_funcional_barplot',
+      filename: isPhenotypes ? 'inferencia_fenotipica_barplot' : 'inferencia_funcional_barplot',
       lang: getLang(),
       elements: [
         { id: 'title', selector: '[data-ce="title"]' },
@@ -1116,6 +1117,7 @@ export function render(container) {
 
   function renderAlluvialDiagram(card, matrix, opts) {
     card.innerHTML = '';
+    const isPhenotypes = selectedDbType === 'phenotypes';
     const resolveGroup = opts.groupCol ? makeGroupResolver(state.metadata, opts.groupCol) : (s) => s;
     const grouped = groupTaxaByAbundance(matrix, opts.minAbundance, opts.topN, {
       isPercentage: true,
@@ -1237,7 +1239,9 @@ export function render(container) {
       fill: 'var(--ink-1)',
       'data-ce': 'title'
     });
-    mainTitle.textContent = t('inference.alluvialTitle') || 'Flujo Funcional entre Grupos';
+    mainTitle.textContent = isPhenotypes
+      ? (t('inference.alluvialTitlePhenotypes') || 'Flujo de Rasgos entre Grupos')
+      : (t('inference.alluvialTitle') || 'Flujo Funcional entre Grupos');
     svg.appendChild(mainTitle);
 
     // Título eje X
@@ -1275,7 +1279,7 @@ export function render(container) {
       key: 'inference-alluvial',
       svg,
       mount: card,
-      filename: 'inferencia_funcional_aluvial',
+      filename: isPhenotypes ? 'inferencia_fenotipica_aluvial' : 'inferencia_funcional_aluvial',
       lang: getLang(),
       elements: [
         { id: 'title', selector: '[data-ce="title"]' },

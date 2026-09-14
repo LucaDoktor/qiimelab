@@ -273,14 +273,36 @@ check('i18n inference.dbMetabolism existe', i18n.t('inference.dbMetabolism') ===
 check('i18n inference.dbPhenotypes existe', i18n.t('inference.dbPhenotypes') === 'Fenotipo y Morfología (BacDive/metaTraits)');
 check('i18n inference.dbCustom existe', i18n.t('inference.dbCustom') === 'Cargar JSON Personalizado');
 
-// 7. Ejecución de mapTaxonomyToFunction con DEFAULT_PHENOTYPES
-const phenoMatrix = inference.mapTaxonomyToFunction(mockTaxaData, phenotypes.DEFAULT_PHENOTYPES, {
-  includeUnassigned: true,
-  asPercentage: true
-});
-check('mapTaxonomyToFunction procesa DEFAULT_PHENOTYPES', phenoMatrix && phenoMatrix.rows.length === 2);
-check('phenoMatrix detecta rasgos activos', phenoMatrix.functions.length > 5);
-check('phenoMatrix Muestra 1 detecta biofilm_forming', typeof phenoMatrix.rows[0].biofilm_forming === 'number' && phenoMatrix.rows[0].biofilm_forming > 0);
+// 8. Base de datos fenotípica y ecológica (BacDive / metaTraits)
+// (pruebas existentes arriba)
+
+console.log('\n--- 9. Verificación de scope isPhenotypes y traducciones i18n del selector de grupos ---');
+check('i18n barplots.groupCol existe en español', i18n.t('barplots.groupCol') === 'Agrupar por metadato');
+check('i18n barplots.noGroup existe en español', i18n.t('barplots.noGroup') === '(Sin agrupar / Muestras individuales)');
+
+i18n.setLang('en');
+check('i18n barplots.groupCol existe en inglés', i18n.t('barplots.groupCol') === 'Group by metadata');
+check('i18n barplots.noGroup existe en inglés', i18n.t('barplots.noGroup') === '(No grouping / Individual samples)');
+i18n.setLang('es');
+
+// Auditoría estricta de código de js/modules/inference.js
+const inferenceJsContent = readFileSync(join(DIR, '../js/modules/inference.js'), 'utf8');
+
+// Comprobar renderStackedBarplot
+const barplotFnMatch = inferenceJsContent.match(/function renderStackedBarplot\([^)]*\)\s*\{([^}]*?(?:\{[^}]*?\}[^}]*?)*)\}/);
+check('renderStackedBarplot declara isPhenotypes evaluando el estado del diccionario',
+  barplotFnMatch && barplotFnMatch[0].includes('const isPhenotypes = selectedDbType === \'phenotypes\';'));
+
+// Comprobar renderAlluvialDiagram
+const alluvialFnMatch = inferenceJsContent.match(/function renderAlluvialDiagram\([^)]*\)\s*\{([^}]*?(?:\{[^}]*?\}[^}]*?)*)\}/);
+check('renderAlluvialDiagram declara isPhenotypes evaluando el estado del diccionario',
+  alluvialFnMatch && alluvialFnMatch[0].includes('const isPhenotypes = selectedDbType === \'phenotypes\';'));
+
+// Comprobar selector de grupos i18n
+check('selector de grupos usa t(\'barplots.groupCol\')',
+  inferenceJsContent.includes('t(\'barplots.groupCol\')'));
+check('selector de grupos usa t(\'barplots.noGroup\') en la opción por defecto',
+  inferenceJsContent.includes('t(\'barplots.noGroup\')'));
 
 if (failed) {
   console.error('\n❌ Algunos tests de inferencia funcional fallaron.');
