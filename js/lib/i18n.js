@@ -1079,6 +1079,8 @@ const DICTS = {
       overlapStatConsensusLen: 'Longitud consenso',
       overlapNoData: 'No hay lecturas disponibles para inspeccionar el solapamiento de esta muestra.',
       overlapMethodStitched: 'Lecturas ensambladas sin solapamiento (Stitched con puente de Ns)',
+      minimapTitle: 'Minimapa de la secuencia',
+      minimapHint: 'Haz clic o arrastra para navegar',
     },
     barplots: {
       eyebrow: 'Composición de la comunidad', title: 'Barplots taxonómicos',
@@ -2370,6 +2372,8 @@ const DICTS = {
       overlapStatConsensusLen: 'Consensus length',
       overlapNoData: 'No read data available to inspect overlap for this sample.',
       overlapMethodStitched: 'Reads stitched without overlap (bridge of Ns)',
+      minimapTitle: 'Sequence Minimap',
+      minimapHint: 'Click or drag to navigate',
     },
     barplots: {
       eyebrow: 'Community composition', title: 'Taxonomic barplots',

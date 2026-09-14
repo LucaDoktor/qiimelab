@@ -1381,4 +1381,155 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
   vertical-align: middle;
 }
 
+/* Modal interactivo de solapamiento Sanger */
+.ql-modal.ql-modal-overlap {
+  max-width: min(1500px, calc(100vw - 32px));
+  width: 100%;
+  height: min(92vh, 880px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.ql-modal.ql-modal-overlap .ql-modal-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 12px;
+  padding: 4px 0 0 0;
+}
+
+.ql-overlap-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.ql-overlap-modal-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.ql-overlap-modal-main .ql-ds-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ql-overlap-modal-main .ql-ds-container {
+  flex: 1 1 auto;
+  min-height: 140px;
+}
+
+.ql-overlap-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Minimapa de solapamiento Sanger */
+.ql-minimap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+
+.ql-minimap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.ql-minimap-header strong {
+  color: var(--ink);
+}
+
+.ql-minimap-container {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+
+.ql-minimap-track {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.ql-minimap-bar {
+  display: inline-block;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 14px;
+  box-sizing: border-box;
+}
+
+.ql-minimap-bar.fwd-only,
+.ql-minimap-bar.ql-overlap-fwd {
+  background-color: #0284c7;
+}
+
+.ql-minimap-bar.overlap-match,
+.ql-minimap-bar.ql-overlap-match {
+  background-color: #059669;
+}
+
+.ql-minimap-bar.overlap-mismatch,
+.ql-minimap-bar.ql-overlap-mismatch {
+  background-color: #dc2626;
+  min-width: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.ql-minimap-bar.rev-only,
+.ql-minimap-bar.ql-overlap-rev {
+  background-color: #9333ea;
+}
+
+.ql-minimap-bar.ql-ds-gap {
+  background-color: color-mix(in srgb, var(--border) 60%, var(--surface));
+}
+
+.ql-minimap-viewport {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 24px;
+  background: color-mix(in srgb, var(--accent, #38bdf8) 25%, transparent);
+  border: 2px solid var(--accent, #38bdf8);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  box-sizing: border-box;
+  will-change: left, width;
+}
+
 

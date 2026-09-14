@@ -18,6 +18,7 @@ import { listZipEntries, readZipEntry } from '../lib/minizip.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { alignWithWorker } from '../lib/aligner.js';
+import { openPanel } from '../lib/modal.js';
 
 const STORE_KEY = 'qiimelab.sanger';
 const PRIMERS_STORE_KEY = 'qiimelab.primers';
@@ -130,19 +131,16 @@ export function renderAlignmentHTML(result, opts = {}) {
 }
 
 /**
- * Renderiza el solapamiento entre Forward y Reverse Complement en una
- * visualización horizontal de "doble cadena" estilo Genome Browser, con
- * contenedor scrollable (overflow-x: auto), carril Flexbox con dos bloques
- * apilados por posición de nucleótido, etiquetas direccionales 5' y 3' y
- * bloques vacíos en los extremos no solapados.
+ * Procesa y calcula las columnas de solapamiento y métricas entre Forward y
+ * Reverse Complement, identificando coincidencias, discrepancias y extremos.
  *
- * @param {string|Object} fwdOrData - Secuencia Forward recortada o un objeto { fwdSeq, revCompSeq, consensus, ... }
- * @param {string} [revCompSeq] - Secuencia Reverse Complement recortada
+ * @param {string|Object} fwdOrData - Secuencia Forward o un objeto contenedor
+ * @param {string} [revCompSeq] - Secuencia Reverse Complement
  * @param {string} [consensus] - Secuencia consenso resultante
- * @param {Object} [opts] - Opciones adicionales
- * @returns {string} HTML seguro del carril de doble cadena horizontal
+ * @param {Object} [opts] - Opciones de alineamiento
+ * @returns {Object} Datos estructurados del solapamiento y columnas
  */
-export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
+export function buildOverlapData(fwdOrData, revCompSeq, consensus, opts = {}) {
   let fwdSeq = '';
   let rcSeq = '';
   let consSeq = '';
@@ -160,7 +158,22 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
   }
 
   if (!fwdSeq && !rcSeq && !consSeq) {
-    return `<div class="ql-ds-container"><p class="ql-field-help" style="padding:12px;margin:0;">${t('sanger.overlapNoData')}</p></div>`;
+    return {
+      fwdSeq: '',
+      rcSeq: '',
+      consSeq: '',
+      cols: [],
+      colHtmls: [],
+      overlapBases: 0,
+      matches: 0,
+      mismatches: 0,
+      identityPct: '—',
+      firstFwdIdx: -1,
+      lastFwdIdx: -1,
+      firstRevIdx: -1,
+      lastRevIdx: -1,
+      isEmpty: true,
+    };
   }
 
   let colsA = options.colsA || '';
@@ -330,14 +343,54 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
     colHtmls.push('<div class="ql-ds-col ql-ds-col-tag">' + endFwdTag + endRevTag + '</div>');
   }
 
+  return {
+    fwdSeq,
+    rcSeq,
+    consSeq,
+    cols,
+    colHtmls,
+    overlapBases,
+    matches,
+    mismatches,
+    identityPct,
+    firstFwdIdx,
+    lastFwdIdx,
+    firstRevIdx,
+    lastRevIdx,
+    isEmpty: false,
+  };
+}
+
+/**
+ * Renderiza el solapamiento entre Forward y Reverse Complement en una
+ * visualización horizontal de "doble cadena" estilo Genome Browser, con
+ * contenedor scrollable (overflow-x: auto), carril Flexbox con dos bloques
+ * apilados por posición de nucleótido, etiquetas direccionales 5' y 3' y
+ * bloques vacíos en los extremos no solapados.
+ *
+ * @param {string|Object} fwdOrData - Secuencia Forward recortada o un objeto { fwdSeq, revCompSeq, consensus, ... }
+ * @param {string} [revCompSeq] - Secuencia Reverse Complement recortada
+ * @param {string} [consensus] - Secuencia consenso resultante
+ * @param {Object} [opts] - Opciones adicionales
+ * @returns {string} HTML seguro del carril de doble cadena horizontal
+ */
+export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
+  const data = (fwdOrData && fwdOrData.cols && fwdOrData.colHtmls)
+    ? fwdOrData
+    : buildOverlapData(fwdOrData, revCompSeq, consensus, opts);
+
+  if (data.isEmpty) {
+    return `<div class="ql-ds-container"><p class="ql-field-help" style="padding:12px;margin:0;">${t('sanger.overlapNoData')}</p></div>`;
+  }
+
   return `<div class="ql-ds-wrapper">
     <div class="ql-ds-header">
-      <span>Forward: <strong>${fwdSeq.length} pb</strong></span>
-      <span>RevComp: <strong>${rcSeq.length} pb</strong></span>
-      <span>${t('sanger.overlapStatOverlapLen')}: <strong>${overlapBases} pb</strong></span>
-      <span>${t('sanger.overlapStatIdentity')}: <strong>${identityPct}</strong> (${matches}/${overlapBases})</span>
-      <span>${t('sanger.overlapStatMismatches')}: <strong>${mismatches}</strong></span>
-      <span>${t('sanger.overlapStatConsensusLen')}: <strong>${consSeq.length || cols.length} pb</strong></span>
+      <span>Forward: <strong>${data.fwdSeq.length} pb</strong></span>
+      <span>RevComp: <strong>${data.rcSeq.length} pb</strong></span>
+      <span>${t('sanger.overlapStatOverlapLen')}: <strong>${data.overlapBases} pb</strong></span>
+      <span>${t('sanger.overlapStatIdentity')}: <strong>${data.identityPct}</strong> (${data.matches}/${data.overlapBases})</span>
+      <span>${t('sanger.overlapStatMismatches')}: <strong>${data.mismatches}</strong></span>
+      <span>${t('sanger.overlapStatConsensusLen')}: <strong>${data.consSeq.length || data.cols.length} pb</strong></span>
     </div>
     <div class="ql-ds-container" tabindex="0" role="region" aria-label="Visor de doble cadena de solapamiento">
       <div class="ql-ds-track">
@@ -345,11 +398,303 @@ export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
           <div class="ql-ds-lane-label">Forward</div>
           <div class="ql-ds-lane-label">RevComp</div>
         </div>
-        ${colHtmls.join('')}
+        ${data.colHtmls.join('')}
       </div>
     </div>
   </div>`;
 }
+
+/**
+ * Renderiza el minimapa condensado de toda la secuencia con bloques estrechos
+ * de color y el recuadro del indicador de viewport.
+ *
+ * @param {Object|Array} overlapDataOrCols - Datos generados por buildOverlapData o array de columnas
+ * @param {Object} [opts] - Opciones adicionales
+ * @returns {string} HTML del minimapa
+ */
+export function renderMinimapHTML(overlapDataOrCols, opts = {}) {
+  const data = Array.isArray(overlapDataOrCols)
+    ? { cols: overlapDataOrCols }
+    : (overlapDataOrCols && overlapDataOrCols.cols ? overlapDataOrCols : buildOverlapData(overlapDataOrCols, opts));
+
+  const cols = data.cols || [];
+  const barHtmls = [];
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
+    let barClass = 'ql-minimap-bar';
+    if (c.type.includes('overlap-mismatch')) barClass += ' overlap-mismatch';
+    else if (c.type.includes('overlap-match')) barClass += ' overlap-match';
+    else if (c.type.includes('fwd-only')) barClass += ' fwd-only';
+    else if (c.type.includes('rev-only')) barClass += ' rev-only';
+    else barClass += ' ql-ds-gap';
+
+    barHtmls.push(`<div class="${barClass}" title="Pos: ${i + 1}"></div>`);
+  }
+
+  return `<div class="ql-minimap-wrap">
+    <div class="ql-minimap-header">
+      <strong>${t('sanger.minimapTitle') || 'Minimapa de la secuencia'}</strong>
+      <span>${t('sanger.minimapHint') || 'Clic o arrastra para navegar'}</span>
+    </div>
+    <div class="ql-minimap-container" role="region" aria-label="Minimapa de solapamiento">
+      <div class="ql-minimap-track">
+        ${barHtmls.join('')}
+      </div>
+      <div class="ql-minimap-viewport" aria-hidden="true"></div>
+    </div>
+  </div>`;
+}
+
+/**
+ * Calcula las coordenadas del indicador del minimapa a partir del scroll de la vista principal.
+ *
+ * @param {number} scrollLeft - Desplazamiento horizontal actual
+ * @param {number} scrollWidth - Ancho total con scroll de la vista principal
+ * @param {number} clientWidth - Ancho visible de la vista principal
+ * @param {number} minimapWidth - Ancho disponible del carril del minimapa
+ * @param {number} [minVpWidth=8] - Ancho mínimo del indicador
+ * @returns {{ scrollPct: number, vpWidth: number, left: number }}
+ */
+export function calculateMinimapViewport(scrollLeft, scrollWidth, clientWidth, minimapWidth, minVpWidth = 8) {
+  if (scrollWidth <= 0 || minimapWidth <= 0) {
+    return { scrollPct: 0, vpWidth: minimapWidth || 0, left: 0 };
+  }
+  const maxScroll = Math.max(0, scrollWidth - clientWidth);
+  const visibleRatio = Math.min(1, clientWidth / scrollWidth);
+  const vpWidth = Math.max(minVpWidth, Math.min(minimapWidth, visibleRatio * minimapWidth));
+
+  let scrollPct = 0;
+  let left = 0;
+  if (maxScroll > 0) {
+    scrollPct = Math.max(0, Math.min(1, scrollLeft / maxScroll));
+    left = scrollPct * (minimapWidth - vpWidth);
+  }
+
+  return { scrollPct, vpWidth, left };
+}
+
+/**
+ * Calcula el desplazamiento (scrollLeft) para la vista principal a partir de una interacción (clic/drag) en el minimapa.
+ *
+ * @param {number} clickX - Posición horizontal del puntero relativa al minimapa
+ * @param {number} minimapWidth - Ancho del carril del minimapa
+ * @param {number} scrollWidth - Ancho total con scroll de la vista principal
+ * @param {number} clientWidth - Ancho visible de la vista principal
+ * @returns {{ clickPct: number, targetScrollLeft: number }}
+ */
+export function calculateScrollFromMinimap(clickX, minimapWidth, scrollWidth, clientWidth) {
+  if (minimapWidth <= 0) {
+    return { clickPct: 0, targetScrollLeft: 0 };
+  }
+  const clampedX = Math.max(0, Math.min(minimapWidth, clickX));
+  const clickPct = clampedX / minimapWidth;
+  const maxScroll = Math.max(0, scrollWidth - clientWidth);
+  const targetScrollLeft = clickPct * maxScroll;
+
+  return { clickPct, targetScrollLeft };
+}
+
+/**
+ * Abre un modal interactivo con visor de doble cadena horizontal (zoom)
+ * y minimapa condensado inferior sincronizado.
+ *
+ * Sincronización:
+ * - Principal a Minimapa: scroll en vista principal -> actualiza left y width del indicador.
+ * - Minimapa a Principal: clic/arrastre en minimapa -> ajusta scrollLeft en vista principal.
+ *
+ * Gestión de memoria:
+ * - Todos los listeners se destruyen al cerrar el modal evitando fugas de memoria.
+ *
+ * @param {Object} resultItem - Datos de la muestra ({ id, consensus, fSeq, rcSeq, method, ... })
+ * @param {Object} [opts] - Opciones adicionales ({ samples, state, onClose })
+ * @returns {{ close: Function }} Controlador del modal
+ */
+export function openOverlapModal(resultItem, opts = {}) {
+  let fSeq = resultItem.fSeq || resultItem.fwdSeq || '';
+  let rcSeq = resultItem.rcSeq || resultItem.revCompSeq || '';
+  if ((!fSeq || !rcSeq) && opts.samples && opts.samples.has(resultItem.id)) {
+    const sample = opts.samples.get(resultItem.id);
+    const s = opts.state;
+    const fTrim = sample.forward && s ? effectiveTrim(sample, 'forward', sample.forward, s) : null;
+    const rTrim = sample.reverse && s ? effectiveTrim(sample, 'reverse', sample.reverse, s) : null;
+    if (sample.forward && fTrim && !fTrim.discarded) {
+      fSeq = slice(sample.forward, fTrim).sequence;
+    }
+    if (sample.reverse && rTrim && !rTrim.discarded) {
+      rcSeq = reverseComplement(slice(sample.reverse, rTrim).sequence);
+    }
+  }
+
+  const sampleId = resultItem.id || 'Muestra';
+  const consensus = resultItem.consensus || '';
+  const overlapData = buildOverlapData(fSeq, rcSeq, consensus, opts);
+
+  let modal = null;
+  modal = openPanel({
+    title: (t('sanger.overlapPanelTitle') || 'Inspección de solapamiento') + ': ' + sampleId,
+    extraClass: 'ql-modal-overlap',
+    closeLabel: 'Cerrar',
+    render: (bodyEl) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'ql-overlap-modal-body';
+
+      if (resultItem.method === 'stitched') {
+        const note = document.createElement('p');
+        note.className = 'ql-panel-note';
+        note.style.cssText = 'color:var(--warning);margin:0;';
+        note.textContent = t('sanger.overlapMethodStitched');
+        wrap.appendChild(note);
+      }
+
+      const legend = document.createElement('div');
+      legend.className = 'ql-overlap-legend';
+      legend.innerHTML =
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#0284c7;"></span> ' + t('sanger.legendFwdOnly') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#059669;"></span> ' + t('sanger.legendOverlap') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#dc2626;"></span> ' + t('sanger.legendMismatch') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#9333ea;"></span> ' + t('sanger.legendRevOnly') + '</span>';
+      wrap.appendChild(legend);
+
+      const mainSection = document.createElement('div');
+      mainSection.className = 'ql-overlap-modal-main';
+      mainSection.innerHTML = renderOverlapHTML(overlapData);
+      wrap.appendChild(mainSection);
+
+      const minimapDiv = document.createElement('div');
+      minimapDiv.innerHTML = renderMinimapHTML(overlapData);
+      const minimapWrap = minimapDiv.firstElementChild;
+      wrap.appendChild(minimapWrap);
+
+      const footer = document.createElement('div');
+      footer.className = 'ql-overlap-modal-footer';
+      footer.innerHTML = '<span class="ql-field-help" style="margin:0;">' +
+        'Total: <strong>' + (overlapData.cols ? overlapData.cols.length : 0) + ' columnas</strong> | ' +
+        (t('sanger.minimapHint') || 'Clic o arrastra en el minimapa para navegar') +
+        '</span>';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ql-btn ql-btn-sm';
+      closeBtn.textContent = 'Cerrar';
+      closeBtn.addEventListener('click', () => {
+        if (modal && typeof modal.close === 'function') modal.close();
+      });
+      footer.appendChild(closeBtn);
+      wrap.appendChild(footer);
+
+      bodyEl.appendChild(wrap);
+
+      // Elementos interactivos
+      const mainContainer = mainSection.querySelector('.ql-ds-container');
+      const minimapContainer = minimapWrap.querySelector('.ql-minimap-container');
+      const minimapTrack = minimapWrap.querySelector('.ql-minimap-track');
+      const viewportIndicator = minimapWrap.querySelector('.ql-minimap-viewport');
+
+      function syncMainToMinimap() {
+        if (!mainContainer || !minimapTrack || !viewportIndicator) return;
+        const scrollW = mainContainer.scrollWidth;
+        const clientW = mainContainer.clientWidth;
+        const minimapW = minimapTrack.clientWidth;
+        if (scrollW <= 0 || minimapW <= 0) return;
+
+        const { scrollPct, vpWidth, left } = calculateMinimapViewport(
+          mainContainer.scrollLeft,
+          scrollW,
+          clientW,
+          minimapW
+        );
+
+        viewportIndicator.style.width = vpWidth.toFixed(1) + 'px';
+        viewportIndicator.style.left = left.toFixed(1) + 'px';
+        viewportIndicator.setAttribute('data-scroll-pct', scrollPct.toFixed(4));
+      }
+
+      function syncMinimapToMain(e) {
+        if (!mainContainer || !minimapTrack) return;
+        const rect = minimapTrack.getBoundingClientRect();
+        if (rect.width <= 0) return;
+
+        const clickX = e.clientX - rect.left;
+        const { targetScrollLeft } = calculateScrollFromMinimap(
+          clickX,
+          rect.width,
+          mainContainer.scrollWidth,
+          mainContainer.clientWidth
+        );
+
+        mainContainer.scrollLeft = targetScrollLeft;
+      }
+
+      let isPointerDown = false;
+      const onPointerDown = (e) => {
+        isPointerDown = true;
+        syncMinimapToMain(e);
+      };
+      const onPointerMove = (e) => {
+        if (!isPointerDown) return;
+        syncMinimapToMain(e);
+      };
+      const onPointerUp = () => {
+        isPointerDown = false;
+      };
+      const onMainScroll = () => {
+        syncMainToMinimap();
+      };
+      const onResize = () => {
+        syncMainToMinimap();
+      };
+
+      if (mainContainer) {
+        mainContainer.addEventListener('scroll', onMainScroll, { passive: true });
+      }
+      if (minimapContainer) {
+        minimapContainer.addEventListener('pointerdown', onPointerDown);
+        minimapContainer.addEventListener('click', syncMinimapToMain);
+      }
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('resize', onResize, { passive: true });
+
+      let ro = null;
+      if (typeof ResizeObserver !== 'undefined' && mainContainer && minimapContainer) {
+        ro = new ResizeObserver(() => syncMainToMinimap());
+        ro.observe(mainContainer);
+        ro.observe(minimapContainer);
+      }
+
+      // Sincronización inicial
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => syncMainToMinimap());
+      } else {
+        syncMainToMinimap();
+      }
+
+      // Destrucción total de listeners al cerrar el modal (prevención de fugas de memoria)
+      return () => {
+        if (mainContainer) {
+          mainContainer.removeEventListener('scroll', onMainScroll);
+        }
+        if (minimapContainer) {
+          minimapContainer.removeEventListener('pointerdown', onPointerDown);
+          minimapContainer.removeEventListener('click', syncMinimapToMain);
+        }
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('resize', onResize);
+        if (ro) {
+          ro.disconnect();
+          ro = null;
+        }
+        if (typeof opts.onClose === 'function') {
+          try { opts.onClose(); } catch (e) { /* noop */ }
+        }
+      };
+    },
+  });
+
+  return modal;
+}
+
 
 function defaultState() {
   return {
@@ -1394,76 +1739,8 @@ export function render(container) {
     function createOverlapPanel(resultItem) {
       const panel = document.createElement('div');
       panel.className = 'ql-overlap-panel';
-
-      const head = document.createElement('div');
-      head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;';
-      head.innerHTML = '<strong>' + t('sanger.overlapPanelTitle') + ': ' + escapeHtml(resultItem.id) + '</strong>';
-
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.className = 'ql-btn ql-btn-ghost ql-btn-sm';
-      closeBtn.textContent = '✕';
-      closeBtn.setAttribute('aria-label', 'Cerrar');
-      closeBtn.addEventListener('click', () => {
-        const pTr = panel.closest('tr.ql-overlap-row');
-        if (pTr) pTr.remove(); else panel.remove();
-      });
-      head.appendChild(closeBtn);
-      panel.appendChild(head);
-
-      let fSeq = resultItem.fSeq || '';
-      let rcSeq = resultItem.rcSeq || '';
-      if ((!fSeq || !rcSeq) && samples.has(resultItem.id)) {
-        const sample = samples.get(resultItem.id);
-        const fTrim = sample.forward ? effectiveTrim(sample, 'forward', sample.forward, s) : null;
-        const rTrim = sample.reverse ? effectiveTrim(sample, 'reverse', sample.reverse, s) : null;
-        if (sample.forward && fTrim && !fTrim.discarded) {
-          fSeq = slice(sample.forward, fTrim).sequence;
-        }
-        if (sample.reverse && rTrim && !rTrim.discarded) {
-          rcSeq = reverseComplement(slice(sample.reverse, rTrim).sequence);
-        }
-      }
-
-      if (resultItem.method === 'stitched') {
-        const note = document.createElement('p');
-        note.className = 'ql-panel-note';
-        note.style.color = 'var(--warning)';
-        note.textContent = t('sanger.overlapMethodStitched');
-        panel.appendChild(note);
-      }
-
-      const legend = document.createElement('div');
-      legend.className = 'ql-overlap-legend';
-      legend.innerHTML =
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#0284c7;"></span> ' + t('sanger.legendFwdOnly') + '</span>' +
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#059669;"></span> ' + t('sanger.legendOverlap') + '</span>' +
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#dc2626;"></span> ' + t('sanger.legendMismatch') + '</span>' +
-        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#9333ea;"></span> ' + t('sanger.legendRevOnly') + '</span>';
-      panel.appendChild(legend);
-
-      const out = document.createElement('div');
-      out.innerHTML = renderOverlapHTML(fSeq, rcSeq, resultItem.consensus);
-      panel.appendChild(out);
-
+      panel.innerHTML = renderOverlapHTML(resultItem.fSeq || '', resultItem.rcSeq || '', resultItem.consensus || '');
       return panel;
-    }
-
-    function toggleOverlapRow(targetTr, resultItem) {
-      const next = targetTr.nextElementSibling;
-      if (next && next.classList.contains('ql-overlap-row')) {
-        next.remove();
-        return;
-      }
-      tbody.querySelectorAll('.ql-overlap-row').forEach((el) => el.remove());
-
-      const ovTr = document.createElement('tr');
-      ovTr.className = 'ql-overlap-row';
-      const td = document.createElement('td');
-      td.colSpan = 7;
-      td.appendChild(createOverlapPanel(resultItem));
-      ovTr.appendChild(td);
-      targetTr.after(ovTr);
     }
 
     results.forEach((r) => {
@@ -1492,7 +1769,7 @@ export function render(container) {
             s.selectedSampleId = r.id;
             save(s);
             paintDetail(r);
-            toggleOverlapRow(tr, r);
+            openOverlapModal(r, { samples, state: s });
           });
           actionsCell.appendChild(ovBtn);
         }
@@ -1606,15 +1883,8 @@ export function render(container) {
           ovDetailBtn.className = 'ql-btn';
           ovDetailBtn.textContent = t('sanger.inspectOverlap');
           ovDetailBtn.title = t('sanger.inspectOverlapTitle');
-          let ovDetailPanel = null;
           ovDetailBtn.addEventListener('click', () => {
-            if (ovDetailPanel && ovDetailPanel.parentElement) {
-              ovDetailPanel.remove();
-              ovDetailPanel = null;
-            } else {
-              ovDetailPanel = createOverlapPanel(r);
-              detailWrap.appendChild(ovDetailPanel);
-            }
+            openOverlapModal(r, { samples, state: s });
           });
           btnRow.appendChild(ovDetailBtn);
         }

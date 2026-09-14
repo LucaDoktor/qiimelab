@@ -13,7 +13,14 @@ import { dirname, resolve } from 'node:path';
 import { parseAb1 } from '../js/lib/ab1Parser.js';
 import { trimRead } from '../js/lib/sangerTrim.js';
 import { mergeReads, reverseComplement } from '../js/lib/sangerOverlap.js';
-import { renderOverlapHTML } from '../js/modules/sanger.js';
+import {
+  renderOverlapHTML,
+  buildOverlapData,
+  renderMinimapHTML,
+  calculateMinimapViewport,
+  calculateScrollFromMinimap,
+  openOverlapModal,
+} from '../js/modules/sanger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -116,5 +123,194 @@ console.log('\n--- 5. Entradas vacías o nulas (modo seguro) ---');
     htmlEmpty.includes('ql-ds-container'));
 }
 
+console.log('\n--- 6. Minimapa y visualización condensada ---');
+{
+  const fwdSeq = 'AAAAAA' + 'TTTTTT' + 'GGGGGG';
+  const rcSeq  = 'TTTATT' + 'GGGGGG' + 'CCCCCC';
+  const consSeq = 'AAAAAATTTATTGGGGGGCCCCCC';
+  const data = buildOverlapData(fwdSeq, rcSeq, consSeq);
+
+  check('buildOverlapData genera array de columnas', Array.isArray(data.cols) && data.cols.length > 0);
+  check('buildOverlapData calcula métricas de solape', data.overlapBases > 0 && data.mismatches === 1);
+
+  const miniHtml = renderMinimapHTML(data);
+  check('genera contenedor con clase ql-minimap-wrap', miniHtml.includes('class="ql-minimap-wrap"'));
+  check('genera carril con clase ql-minimap-track', miniHtml.includes('class="ql-minimap-track"'));
+  check('genera barras con clase ql-minimap-bar', miniHtml.includes('class="ql-minimap-bar'));
+  check('incluye barras overlap-match y overlap-mismatch',
+    miniHtml.includes('overlap-match') && miniHtml.includes('overlap-mismatch'));
+  check('incluye barras de flancos fwd-only y rev-only',
+    miniHtml.includes('fwd-only') && miniHtml.includes('rev-only'));
+  check('incluye recuadro de viewport ql-minimap-viewport', miniHtml.includes('class="ql-minimap-viewport"'));
+  check('las barras no contienen letras de nucleótidos (vista condensada)',
+    !miniHtml.includes('>A<') && !miniHtml.includes('>T<') && !miniHtml.includes('>G<') && !miniHtml.includes('>C<'));
+}
+
+console.log('\n--- 7. Lógica matemática de sincronización bidireccional ---');
+{
+  // Vista principal: scrollWidth = 10000, clientWidth = 2000 -> maxScroll = 8000
+  // Minimapa: width = 800
+  // visibleRatio = 2000 / 10000 = 0.20 -> vpWidth = 0.20 * 800 = 160
+  // Rango de desplazamiento del viewport = 800 - 160 = 640
+
+  // 1. Scroll al inicio (scrollLeft = 0)
+  const v0 = calculateMinimapViewport(0, 10000, 2000, 800);
+  check('scrollLeft=0 -> indicator left=0 y scrollPct=0', v0.left === 0 && v0.scrollPct === 0);
+  check('ancho del indicador proporcional a ventana visible', Math.abs(v0.vpWidth - 160) < 1e-5);
+
+  // 2. Scroll al 50% (scrollLeft = 4000)
+  const v50 = calculateMinimapViewport(4000, 10000, 2000, 800);
+  check('scrollLeft=50% -> indicator left centrado al 50% del recorrido',
+    Math.abs(v50.scrollPct - 0.5) < 1e-5 && Math.abs(v50.left - 320) < 1e-5);
+
+  // 3. Scroll al final (scrollLeft = 8000)
+  const v100 = calculateMinimapViewport(8000, 10000, 2000, 800);
+  check('scrollLeft=max -> indicator a la derecha exacta (minimapW - vpWidth)',
+    Math.abs(v100.scrollPct - 1.0) < 1e-5 && Math.abs(v100.left - 640) < 1e-5);
+
+  // 4. Interacción en minimapa: Clic en x=0
+  const s0 = calculateScrollFromMinimap(0, 800, 10000, 2000);
+  check('clic x=0 -> targetScrollLeft=0', s0.targetScrollLeft === 0 && s0.clickPct === 0);
+
+  // 5. Interacción en minimapa: Clic al 50% (x=400)
+  const s50 = calculateScrollFromMinimap(400, 800, 10000, 2000);
+  check('clic x=50% -> targetScrollLeft=4000 (mitad de maxScroll)',
+    s50.targetScrollLeft === 4000 && s50.clickPct === 0.5);
+
+  // 6. Interacción en minimapa: Clic al final (x=800)
+  const s100 = calculateScrollFromMinimap(800, 800, 10000, 2000);
+  check('clic x=100% -> targetScrollLeft=8000 (maxScroll)',
+    s100.targetScrollLeft === 8000 && s100.clickPct === 1.0);
+}
+
+console.log('\n--- 8. Modal interactivo y destrucción de listeners (ciclo de vida) ---');
+{
+  const events = {
+    windowAdded: [],
+    windowRemoved: [],
+    mainAdded: [],
+    mainRemoved: [],
+    minimapAdded: [],
+    minimapRemoved: [],
+  };
+
+  const fakeElement = (tag) => {
+    const el = {
+      tagName: tag.toUpperCase(),
+      style: {},
+      attributes: {},
+      children: [],
+      classList: {
+        add: () => {},
+        contains: () => false,
+      },
+      setAttribute: (k, v) => { el.attributes[k] = String(v); },
+      getAttribute: (k) => el.attributes[k] || null,
+      appendChild: (child) => {
+        if (child) {
+          el.children.push(child);
+          child.parentElement = el;
+        }
+        return child;
+      },
+      append: (...nodes) => { nodes.forEach(n => el.appendChild(n)); },
+      remove: () => {
+        if (el.parentElement) {
+          const idx = el.parentElement.children.indexOf(el);
+          if (idx >= 0) el.parentElement.children.splice(idx, 1);
+        }
+      },
+      get firstElementChild() {
+        if (!el.children.length) el.appendChild(fakeElement('div'));
+        return el.children[0];
+      },
+      set innerHTML(v) {
+        el._html = String(v);
+        if (!el.children.length) el.appendChild(fakeElement('div'));
+      },
+      get innerHTML() { return el._html || ''; },
+      querySelector: (selector) => {
+        if (selector.includes('ql-ds-container')) return mainContainer;
+        if (selector.includes('ql-minimap-container')) return minimapContainer;
+        if (selector.includes('ql-minimap-track')) return minimapTrack;
+        if (selector.includes('ql-minimap-viewport')) return minimapViewport;
+        return null;
+      },
+      querySelectorAll: () => [],
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 16 }),
+      clientWidth: 800,
+      scrollWidth: 8000,
+      scrollLeft: 0,
+      focus: () => {},
+      addEventListener: (type, fn) => {},
+      removeEventListener: (type, fn) => {},
+    };
+    return el;
+  };
+
+  const mainContainer = fakeElement('div');
+  mainContainer.addEventListener = (type) => { events.mainAdded.push(type); };
+  mainContainer.removeEventListener = (type) => { events.mainRemoved.push(type); };
+
+  const minimapContainer = fakeElement('div');
+  minimapContainer.addEventListener = (type) => { events.minimapAdded.push(type); };
+  minimapContainer.removeEventListener = (type) => { events.minimapRemoved.push(type); };
+
+  const minimapTrack = fakeElement('div');
+  const minimapViewport = fakeElement('div');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+
+  globalThis.document = {
+    activeElement: null,
+    createElement: (tag) => fakeElement(tag),
+    body: {
+      children: [],
+      appendChild: (c) => { globalThis.document.body.children.push(c); return c; },
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+
+  globalThis.window = {
+    addEventListener: (type) => { events.windowAdded.push(type); },
+    removeEventListener: (type) => { events.windowRemoved.push(type); },
+  };
+
+  try {
+    const modal = openOverlapModal({
+      id: 'B13',
+      fSeq: 'AAAAAATTTTTT',
+      rcSeq: 'TTTTTTCCCCCC',
+      consensus: 'AAAAAATTTTTTCCCCCC',
+      method: 'merged',
+    });
+
+    check('openOverlapModal devuelve objeto con método close()', typeof modal.close === 'function');
+    check('registra listener scroll en mainContainer', events.mainAdded.includes('scroll'));
+    check('registra listener pointerdown en minimapContainer', events.minimapAdded.includes('pointerdown'));
+    check('registra listener click en minimapContainer', events.minimapAdded.includes('click'));
+    check('registra listeners de arrastre y resize en window',
+      events.windowAdded.includes('pointermove') &&
+      events.windowAdded.includes('pointerup') &&
+      events.windowAdded.includes('resize'));
+
+    modal.close();
+
+    check('destruye listener scroll de mainContainer al cerrar', events.mainRemoved.includes('scroll'));
+    check('destruye listener pointerdown de minimapContainer al cerrar', events.minimapRemoved.includes('pointerdown'));
+    check('destruye listener click de minimapContainer al cerrar', events.minimapRemoved.includes('click'));
+    check('destruye listeners de window al cerrar (evita fugas de memoria)',
+      events.windowRemoved.includes('pointermove') &&
+      events.windowRemoved.includes('pointerup') &&
+      events.windowRemoved.includes('resize'));
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+}
+
 console.log('\nRESULTADO INSPECTOR SANGER: ' + (failed ? 'FAIL' : 'PASS'));
 process.exit(failed ? 1 : 0);
+
