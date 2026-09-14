@@ -924,105 +924,18 @@ export function attachChartEditor(cfg) {
     renderToolbar();
   }
 
-  // ---- exportar SVG ----
-  function inlineComputed(srcRoot, dstRoot) {
-    const src = srcRoot.querySelectorAll('*');
-    const dst = dstRoot.querySelectorAll('*');
-    const props = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap',
-      'stroke-linejoin', 'stroke-opacity', 'opacity', 'font-family', 'font-size', 'font-weight',
-      'font-style', 'text-anchor', 'dominant-baseline', 'letter-spacing', 'stop-color', 'stop-opacity'];
-    const copy = (a, b) => {
-      const cs = getComputedStyle(a);
-      let decl = '';
-      props.forEach((p) => {
-        const v = cs.getPropertyValue(p);
-        if (v && v !== 'normal' && v !== 'none' || (p === 'fill' && v)) {
-          if (v) decl += p + ':' + v + ';';
-        }
-      });
-      if (decl) b.setAttribute('style', decl + (b.getAttribute('style') || ''));
-    };
-    copy(srcRoot, dstRoot);
-    for (let i = 0; i < src.length && i < dst.length; i++) {
-      if (dst[i].classList && (dst[i].classList.contains('ce-hit') || dst[i].classList.contains('ce-outline'))) continue;
-      copy(src[i], dst[i]);
-    }
-  }
-
+  // ---- exportar SVG y PNG de alta resolución ----
   function serialize() {
-    const clone = svg.cloneNode(true);
-    clone.classList.remove('ce-editing');
-    clone.querySelectorAll('.ce-hit, .ce-outline').forEach((n) => n.remove());
-    clone.querySelectorAll('.ce-el').forEach((g) => g.classList.remove('ce-selected'));
-    inlineComputed(svg, clone);
-
-    const vb = svg.viewBox && svg.viewBox.baseVal;
-    const w = vb && vb.width ? vb.width : svg.getBoundingClientRect().width;
-    const h = vb && vb.height ? vb.height : svg.getBoundingClientRect().height;
-    clone.setAttribute('xmlns', NS);
-    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-    clone.setAttribute('width', Math.round(w));
-    clone.setAttribute('height', Math.round(h));
-    clone.removeAttribute('style');
-
-    // fondo sólido (las figuras se pegan en informes con fondo blanco/claro)
-    const bg = document.createElementNS(NS, 'rect');
-    const surf = getComputedStyle(document.body).getPropertyValue('--surface').trim() || '#ffffff';
-    bg.setAttribute('x', vb ? vb.x : 0); bg.setAttribute('y', vb ? vb.y : 0);
-    bg.setAttribute('width', w); bg.setAttribute('height', h);
-    bg.setAttribute('fill', surf);
-    clone.insertBefore(bg, clone.firstChild);
-
-    return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+    return serializeSvg(svg);
   }
 
   function downloadSvg() {
-    const str = serialize();
-    try {
-      const blob = new Blob([str], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename.replace(/[^a-z0-9_-]+/gi, '-') + '.svg';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    } catch (e) { /* sandbox sin descargas: al menos deja el string accesible */ }
-    return str;
+    const res = exportSvg(svg, filename);
+    return res.str;
   }
 
   function downloadPng() {
-    const str = serialize();
-    const vb = svg.viewBox && svg.viewBox.baseVal;
-    const w = Math.round(vb && vb.width ? vb.width : svg.getBoundingClientRect().width);
-    const h = Math.round(vb && vb.height ? vb.height : svg.getBoundingClientRect().height);
-    const scale = 2; // suficiente para pegar en informes / diapositivas
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = w * scale;
-        canvas.height = h * scale;
-        const ctx = canvas.getContext('2d');
-        const surf = getComputedStyle(document.body).getPropertyValue('--surface').trim() || '#ffffff';
-        ctx.fillStyle = surf;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (!blob) return;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename.replace(/[^a-z0-9_-]+/gi, '-') + '.png';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 4000);
-        }, 'image/png');
-      } catch (e) { /* sandbox sin descargas / canvas tainted */ }
-    };
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+    return exportPng(svg, filename, 4);
   }
 
   function toHex(color) {
@@ -1055,6 +968,270 @@ export function attachChartEditor(cfg) {
       svg.querySelectorAll('.ce-hit, .ce-outline').forEach((n) => n.remove());
     },
   };
+}
+
+/**
+ * Sanitiza nombres de archivo para descargas de figuras científicas.
+ */
+export function sanitizeFilename(filename, defaultName = 'smart175_figura') {
+  if (!filename || typeof filename !== 'string') return defaultName;
+  let name = filename.trim().replace(/\.(svg|png)$/i, '');
+  const clean = name.replace(/[^a-z0-9_\u00C0-\u024F-]+/gi, '_').replace(/^_+|_+$/g, '');
+  return clean || defaultName;
+}
+
+/**
+ * Copia estilos calculados (fills, strokes, tipografías) a atributos inline del clon
+ * para garantizar que el SVG conserve su aspecto exacto fuera de la aplicación.
+ */
+export function inlineComputedStyles(srcRoot, dstRoot) {
+  if (!srcRoot || !dstRoot) return;
+  const getCS = (typeof getComputedStyle === 'function')
+    ? getComputedStyle
+    : ((typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') ? window.getComputedStyle : null);
+  if (!getCS) return;
+
+  const src = srcRoot.querySelectorAll ? srcRoot.querySelectorAll('*') : [];
+  const dst = dstRoot.querySelectorAll ? dstRoot.querySelectorAll('*') : [];
+  const props = [
+    'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap',
+    'stroke-linejoin', 'stroke-opacity', 'opacity', 'font-family', 'font-size', 'font-weight',
+    'font-style', 'text-anchor', 'dominant-baseline', 'letter-spacing', 'stop-color', 'stop-opacity'
+  ];
+  const copy = (a, b) => {
+    try {
+      const cs = getCS(a);
+      if (!cs) return;
+      let decl = '';
+      props.forEach((p) => {
+        const v = cs.getPropertyValue ? cs.getPropertyValue(p) : cs[p];
+        if (v && v !== 'normal' && v !== 'none' || (p === 'fill' && v)) {
+          if (v) decl += p + ':' + v + ';';
+        }
+      });
+      if (decl && b.setAttribute) {
+        const prev = b.getAttribute('style') || '';
+        b.setAttribute('style', decl + prev);
+      }
+    } catch (e) {}
+  };
+  copy(srcRoot, dstRoot);
+  for (let i = 0; i < src.length && i < dst.length; i++) {
+    if (dst[i].classList && (dst[i].classList.contains('ce-hit') || dst[i].classList.contains('ce-outline'))) continue;
+    copy(src[i], dst[i]);
+  }
+}
+
+/**
+ * Serializa un nodo SVG a XML estándar, incrustando estilos calculados y
+ * añadiendo un fondo blanco sólido (#ffffff) permanente para revistas científicas.
+ */
+export function serializeSvg(svgEl) {
+  if (!svgEl) return '';
+  const clone = svgEl.cloneNode(true);
+  if (clone.classList && clone.classList.remove) {
+    clone.classList.remove('ce-editing');
+  }
+  if (clone.querySelectorAll) {
+    clone.querySelectorAll('.ce-hit, .ce-outline').forEach((n) => n.remove());
+    clone.querySelectorAll('.ce-el').forEach((g) => {
+      if (g.classList && g.classList.remove) g.classList.remove('ce-selected');
+    });
+  }
+  inlineComputedStyles(svgEl, clone);
+
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  let w = vb && vb.width ? vb.width : (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 0);
+  let h = vb && vb.height ? vb.height : (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 0);
+  if (!w || !h) {
+    w = parseFloat(svgEl.getAttribute('width')) || 800;
+    h = parseFloat(svgEl.getAttribute('height')) || 600;
+  }
+  w = Math.round(w);
+  h = Math.round(h);
+
+  clone.setAttribute('xmlns', NS);
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+  clone.setAttribute('width', String(w));
+  clone.setAttribute('height', String(h));
+  if (!clone.getAttribute('viewBox')) {
+    const vx = vb && vb.x !== undefined ? vb.x : 0;
+    const vy = vb && vb.y !== undefined ? vb.y : 0;
+    clone.setAttribute('viewBox', `${vx} ${vy} ${w} ${h}`);
+  }
+  clone.removeAttribute('style');
+
+  // Fondo blanco sólido (#ffffff) permanente para publicación científica
+  if (clone.querySelectorAll) {
+    clone.querySelectorAll('.ce-export-bg').forEach((n) => n.remove());
+  }
+  const bg = document.createElementNS(NS, 'rect');
+  bg.setAttribute('class', 'ce-export-bg');
+  const vx = vb && vb.x !== undefined ? vb.x : 0;
+  const vy = vb && vb.y !== undefined ? vb.y : 0;
+  bg.setAttribute('x', String(vx));
+  bg.setAttribute('y', String(vy));
+  bg.setAttribute('width', String(w));
+  bg.setAttribute('height', String(h));
+  bg.setAttribute('fill', '#ffffff');
+  clone.insertBefore(bg, clone.firstChild);
+
+  let serializer;
+  if (typeof XMLSerializer !== 'undefined') {
+    serializer = new XMLSerializer();
+  } else if (typeof globalThis !== 'undefined' && globalThis.XMLSerializer) {
+    serializer = new globalThis.XMLSerializer();
+  }
+  let str = serializer ? serializer.serializeToString(clone) : (clone.outerHTML || '');
+  if (!str.startsWith('<?xml')) {
+    str = '<?xml version="1.0" encoding="UTF-8"?>\n' + str;
+  }
+  return str;
+}
+
+/**
+ * Exporta un elemento SVG a archivo vectorial .svg con descarga automática en el navegador.
+ *
+ * @param {SVGElement} svgEl - Elemento SVG a exportar
+ * @param {string} [filename='smart175_figura'] - Nombre de archivo
+ * @returns {{ str: string, filename: string, blob: Blob|null }}
+ */
+export function exportSvg(svgEl, filename = 'smart175_figura') {
+  if (!svgEl) {
+    throw new Error('No SVG element provided for exportSvg');
+  }
+  const str = serializeSvg(svgEl);
+  const downloadName = sanitizeFilename(filename, 'smart175_figura') + '.svg';
+  let blob = null;
+
+  try {
+    blob = new Blob([str], { type: 'image/svg+xml;charset=utf-8' });
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function' && typeof document !== 'undefined') {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadName;
+      a.style.display = 'none';
+      if (document.body) {
+        document.body.appendChild(a);
+      }
+      a.click();
+      a.remove();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }, 4000);
+    }
+  } catch (e) {
+    // Entorno restringido / headless
+  }
+
+  return { str, filename: downloadName, blob };
+}
+
+/**
+ * Exporta un elemento SVG a imagen rasterizada PNG en alta resolución (300+ dpi)
+ * renderizando en un <canvas> escalado en memoria con fondo blanco sólido (#ffffff).
+ *
+ * @param {SVGElement} svgEl - Elemento SVG a exportar
+ * @param {string} [filename='smart175_figura'] - Nombre de archivo
+ * @param {number} [scale=4] - Factor de escala para 300+ dpi (por defecto 4x)
+ * @returns {Promise<{ canvas: HTMLCanvasElement, dataUrl: string, filename: string, width: number, height: number, scale: number }>}
+ */
+export function exportPng(svgEl, filename = 'smart175_figura', scale = 4) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!svgEl) {
+        throw new Error('No SVG element provided for exportPng');
+      }
+
+      const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+      let w = vb && vb.width ? vb.width : (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 0);
+      let h = vb && vb.height ? vb.height : (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 0);
+      if (!w || !h) {
+        w = parseFloat(svgEl.getAttribute('width')) || 800;
+        h = parseFloat(svgEl.getAttribute('height')) || 600;
+      }
+      w = Math.round(w);
+      h = Math.round(h);
+
+      const targetScale = Math.max(1, Number(scale) || 4);
+      const str = serializeSvg(svgEl);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * targetScale);
+      canvas.height = Math.round(h * targetScale);
+
+      const ctx = canvas.getContext ? canvas.getContext('2d') : null;
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      const downloadName = sanitizeFilename(filename, 'smart175_figura') + '.png';
+      const blob = new Blob([str], { type: 'image/svg+xml;charset=utf-8' });
+      const url = (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function')
+        ? URL.createObjectURL(blob)
+        : ('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str));
+
+      const img = (typeof Image !== 'undefined') ? new Image() : (globalThis.Image ? new globalThis.Image() : null);
+      if (!img) {
+        throw new Error('Image constructor is not available');
+      }
+
+      img.onload = () => {
+        try {
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          }
+          if (url.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+            URL.revokeObjectURL(url);
+          }
+
+          let dataUrl = '';
+          if (typeof canvas.toDataURL === 'function') {
+            dataUrl = canvas.toDataURL('image/png');
+          }
+
+          if (dataUrl && typeof document !== 'undefined') {
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = downloadName;
+            a.style.display = 'none';
+            if (document.body) {
+              document.body.appendChild(a);
+            }
+            a.click();
+            a.remove();
+          }
+
+          resolve({
+            canvas,
+            dataUrl,
+            filename: downloadName,
+            width: canvas.width,
+            height: canvas.height,
+            scale: targetScale,
+          });
+        } catch (err) {
+          if (url.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+            try { URL.revokeObjectURL(url); } catch (e) {}
+          }
+          reject(err);
+        }
+      };
+
+      img.onerror = (err) => {
+        if (url.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+        }
+        reject(err || new Error('Error decodificando imagen SVG para exportar a PNG'));
+      };
+
+      img.src = url;
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 function escapeHtml(s) {
@@ -1495,12 +1672,42 @@ export function openChartEditor(chartRef, configOptions = {}, onUpdate = () => {
   });
   footer.appendChild(resetBtn);
 
+  const actionsRight = document.createElement('div');
+  actionsRight.className = 'ql-ce-dialog-footer-actions';
+  actionsRight.style.display = 'flex';
+  actionsRight.style.gap = '8px';
+  actionsRight.style.alignItems = 'center';
+
+  if (svgEl) {
+    const dlSvgBtn = document.createElement('button');
+    dlSvgBtn.type = 'button';
+    dlSvgBtn.className = 'ql-btn';
+    dlSvgBtn.innerHTML = `${CE_ICONS.download} <span>Descargar SVG</span>`;
+    dlSvgBtn.title = 'Descargar SVG vectorial';
+    dlSvgBtn.addEventListener('click', () => {
+      exportSvg(svgEl, currentConfig.filename || configOptions.filename || 'smart175_figura');
+    });
+    actionsRight.appendChild(dlSvgBtn);
+
+    const dlPngBtn = document.createElement('button');
+    dlPngBtn.type = 'button';
+    dlPngBtn.className = 'ql-btn';
+    dlPngBtn.innerHTML = `${CE_ICONS.download} <span>Descargar PNG</span>`;
+    dlPngBtn.title = 'Descargar PNG en alta resolución (300 dpi)';
+    dlPngBtn.addEventListener('click', () => {
+      exportPng(svgEl, currentConfig.filename || configOptions.filename || 'smart175_figura', 4);
+    });
+    actionsRight.appendChild(dlPngBtn);
+  }
+
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'ql-btn ql-btn-primary';
   closeBtn.textContent = 'Cerrar';
   closeBtn.addEventListener('click', () => dialog.close());
-  footer.appendChild(closeBtn);
+  actionsRight.appendChild(closeBtn);
+
+  footer.appendChild(actionsRight);
 
   dialog.appendChild(footer);
 

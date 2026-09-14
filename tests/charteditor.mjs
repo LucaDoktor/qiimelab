@@ -3,7 +3,15 @@
 // 2. Limpieza UI con botones de icono cuadrado (.ql-btn-icon-sq) en la tabla Sanger.
 // 3. Integración en el diagrama aluvial con parámetros geométricos y reactividad.
 
-import { openChartEditor, attachChartEditor } from '../js/lib/chartEditor.js';
+import {
+  openChartEditor,
+  attachChartEditor,
+  exportSvg,
+  exportPng,
+  serializeSvg,
+  sanitizeFilename,
+  inlineComputedStyles,
+} from '../js/lib/chartEditor.js';
 import * as taxaModule from '../js/modules/taxa.js';
 import * as taxaBarplotModule from '../js/modules/taxaBarplot.js';
 import { computeAlluvialLayout } from '../js/lib/alluvial.js';
@@ -62,6 +70,17 @@ function createMockDOM() {
 
       get checked() { return el._checked; },
       set checked(v) { el._checked = Boolean(v); },
+
+      get textContent() {
+        if (el._textContent !== undefined) return el._textContent;
+        if (el.children && el.children.length > 0) {
+          return el.children.map((c) => c.textContent || '').join('');
+        }
+        return '';
+      },
+      set textContent(txt) {
+        el._textContent = String(txt);
+      },
 
       get firstChild() { return el.children[0] || null; },
       get lastElementChild() { return el.children[el.children.length - 1] || null; },
@@ -135,6 +154,34 @@ function createMockDOM() {
       getBBox() {
         return { x: 10, y: 10, width: 100, height: 20 };
       },
+      click() {
+        el.dispatchEvent('click');
+        if (el.tagName === 'A') {
+          doc._downloads = doc._downloads || [];
+          doc._downloads.push({
+            href: el.getAttribute('href') || el.href,
+            download: el.getAttribute('download') || el.download,
+          });
+        }
+      },
+      cloneNode(deep = false) {
+        const clone = makeEl(el.tagName);
+        clone.attributes = { ...el.attributes };
+        clone.style = { ...el.style };
+        clone.classList._classes = new Set(el.classList._classes);
+        clone.textContent = el.textContent;
+        clone._value = el._value;
+        clone._checked = el._checked;
+        if (el._innerHTML !== undefined) {
+          clone._innerHTML = el._innerHTML;
+        }
+        if (deep && el.children) {
+          el.children.forEach((c) => {
+            if (c && c.cloneNode) clone.appendChild(c.cloneNode(true));
+          });
+        }
+        return clone;
+      },
       showModal() {
         el.open = true;
         el.setAttribute('open', '');
@@ -145,6 +192,37 @@ function createMockDOM() {
         el.dispatchEvent('close');
       },
     };
+
+    if (tagName.toLowerCase() === 'canvas') {
+      el.width = 300;
+      el.height = 150;
+      const ctx = {
+        fillStyle: '#000000',
+        fillRect(x, y, w, h) {
+          el._fillRects = el._fillRects || [];
+          el._fillRects.push({ fillStyle: ctx.fillStyle, x, y, w, h });
+        },
+        drawImage(img, dx, dy, dw, dh) {
+          el._drawImages = el._drawImages || [];
+          el._drawImages.push({ img, dx, dy, dw, dh });
+        },
+      };
+      el.getContext = (type) => (type === '2d' ? ctx : null);
+      el.toDataURL = (type) => `data:${type || 'image/png'};base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==`;
+    }
+
+    Object.defineProperty(el, 'viewBox', {
+      get() {
+        const vbAttr = el.getAttribute('viewBox');
+        if (vbAttr) {
+          const parts = vbAttr.trim().split(/[\s,]+/).map(Number);
+          if (parts.length === 4) {
+            return { baseVal: { x: parts[0], y: parts[1], width: parts[2], height: parts[3] } };
+          }
+        }
+        return { baseVal: { x: 0, y: 0, width: 600, height: 500 } };
+      },
+    });
 
     // Helper para innerHTML sencillo
     Object.defineProperty(el, 'innerHTML', {
@@ -160,6 +238,10 @@ function createMockDOM() {
 
   function parseSimpleHtml(html, parent) {
     parent.children = [];
+    if (!html.includes('<')) {
+      parent.textContent = html;
+      return;
+    }
     const tagRegex = /<([a-z0-9-]+)([^>]*)>(.*?)<\/\1>|<([a-z0-9-]+)([^>]*)\/>/gis;
     let match;
     let hasChildren = false;
@@ -263,6 +345,52 @@ function createMockDOM() {
     addEventListener: (type, fn) => {},
     removeEventListener: (type, fn) => {},
   };
+
+  if (typeof globalThis.XMLSerializer === 'undefined') {
+    globalThis.XMLSerializer = class XMLSerializer {
+      serializeToString(node) {
+        function ser(n) {
+          if (!n) return '';
+          if (n.tagName === '#TEXT') return n.textContent || '';
+          const tag = n.tagName.toLowerCase();
+          let attrs = '';
+          if (n.attributes) {
+            for (const [k, v] of Object.entries(n.attributes)) {
+              attrs += ` ${k}="${String(v).replace(/"/g, '&quot;')}"`;
+            }
+          }
+          if (n.children && n.children.length > 0) {
+            const inner = n.children.map(ser).join('');
+            return `<${tag}${attrs}>${inner}</${tag}>`;
+          }
+          if (n.textContent) {
+            return `<${tag}${attrs}>${n.textContent}</${tag}>`;
+          }
+          return `<${tag}${attrs}/>`;
+        }
+        return ser(node);
+      }
+    };
+  }
+
+  if (typeof globalThis.Image === 'undefined') {
+    globalThis.Image = class MockImage {
+      constructor() {
+        this._src = '';
+        this.onload = null;
+        this.onerror = null;
+      }
+      get src() { return this._src; }
+      set src(val) {
+        this._src = val;
+        setTimeout(() => {
+          if (typeof this.onload === 'function') {
+            this.onload();
+          }
+        }, 5);
+      }
+    };
+  }
 
   return { doc, makeEl };
 }
@@ -570,7 +698,176 @@ console.log('\n--- 3. Integración en el Diagrama Aluvial (js/modules/taxa.js y 
     taxaBarplotContent.includes('alluvialLinkOpacity = Number(payload)'));
 }
 
-console.log('\n--- 4. Resumen de resultados ---');
+console.log('\n--- 4. Motor de exportación vectorial (SVG) y rasterizado (PNG 300 dpi) ---');
+{
+  const { doc, makeEl } = createMockDOM();
+  globalThis.document = doc;
+  globalThis.window = {
+    getComputedStyle: (el) => ({
+      getPropertyValue: (p) => {
+        if (p === 'fill') return '#1e40af';
+        if (p === 'font-family') return 'var(--font-body)';
+        return '';
+      },
+    }),
+  };
+
+  // 4.1 Sanitización de nombres de archivo
+  check('sanitizeFilename limpia extensiones repetidas y caracteres inválidos',
+    sanitizeFilename('mi gráfico (2026).svg') === 'mi_gráfico_2026');
+  check('sanitizeFilename usa nombre por defecto si la entrada es vacía',
+    sanitizeFilename('', 'smart175_figura') === 'smart175_figura');
+  check('sanitizeFilename limpia caracteres especiales como slashes y dos puntos',
+    sanitizeFilename('taxa/alluvial:v1.png') === 'taxa_alluvial_v1');
+
+  // 4.2 Serialización de SVG con fondo blanco sólido y sin artefactos de edición
+  const testSvg = makeEl('svg');
+  testSvg.setAttribute('viewBox', '0 0 800 600');
+  testSvg.classList.add('ce-editing');
+
+  const hitBox = makeEl('rect');
+  hitBox.className = 'ce-hit';
+  testSvg.appendChild(hitBox);
+
+  const outline = makeEl('rect');
+  outline.className = 'ce-outline';
+  testSvg.appendChild(outline);
+
+  const dataGroup = makeEl('g');
+  dataGroup.className = 'ce-el ce-selected';
+  const textNode = makeEl('text');
+  textNode.textContent = 'Figura de Microbiota';
+  dataGroup.appendChild(textNode);
+  testSvg.appendChild(dataGroup);
+
+  const serialized = serializeSvg(testSvg);
+  check('serializeSvg inicia con declaración XML UTF-8',
+    serialized.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
+  check('serializeSvg incluye atributos xmlns y dimensiones',
+    serialized.includes('xmlns="http://www.w3.org/2000/svg"') && serialized.includes('width="800"') && serialized.includes('height="600"'));
+  check('serializeSvg inyecta rect de fondo blanco sólido (#ffffff)',
+    serialized.includes('<rect') && serialized.includes('fill="#ffffff"') && serialized.includes('class="ce-export-bg"'));
+  check('serializeSvg elimina clases ce-editing y ce-selected del clon',
+    !serialized.includes('ce-editing') && !serialized.includes('ce-selected'));
+  check('serializeSvg elimina elementos auxiliares ce-hit y ce-outline',
+    !serialized.includes('ce-hit') && !serialized.includes('ce-outline'));
+  check('el SVG original en el DOM conserva sus clases y estructura intacta',
+    testSvg.classList.contains('ce-editing') && testSvg.querySelector('.ce-hit') !== null);
+
+  // 4.3 Exportación vectorial (SVG)
+  doc._downloads = [];
+  const svgExportResult = exportSvg(testSvg, 'figura_paper');
+  check('exportSvg devuelve objeto con str, filename y blob',
+    svgExportResult && typeof svgExportResult.str === 'string' && svgExportResult.filename === 'figura_paper.svg' && svgExportResult.blob !== null);
+  check('exportSvg genera blob con tipo image/svg+xml;charset=utf-8',
+    svgExportResult.blob && svgExportResult.blob.type === 'image/svg+xml;charset=utf-8');
+  const lastSvgDl = doc._downloads[doc._downloads.length - 1];
+  check('exportSvg simula descarga automática mediante enlace con nombre seguro',
+    lastSvgDl && lastSvgDl.download === 'figura_paper.svg');
+
+  // 4.4 Exportación rasterizada en alta resolución (PNG 300+ dpi)
+  const pngExportPromise = exportPng(testSvg, 'figura_alta_res', 4);
+  const pngExportResult = await pngExportPromise;
+
+  check('exportPng resuelve promesa con metadata de imagen',
+    Boolean(pngExportResult && pngExportResult.filename === 'figura_alta_res.png'));
+  check('exportPng escala dimensiones por factor 4x (300+ dpi)',
+    pngExportResult.width === 3200 && pngExportResult.height === 2400 && pngExportResult.scale === 4);
+  check('exportPng rellena el canvas con fondo blanco sólido (#ffffff)',
+    pngExportResult.canvas._fillRects &&
+    pngExportResult.canvas._fillRects.some((r) => r.fillStyle === '#ffffff' && r.w === 3200 && r.h === 2400));
+  check('exportPng dibuja la imagen escalada en el canvas en onload',
+    pngExportResult.canvas._drawImages &&
+    pngExportResult.canvas._drawImages.some((d) => d.dw === 3200 && d.dh === 2400));
+  check('exportPng exporta con canvas.toDataURL("image/png")',
+    typeof pngExportResult.dataUrl === 'string' && pngExportResult.dataUrl.startsWith('data:image/png'));
+  const lastPngDl = doc._downloads[doc._downloads.length - 1];
+  check('exportPng dispara descarga con elemento <a> y nombre dinámico .png',
+    lastPngDl && lastPngDl.download === 'figura_alta_res.png');
+
+  // 4.5 Botones de exportación en la barra de herramientas (attachChartEditor)
+  const mountTb = makeEl('div');
+  doc.body.appendChild(mountTb);
+  const svgTb = makeEl('svg');
+  svgTb.setAttribute('viewBox', '0 0 600 400');
+  mountTb.appendChild(svgTb);
+
+  const editorTb = attachChartEditor({
+    key: 'testExportToolbar',
+    svg: svgTb,
+    mount: mountTb,
+    filename: 'smart175_test_tb',
+    lang: 'es',
+  });
+
+  const allTbBtns = mountTb.querySelectorAll('button');
+  const btnSvgTb = Array.from(allTbBtns).find((b) => b.textContent && b.textContent.includes('Descargar SVG'));
+  const btnPngTb = Array.from(allTbBtns).find((b) => b.textContent && b.textContent.includes('Descargar PNG'));
+
+  check('attachChartEditor incluye botón "Descargar SVG"', Boolean(btnSvgTb));
+  check('attachChartEditor incluye botón "Descargar PNG"', Boolean(btnPngTb));
+
+  if (btnSvgTb) {
+    doc._downloads = [];
+    btnSvgTb.dispatchEvent('click');
+    const dl = doc._downloads[doc._downloads.length - 1];
+    check('clic en "Descargar SVG" en toolbar dispara descarga con filename especificado',
+      dl && dl.download === 'smart175_test_tb.svg');
+  }
+
+  if (btnPngTb) {
+    doc._downloads = [];
+    btnPngTb.dispatchEvent('click');
+    // Esperar microtask / onload simulado
+    await new Promise((r) => setTimeout(r, 20));
+    const dl = doc._downloads[doc._downloads.length - 1];
+    check('clic en "Descargar PNG" en toolbar dispara descarga con filename especificado',
+      dl && dl.download === 'smart175_test_tb.png');
+  }
+
+  editorTb.destroy();
+
+  // 4.6 Botones de exportación en el diálogo modal (openChartEditor)
+  const svgModal = makeEl('svg');
+  svgModal.setAttribute('viewBox', '0 0 700 500');
+
+  const modalInstance = openChartEditor(svgModal, {
+    title: 'Ajustes de prueba para exportación',
+    filename: 'smart175_modal_export',
+  });
+
+  const modalDialog = doc.body.querySelector('.ql-chart-editor-dialog');
+  const modalSvgBtn = Array.from(modalDialog.querySelectorAll('button')).find(
+    (b) => b.textContent && b.textContent.includes('Descargar SVG')
+  );
+  const modalPngBtn = Array.from(modalDialog.querySelectorAll('button')).find(
+    (b) => b.textContent && b.textContent.includes('Descargar PNG')
+  );
+
+  check('openChartEditor footer contiene botón "Descargar SVG"', Boolean(modalSvgBtn));
+  check('openChartEditor footer contiene botón "Descargar PNG"', Boolean(modalPngBtn));
+
+  if (modalSvgBtn) {
+    doc._downloads = [];
+    modalSvgBtn.dispatchEvent('click');
+    const dl = doc._downloads[doc._downloads.length - 1];
+    check('clic en "Descargar SVG" en modal dispara descarga vectorial',
+      dl && dl.download === 'smart175_modal_export.svg');
+  }
+
+  if (modalPngBtn) {
+    doc._downloads = [];
+    modalPngBtn.dispatchEvent('click');
+    await new Promise((r) => setTimeout(r, 20));
+    const dl = doc._downloads[doc._downloads.length - 1];
+    check('clic en "Descargar PNG" en modal dispara descarga rasterizada de alta resolución',
+      dl && dl.download === 'smart175_modal_export.png');
+  }
+
+  modalInstance.close();
+}
+
+console.log('\n--- 5. Resumen de resultados ---');
 if (failed) {
   console.error('❌ Fallaron algunos tests.');
   process.exit(1);
