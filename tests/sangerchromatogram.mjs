@@ -136,6 +136,77 @@ try {
   const afterGhost = await c.ev(`document.getElementById('sgTrimEnd') ? document.getElementById('sgTrimEnd').value : 'SIN_INPUT'`);
   check('ningún listener de arrastre "zombi" sigue activo tras soltar', afterGhost === afterDrop, 'después=' + afterDrop + ' fantasma=' + afterGhost);
 
+  // --- Test de Ajustes de Recorte Dinámico (Mott Q-score y Longitud Mínima) ---
+  const trimPanelCheck = await c.ev(`(() => {
+    const phredSlider = document.getElementById('sgPhredSlider');
+    const minLenSlider = document.getElementById('sgMinLenSlider');
+    const phredVal = document.getElementById('sgPhredVal');
+    const minLenVal = document.getElementById('sgMinLenVal');
+    const prev = document.getElementById('sgConsensusPreview');
+    return {
+      hasPhred: !!phredSlider,
+      phredMin: phredSlider ? phredSlider.min : '',
+      phredMax: phredSlider ? phredSlider.max : '',
+      phredVal: phredSlider ? phredSlider.value : '',
+      phredBadge: phredVal ? phredVal.textContent.trim() : '',
+      hasMinLen: !!minLenSlider,
+      minLenMin: minLenSlider ? minLenSlider.min : '',
+      minLenMax: minLenSlider ? minLenSlider.max : '',
+      minLenVal: minLenSlider ? minLenSlider.value : '',
+      minLenBadge: minLenVal ? minLenVal.textContent.trim() : '',
+      hasPreview: !!prev,
+      previewText: prev ? prev.textContent.trim() : '',
+    };
+  })()`);
+
+  check('el panel de ajustes de recorte contiene los deslizadores de Phred y Longitud Mínima',
+    trimPanelCheck.hasPhred && trimPanelCheck.hasMinLen && trimPanelCheck.hasPreview,
+    JSON.stringify(trimPanelCheck)
+  );
+  check('el deslizador de Phred tiene rango 10 a 60 y valor por defecto Q20',
+    trimPanelCheck.phredMin === '10' && trimPanelCheck.phredMax === '60' && trimPanelCheck.phredVal === '20',
+    trimPanelCheck.phredBadge
+  );
+  check('el deslizador de longitud mínima tiene rango 10 a 500 y valor 50 pb',
+    trimPanelCheck.minLenMin === '10' && trimPanelCheck.minLenMax === '500' && trimPanelCheck.minLenVal === '50',
+    trimPanelCheck.minLenBadge
+  );
+
+  // Mover el deslizador de Phred de Q20 a Q30 y comprobar la respuesta instantánea
+  await c.ev(`(() => {
+    const s = document.getElementById('sgPhredSlider');
+    s.value = '30';
+    s.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+
+  const instantCheck = await c.ev(`(() => {
+    const phredVal = document.getElementById('sgPhredVal');
+    const startInp = document.getElementById('sgTrimStart');
+    const endInp = document.getElementById('sgTrimEnd');
+    return {
+      badge: phredVal ? phredVal.textContent.trim() : '',
+      start: startInp ? startInp.value : '',
+      end: endInp ? endInp.value : '',
+    };
+  })()`);
+
+  check('mover el slider a Q30 actualiza inmediatamente la chapa y recalcula el recorte Mott',
+    instantCheck.badge.includes('Q30') && instantCheck.badge.includes('0.0010'),
+    JSON.stringify(instantCheck)
+  );
+
+  // Esperar el debounce (350ms) y comprobar que el consenso se actualizó
+  await sleep(400);
+  const debouncedCheck = await c.ev(`(() => {
+    const prev = document.getElementById('sgConsensusPreview');
+    return prev ? prev.textContent.trim() : '';
+  })()`);
+
+  check('tras el debounce (300ms), la previsualización del consenso refleja el nuevo consenso',
+    debouncedCheck.includes('pb') && /actualizado|recalculado/i.test(debouncedCheck),
+    debouncedCheck
+  );
+
   check('sin errores de consola / excepciones', c.problems.length === 0, JSON.stringify(c.problems));
 } catch (err) {
   check('ejecución sin excepciones', false, err.message);

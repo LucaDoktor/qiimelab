@@ -1839,5 +1839,373 @@ dialog.ql-chart-editor-dialog::backdrop {
   border-bottom: none;
 }
 
+/* ---------- Calculadora Bioquímica (.ql-calc-*) ---------- */
+.ql-calc-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 
+.ql-calc-presets {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
+.ql-calc-presets-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+
+.ql-calc-presets-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ql-calc-preset-tag {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--ink-2);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background var(--dur, 0.15s), border-color var(--dur, 0.15s), color var(--dur, 0.15s);
+}
+
+.ql-calc-preset-tag:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ql-calc-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ql-calc-text-input {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+}
+
+.ql-calc-number-input {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+}
+
+.ql-calc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.ql-calc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ql-calc-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ql-calc-params-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.ql-calc-param-box {
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color var(--dur, 0.15s), background-color var(--dur, 0.15s);
+}
+
+.ql-calc-param-box.is-solved {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 4%, var(--page));
+}
+
+.ql-calc-param-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 20px;
+}
+
+.ql-calc-auto-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ql-calc-auto-badge.is-hidden {
+  display: none;
+}
+
+.ql-calc-unit-group {
+  display: flex;
+  min-width: 0;
+}
+
+.ql-calc-unit-group input {
+  flex: 1 1 auto;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.ql-calc-unit-group select,
+.ql-calc-unit-group .ql-calc-unit-badge {
+  flex: 0 0 auto;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: none;
+}
+
+.ql-calc-unit-select {
+  width: auto;
+  min-width: 65px;
+  cursor: pointer;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  padding: 8px 6px;
+}
+
+.ql-calc-unit-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--ink-muted);
+}
+
+.ql-calc-result-box {
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 16px;
+}
+
+.ql-calc-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.ql-calc-result-label {
+  font-size: 11.5px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+
+.ql-calc-result-val {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-display, inherit);
+  color: var(--accent);
+  line-height: 1.15;
+  margin-top: 2px;
+}
+
+.ql-calc-result-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.ql-calc-secondary-val {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  margin-left: 6px;
+}
+
+.ql-calc-bridge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ql-calc-composition-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 16px 0 8px;
+}
+
+.ql-calc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--page);
+}
+
+.ql-calc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ql-calc-table th,
+.ql-calc-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ql-calc-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ql-calc-percent-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ql-calc-alert {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ql-calc-alert-error {
+  background: color-mix(in srgb, var(--bad, #e05252) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bad, #e05252) 30%, transparent);
+  color: var(--bad, #e05252);
+}
+
+.ql-calc-callout {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-md, 8px);
+  padding: 14px 18px;
+}
+
+.ql-calc-callout-title {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.ql-calc-callout-desc {
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.ql-calc-callout-idle {
+  background: var(--surface-2, var(--surface));
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.ql-calc-secondary-meta {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* ---------- panel de ajustes de recorte dinámico (Sanger) ---------- */
+.ql-trim-panel {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--surface-2, color-mix(in srgb, var(--page) 50%, var(--surface)));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ql-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--border-strong, #ccc);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+.ql-range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ql-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  transition: transform 0.1s ease;
+}
+
+.ql-range::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+
+.ql-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  transition: transform 0.1s ease;
+}
+
+.ql-range::-moz-range-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}

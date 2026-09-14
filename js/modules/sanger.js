@@ -701,7 +701,7 @@ export function openOverlapModal(resultItem, opts = {}) {
 function defaultState() {
   return {
     tab: 'entrada',
-    trimMethod: 'mott', mottThreshold: 0.05, windowSize: 15, windowMinQ: 20, minLength: 50,
+    trimMethod: 'mott', mottThreshold: 0.01, phredScore: 20, windowSize: 15, windowMinQ: 20, minLength: 50,
     fwdKeywords: '27F,FWD,FORWARD', revKeywords: '907R,1492R,REV,REVERSE',
     expectedAmplicon: '', ampliconTolerance: 150,
     selectedSampleId: '', selectedDirection: 'forward',
@@ -715,13 +715,23 @@ function load() {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
     if (raw && typeof raw === 'object') {
       const d = defaultState();
+      const rawPhred = Number.isFinite(+raw.phredScore) && +raw.phredScore >= 10 && +raw.phredScore <= 60
+        ? Math.round(+raw.phredScore)
+        : null;
+      const rawMott = Number.isFinite(+raw.mottThreshold) && +raw.mottThreshold > 0 ? +raw.mottThreshold : null;
+      const phredScore = rawPhred !== null
+        ? rawPhred
+        : (rawMott !== null ? Math.max(10, Math.min(60, Math.round(-10 * Math.log10(rawMott)))) : d.phredScore);
+      const mottThreshold = Math.pow(10, -phredScore / 10);
+
       return {
         tab: typeof raw.tab === 'string' ? raw.tab : d.tab,
         trimMethod: raw.trimMethod === 'window' ? 'window' : 'mott',
-        mottThreshold: Number.isFinite(+raw.mottThreshold) && +raw.mottThreshold > 0 ? +raw.mottThreshold : d.mottThreshold,
+        mottThreshold,
+        phredScore,
         windowSize: Number.isFinite(+raw.windowSize) && +raw.windowSize > 1 ? +raw.windowSize : d.windowSize,
         windowMinQ: Number.isFinite(+raw.windowMinQ) ? +raw.windowMinQ : d.windowMinQ,
-        minLength: Number.isFinite(+raw.minLength) && +raw.minLength >= 0 ? +raw.minLength : d.minLength,
+        minLength: Number.isFinite(+raw.minLength) && +raw.minLength >= 10 && +raw.minLength <= 500 ? +raw.minLength : d.minLength,
         fwdKeywords: typeof raw.fwdKeywords === 'string' ? raw.fwdKeywords : d.fwdKeywords,
         revKeywords: typeof raw.revKeywords === 'string'
           ? (raw.revKeywords === '1492R,REV,REVERSE' ? d.revKeywords : raw.revKeywords)
@@ -908,9 +918,12 @@ async function readReadFile(file) {
 
 function autoTrimOf(read, s) {
   if (!read) return null;
+  const pThreshold = Number.isFinite(+s.phredScore)
+    ? Math.pow(10, -s.phredScore / 10)
+    : (Number.isFinite(+s.mottThreshold) && +s.mottThreshold > 0 ? +s.mottThreshold : 0.01);
   return s.trimMethod === 'window'
     ? trimRead(read.quality, { method: 'window', windowSize: s.windowSize, minQuality: s.windowMinQ, minLength: s.minLength })
-    : trimRead(read.quality, { method: 'mott', errorProbThreshold: s.mottThreshold, minLength: s.minLength });
+    : trimRead(read.quality, { method: 'mott', errorProbThreshold: pThreshold, minLength: s.minLength });
 }
 function effectiveTrim(sample, direction, read, s) {
   const auto = autoTrimOf(read, s);
@@ -1541,6 +1554,7 @@ export function render(container) {
   const pending = []; // archivos sin dirección detectable: { fileKey, read, fileName, id, direction }
   let nextPendingKey = 1;
   let stopActiveDrag = null; // si el usuario navega fuera a mitad de un arrastre, lo suelta el cleanup final
+  let trimDebounceTimer = null; // temporizador de debounce para controles de recorte interactivo
 
   function sampleList() { return [...samples.values()].sort((a, b) => a.id.localeCompare(b.id)); }
 
@@ -1621,6 +1635,7 @@ export function render(container) {
   }
 
   function paint() {
+    if (trimDebounceTimer) { clearTimeout(trimDebounceTimer); trimDebounceTimer = null; }
     container.innerHTML = '';
     save(s);
 
@@ -1924,6 +1939,17 @@ export function render(container) {
       isDragging: () => !!dragging,
     });
 
+    let dragging = null, liveStart = trimRange.start, liveEnd = trimRange.end;
+    function moveHandleTo(which, bi) {
+      const g = chart.handles[which];
+      if (!g) return;
+      const x = chart.xOfBase(which === 'start' ? bi : Math.max(0, bi - 1));
+      g.querySelectorAll('line').forEach((l) => { l.setAttribute('x1', x); l.setAttribute('x2', x); });
+      const circle = g.querySelector('circle');
+      if (circle) circle.setAttribute('cx', x);
+      g.setAttribute('aria-valuenow', String(bi));
+    }
+
     function commitManual(start, end) {
       start = Math.max(0, Math.min(read.sequence.length - 1, Math.round(start)));
       end = Math.max(start + 1, Math.min(read.sequence.length, Math.round(end)));
@@ -1962,21 +1988,18 @@ export function render(container) {
     numRow.appendChild(resetBtn);
     card.appendChild(numRow);
 
-    // Arrastre: repintar TODO el módulo en cada pointermove (como hace
-    // commitManual) dejaría listeners "zombis" en `window` apuntando a un
-    // <svg> ya destruido, en cuanto el primer movimiento disparase el
-    // primer repintado. En su lugar, el arrastre solo mueve el marcador y
-    // los inputs numéricos EN VIVO sobre el propio SVG; el estado (y el
-    // único repintado) se confirma una vez, al soltar.
-    let dragging = null, liveStart = trimRange.start, liveEnd = trimRange.end;
-    function moveHandleTo(which, bi) {
-      const g = chart.handles[which];
-      const x = chart.xOfBase(which === 'start' ? bi : Math.max(0, bi - 1));
-      g.querySelectorAll('line').forEach((l) => { l.setAttribute('x1', x); l.setAttribute('x2', x); });
-      const circle = g.querySelector('circle');
-      if (circle) circle.setAttribute('cx', x);
-      g.setAttribute('aria-valuenow', String(bi));
+    const trimInfoEl = document.createElement('p');
+    trimInfoEl.className = 'ql-field-help';
+    trimInfoEl.style.marginTop = '10px';
+    function updateTrimInfo(start, end, isMan) {
+      const len = Math.max(0, end - start);
+      trimInfoEl.innerHTML = t('sanger.trimInfo', { start, end, len, total: read.sequence.length }) +
+        (isMan ? ' · ' + t('sanger.trimIsManual') : ' · ' + t('sanger.trimIsAuto'));
     }
+    updateTrimInfo(trimRange.start, trimRange.end, !!manual);
+    card.appendChild(trimInfoEl);
+
+    // Arrastre interactivo en el SVG
     function onPointerMove(e) {
       if (!dragging) return;
       if (chromaTooltip) chromaTooltip.hide();
@@ -1984,6 +2007,7 @@ export function render(container) {
       const bi = baseIndexAtX(x, chart.nBases, chart.xOfBase);
       if (dragging === 'start') { liveStart = Math.min(bi, liveEnd - 1); moveHandleTo('start', liveStart); startInp.value = liveStart; }
       else { liveEnd = Math.max(bi + 1, liveStart + 1); moveHandleTo('end', liveEnd); endInp.value = liveEnd; }
+      updateTrimInfo(liveStart, liveEnd, true);
     }
     function onPointerUp() {
       const wasDragging = dragging;
@@ -2010,9 +2034,190 @@ export function render(container) {
       });
     });
 
-    card.insertAdjacentHTML('beforeend',
-      '<p class="ql-field-help" style="margin-top:10px;">' + t('sanger.trimInfo', { start: trimRange.start, end: trimRange.end, len: trimRange.length, total: read.sequence.length }) +
-      (manual ? ' · ' + t('sanger.trimIsManual') : ' · ' + t('sanger.trimIsAuto')) + '</p>');
+    // Panel de Ajustes de Recorte Dinámico (Mott)
+    const trimPanel = document.createElement('div');
+    trimPanel.className = 'ql-trim-panel';
+
+    const panelHead = document.createElement('div');
+    panelHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;';
+    panelHead.innerHTML = '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<strong style="font-size:13.5px;color:var(--ink);">' + t('sanger.trimSettingsTitle') + '</strong>' +
+      '<span class="ql-badge ql-badge-muted">Mott</span>' +
+      '</div>' +
+      '<span class="ql-field-help" style="margin:0;font-size:12px;">' + t('sanger.phredScoreHelp') + '</span>';
+    trimPanel.appendChild(panelHead);
+
+    const curQ = Number.isFinite(+s.phredScore) ? Math.max(10, Math.min(60, Math.round(+s.phredScore))) : 20;
+    const curP = Math.pow(10, -curQ / 10);
+    const curMinLen = Number.isFinite(+s.minLength) ? Math.max(10, Math.min(500, Math.round(+s.minLength))) : 50;
+
+    function getPhredBadgeClass(q) {
+      if (q >= 30) return 'ql-badge-good';
+      if (q >= 20) return 'ql-badge-good';
+      if (q >= 15) return 'ql-badge-warn';
+      return 'ql-badge-crit';
+    }
+
+    const slidersGrid = document.createElement('div');
+    slidersGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;';
+
+    // 1. Phred slider
+    const phredCol = document.createElement('div');
+    phredCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+    const phredHead = document.createElement('div');
+    phredHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+    phredHead.innerHTML = '<label for="sgPhredSlider" style="font-weight:600;font-size:12.5px;cursor:pointer;">' +
+      t('sanger.phredScoreLabel') + '</label>';
+    const phredVal = document.createElement('span');
+    phredVal.id = 'sgPhredVal';
+    phredVal.className = 'ql-badge ' + getPhredBadgeClass(curQ);
+    phredVal.textContent = `Q${curQ} (P ≈ ${curP.toFixed(4)})`;
+    phredHead.appendChild(phredVal);
+    phredCol.appendChild(phredHead);
+
+    const phredSlider = document.createElement('input');
+    phredSlider.type = 'range';
+    phredSlider.id = 'sgPhredSlider';
+    phredSlider.min = '10';
+    phredSlider.max = '60';
+    phredSlider.step = '1';
+    phredSlider.value = String(curQ);
+    phredSlider.className = 'ql-range';
+    phredSlider.setAttribute('aria-label', t('sanger.phredScoreLabel'));
+    phredCol.appendChild(phredSlider);
+
+    const phredTicks = document.createElement('div');
+    phredTicks.style.cssText = 'display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted);padding:0 2px;';
+    phredTicks.innerHTML = '<span>Q10 (P=0.1)</span><span>Q20 (P=0.01)</span><span>Q30 (P=0.001)</span><span>Q60</span>';
+    phredCol.appendChild(phredTicks);
+    slidersGrid.appendChild(phredCol);
+
+    // 2. Min length slider
+    const minLenCol = document.createElement('div');
+    minLenCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+    const minLenHead = document.createElement('div');
+    minLenHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+    minLenHead.innerHTML = '<label for="sgMinLenSlider" style="font-weight:600;font-size:12.5px;cursor:pointer;">' +
+      t('sanger.minLengthLabel') + '</label>';
+    const minLenVal = document.createElement('span');
+    minLenVal.id = 'sgMinLenVal';
+    minLenVal.className = 'ql-badge';
+    minLenVal.textContent = `${curMinLen} pb`;
+    minLenHead.appendChild(minLenVal);
+    minLenCol.appendChild(minLenHead);
+
+    const minLenSlider = document.createElement('input');
+    minLenSlider.type = 'range';
+    minLenSlider.id = 'sgMinLenSlider';
+    minLenSlider.min = '10';
+    minLenSlider.max = '500';
+    minLenSlider.step = '5';
+    minLenSlider.value = String(curMinLen);
+    minLenSlider.className = 'ql-range';
+    minLenSlider.setAttribute('aria-label', t('sanger.minLengthLabel'));
+    minLenCol.appendChild(minLenSlider);
+
+    const minLenTicks = document.createElement('div');
+    minLenTicks.style.cssText = 'display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted);padding:0 2px;';
+    minLenTicks.innerHTML = '<span>10 pb</span><span>250 pb</span><span>500 pb</span>';
+    minLenCol.appendChild(minLenTicks);
+    slidersGrid.appendChild(minLenCol);
+
+    trimPanel.appendChild(slidersGrid);
+
+    // 3. Live consensus preview
+    const prevWrap = document.createElement('div');
+    prevWrap.id = 'sgConsensusPreview';
+    prevWrap.style.cssText = 'padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm,6px);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12.5px;margin-top:4px;';
+
+    function renderConsensusPreview() {
+      const res = s.results.find((r) => r.id === sample.id);
+      if (!res || !res.consensus) {
+        prevWrap.innerHTML = '<span style="color:var(--critical);font-weight:500;">' + t('sanger.noConsensusAvailable') + '</span>';
+        return;
+      }
+      if (res.method === 'merged') {
+        prevWrap.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<strong style="color:var(--ink);">' + t('sanger.consensusPreview') + ':</strong> ' +
+          '<span>' + res.consensus.length + ' pb</span>' +
+          '<span class="ql-badge ql-badge-good">' + t('sanger.colOverlap') + ': ' + res.overlapLen + ' pb (' + fmtPct(res.identity) + ')</span>' +
+          (res.needsReview ? '<span class="ql-badge ql-badge-warn">' + t('sanger.reviewNeeded') + '</span>' : '') +
+          '</div>' +
+          '<span class="ql-field-help" style="margin:0;">' + t('sanger.consensusUpdated') + ' ✓</span>';
+      } else if (res.method === 'stitched') {
+        prevWrap.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<strong style="color:var(--ink);">' + t('sanger.consensusPreview') + ':</strong> ' +
+          '<span>' + res.consensus.length + ' pb</span>' +
+          '<span class="ql-badge ql-badge-warn">Stitched (N-bridge)</span>' +
+          '</div>' +
+          '<span class="ql-field-help" style="margin:0;">' + t('sanger.consensusUpdated') + ' ✓</span>';
+      } else if (res.method === 'single') {
+        prevWrap.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<strong style="color:var(--ink);">' + t('sanger.consensusPreview') + ':</strong> ' +
+          '<span>' + res.consensus.length + ' pb (' + (res.fLen ? 'Forward' : 'Reverse') + ')</span>' +
+          '</div>' +
+          '<span class="ql-field-help" style="margin:0;">' + t('sanger.consensusUpdated') + ' ✓</span>';
+      } else {
+        prevWrap.innerHTML = '<span style="color:var(--critical);font-weight:500;">' + t('sanger.noConsensusAvailable') + '</span>';
+      }
+    }
+    renderConsensusPreview();
+    trimPanel.appendChild(prevWrap);
+    card.appendChild(trimPanel);
+
+    function applyDynamicTrim(immediateVisualOnly = false) {
+      const q = +phredSlider.value;
+      const minLen = +minLenSlider.value;
+      const p = Math.pow(10, -q / 10);
+
+      phredVal.className = 'ql-badge ' + getPhredBadgeClass(q);
+      phredVal.textContent = `Q${q} (P ≈ ${p.toFixed(4)})`;
+      minLenVal.textContent = `${minLen} pb`;
+
+      if (read && read.quality) {
+        const tr = trimRead(read.quality, {
+          method: 'mott',
+          errorProbThreshold: p,
+          minLength: minLen,
+        });
+
+        if (s.manualTrim[sample.id] && s.manualTrim[sample.id][s.selectedDirection]) {
+          delete s.manualTrim[sample.id][s.selectedDirection];
+        }
+        resetBtn.disabled = true;
+
+        moveHandleTo('start', tr.start);
+        moveHandleTo('end', tr.end);
+        startInp.value = tr.start;
+        endInp.value = tr.end;
+        liveStart = tr.start;
+        liveEnd = tr.end;
+        updateTrimInfo(tr.start, tr.end, false);
+      }
+
+      if (trimDebounceTimer) clearTimeout(trimDebounceTimer);
+
+      const commitChanges = () => {
+        s.phredScore = q;
+        s.mottThreshold = p;
+        s.minLength = minLen;
+        s.trimMethod = 'mott';
+        save(s);
+        recomputeResults();
+        renderConsensusPreview();
+      };
+
+      if (immediateVisualOnly) {
+        trimDebounceTimer = setTimeout(commitChanges, 300);
+      } else {
+        commitChanges();
+      }
+    }
+
+    phredSlider.addEventListener('input', () => applyDynamicTrim(true));
+    phredSlider.addEventListener('change', () => applyDynamicTrim(false));
+    minLenSlider.addEventListener('input', () => applyDynamicTrim(true));
+    minLenSlider.addEventListener('change', () => applyDynamicTrim(false));
 
     stack.appendChild(card);
     container.appendChild(stack);
@@ -2340,5 +2545,8 @@ export function render(container) {
   }
 
   paint();
-  return () => { if (stopActiveDrag) stopActiveDrag(); };
+  return () => {
+    if (stopActiveDrag) stopActiveDrag();
+    if (trimDebounceTimer) clearTimeout(trimDebounceTimer);
+  };
 }
