@@ -1099,6 +1099,54 @@ export function formatConfidence(conf) {
 }
 
 /**
+ * Calcula entre 3 y 4 ticks distribuidos limpiamente para el eje Y de intensidad (RFU).
+ * @param {number} maxVal
+ * @returns {number[]}
+ */
+export function getIntensityTicks(maxVal) {
+  if (!Number.isFinite(maxVal) || maxVal <= 0) return [0];
+  let step = 1000;
+  if (maxVal <= 100) step = 25;
+  else if (maxVal <= 300) step = 100;
+  else if (maxVal <= 700) step = 200;
+  else if (maxVal <= 1600) step = 500;
+  else if (maxVal <= 3500) step = 1000;
+  else step = Math.max(1000, Math.pow(10, Math.floor(Math.log10(maxVal / 2))));
+
+  const ticks = [0];
+  for (let v = step; v < maxVal; v += step) {
+    ticks.push(v);
+  }
+  if (ticks.length < 3) {
+    ticks.push(Math.round(maxVal));
+  } else if (ticks.length > 5) {
+    return [0, Math.round(maxVal / 3), Math.round((2 * maxVal) / 3), Math.round(maxVal)];
+  }
+  return ticks;
+}
+
+/**
+ * Calcula marcas numéricas para el eje X de posición (pb) adaptadas al espaciado.
+ * @param {number} nBases
+ * @param {number} pxPerBase
+ * @returns {number[]}
+ */
+export function getPositionTicks(nBases, pxPerBase) {
+  if (!nBases || nBases <= 0) return [];
+  let step = 100;
+  if (pxPerBase * 50 >= 150) step = 50;
+  else if (pxPerBase * 100 >= 150) step = 100;
+  else if (pxPerBase * 200 >= 150) step = 200;
+  else step = 500;
+
+  const ticks = [1];
+  for (let p = step; p < nBases; p += step) {
+    ticks.push(p);
+  }
+  return ticks;
+}
+
+/**
  * Dibuja el cromatograma (4 trazas A/C/G/T + calidad por base) y los dos
  * marcadores de recorte arrastrables. Devuelve un manejador para engancharlo
  * al arrastre y a los inputs numéricos de respaldo (accesibles por teclado).
@@ -1109,9 +1157,10 @@ export function drawChromatogram(svg, read, trimRange) {
   const hasTrace = !!read.trace;
   const pxPerBase = hasTrace ? 7 : 5;
   const W = Math.max(600, nBases * pxPerBase);
-  const marginL = 56, marginR = 16, marginT = 26, traceH = hasTrace ? 150 : 0, gap = hasTrace ? 16 : 0, qualH = 70;
-  const marginB = 36;
-  const H = marginT + traceH + gap + qualH + marginB;
+  const marginL = 64, marginR = 16, marginT = 26, traceH = hasTrace ? 150 : 0, gap = hasTrace ? 18 : 0, qualH = 70;
+  const qualBase = marginT + traceH + gap + qualH;
+  const marginB = 44;
+  const H = qualBase + marginB;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   // ancho en px FIJO, por encima del reset global `svg { max-width:100% }`
   // (css/base.css, pensado para que ninguna figura desborde en móvil): con
@@ -1135,9 +1184,10 @@ export function drawChromatogram(svg, read, trimRange) {
     return marginL + (clamped / Math.max(1, nBases - 1)) * (W - marginL - marginR);
   };
 
+  let maxIntensity = 1;
   if (hasTrace) {
     const traceLen = read.trace.A.length;
-    const maxIntensity = Math.max(1, ...['A', 'C', 'G', 'T'].flatMap((b) => [Math.max(...read.trace[b])]));
+    maxIntensity = Math.max(1, ...['A', 'C', 'G', 'T'].flatMap((b) => [Math.max(...read.trace[b])]));
     const yOf = (v) => marginT + traceH - (v / maxIntensity) * traceH;
     const xOfTraceIdx = (ti) => marginL + (ti / Math.max(1, traceLen - 1)) * (W - marginL - marginR);
     const step = Math.max(1, Math.floor(traceLen / (W * 1.5)));
@@ -1152,7 +1202,6 @@ export function drawChromatogram(svg, read, trimRange) {
   }
 
   // calidad por base (área)
-  const qualBase = marginT + traceH + gap + qualH;
   const qualScale = 60; // techo visual (Phred 60 = tope de la barra, sube a más)
   if (read.quality) {
     let d = 'M' + xOfBase(0).toFixed(1) + ',' + qualBase;
@@ -1163,13 +1212,28 @@ export function drawChromatogram(svg, read, trimRange) {
     d += ' L' + xOfBase(nBases - 1).toFixed(1) + ',' + qualBase + ' Z';
     svg.appendChild(svgEl('path', { d, fill: 'var(--accent)', opacity: '0.28', stroke: 'var(--accent)', 'stroke-width': '1' }));
   }
-  svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: qualBase, y2: qualBase, stroke: 'var(--border)', 'stroke-width': '1' }));
+
+  // Ejes de coordenadas (líneas de referencia fijas)
+  if (hasTrace) {
+    svg.appendChild(svgEl('line', {
+      x1: marginL, x2: marginL, y1: marginT, y2: marginT + traceH,
+      stroke: 'var(--border)', 'stroke-width': '1', class: 'ql-axis-line',
+    }));
+  }
+  svg.appendChild(svgEl('line', {
+    x1: marginL, x2: marginL, y1: qualBase - qualH, y2: qualBase,
+    stroke: 'var(--border)', 'stroke-width': '1', class: 'ql-axis-line',
+  }));
+  svg.appendChild(svgEl('line', {
+    x1: marginL, x2: W - marginR, y1: qualBase, y2: qualBase,
+    stroke: 'var(--border)', 'stroke-width': '1', class: 'ql-axis-line',
+  }));
 
   // Etiquetas descriptivas y unidades físicas en los ejes
   const labels = {};
   if (hasTrace) {
     const yTraceCenter = marginT + traceH / 2;
-    const xTrace = 20;
+    const xTrace = 16;
     const labelIntensity = svgEl('text', {
       x: xTrace,
       y: yTraceCenter,
@@ -1179,13 +1243,32 @@ export function drawChromatogram(svg, read, trimRange) {
       transform: 'rotate(-90 ' + xTrace + ' ' + yTraceCenter + ')',
       'data-axis': 'y-trace',
     });
-    labelIntensity.textContent = t('sanger.axisIntensity') || 'Intensidad (RFU)';
+    const iKey = t('sanger.axisIntensity');
+    labelIntensity.textContent = (iKey && iKey !== 'sanger.axisIntensity') ? iKey : 'Intensidad (RFU)';
     svg.appendChild(labelIntensity);
     labels.intensity = labelIntensity;
+
+    // Escala numérica (ticks) del eje Y superior (Intensidad RFU)
+    const intensityTicks = getIntensityTicks(maxIntensity);
+    intensityTicks.forEach((v) => {
+      const y = marginT + traceH - (v / maxIntensity) * traceH;
+      svg.appendChild(svgEl('line', {
+        x1: marginL - 5, x2: marginL, y1: y.toFixed(1), y2: y.toFixed(1),
+        class: 'ql-axis-tick-line', stroke: 'var(--border)', 'stroke-width': '1',
+      }));
+      const tNode = svgEl('text', {
+        x: marginL - 8, y: y.toFixed(1),
+        class: 'ql-axis-tick-label',
+        'text-anchor': 'end', 'dominant-baseline': 'central',
+        'data-tick-y-trace': String(v),
+      });
+      tNode.textContent = String(v);
+      svg.appendChild(tNode);
+    });
   }
 
   const yQualCenter = marginT + traceH + gap + qualH / 2;
-  const xQual = 20;
+  const xQual = 16;
   const labelQuality = svgEl('text', {
     x: xQual,
     y: yQualCenter,
@@ -1195,12 +1278,49 @@ export function drawChromatogram(svg, read, trimRange) {
     transform: 'rotate(-90 ' + xQual + ' ' + yQualCenter + ')',
     'data-axis': 'y-qual',
   });
-  labelQuality.textContent = t('sanger.axisQuality') || 'Calidad (Phred Q)';
+  const qKey = t('sanger.axisQuality');
+  labelQuality.textContent = (qKey && qKey !== 'sanger.axisQuality') ? qKey : 'Calidad (Phred Q)';
   svg.appendChild(labelQuality);
   labels.quality = labelQuality;
 
+  // Escala numérica (ticks fijos) del eje Y inferior: 0, 20, 40, 60
+  const qualTicks = [0, 20, 40, 60];
+  qualTicks.forEach((q) => {
+    const y = qualBase - (q / qualScale) * qualH;
+    svg.appendChild(svgEl('line', {
+      x1: marginL - 5, x2: marginL, y1: y.toFixed(1), y2: y.toFixed(1),
+      class: 'ql-axis-tick-line', stroke: 'var(--border)', 'stroke-width': '1',
+    }));
+    const tNode = svgEl('text', {
+      x: marginL - 8, y: y.toFixed(1),
+      class: 'ql-axis-tick-label',
+      'text-anchor': 'end', 'dominant-baseline': 'central',
+      'data-tick-y-qual': String(q),
+    });
+    tNode.textContent = String(q);
+    svg.appendChild(tNode);
+  });
+
+  // Escala numérica (ticks) del eje X (Posición pb)
+  const posTicks = getPositionTicks(nBases, pxPerBase);
+  posTicks.forEach((pos) => {
+    const bx = xOfBase(pos - 1);
+    svg.appendChild(svgEl('line', {
+      x1: bx.toFixed(1), x2: bx.toFixed(1), y1: qualBase, y2: (qualBase + 5).toFixed(1),
+      class: 'ql-axis-tick-line', stroke: 'var(--border)', 'stroke-width': '1',
+    }));
+    const tNode = svgEl('text', {
+      x: bx.toFixed(1), y: (qualBase + 16).toFixed(1),
+      class: 'ql-axis-tick-label',
+      'text-anchor': 'middle', 'dominant-baseline': 'central',
+      'data-tick-x-pos': String(pos),
+    });
+    tNode.textContent = String(pos);
+    svg.appendChild(tNode);
+  });
+
   const xMid = marginL + (W - marginL - marginR) / 2;
-  const yPos = qualBase + 26;
+  const yPos = qualBase + 32;
   const labelPosition = svgEl('text', {
     x: xMid.toFixed(1),
     y: yPos.toFixed(1),
@@ -1209,7 +1329,8 @@ export function drawChromatogram(svg, read, trimRange) {
     'dominant-baseline': 'central',
     'data-axis': 'x-pos',
   });
-  labelPosition.textContent = t('sanger.axisPosition') || 'Posición (pb)';
+  const pKey = t('sanger.axisPosition');
+  labelPosition.textContent = (pKey && pKey !== 'sanger.axisPosition') ? pKey : 'Posición (pb)';
   svg.appendChild(labelPosition);
   labels.position = labelPosition;
 
@@ -1218,7 +1339,7 @@ export function drawChromatogram(svg, read, trimRange) {
     class: 'ql-chroma-crosshair',
     x1: 0, x2: 0,
     y1: marginT - 14,
-    y2: qualBase + 12,
+    y2: qualBase + 5,
     stroke: 'var(--ink-muted, #71767b)',
     'stroke-width': '1',
     'stroke-dasharray': '3 2',
@@ -1237,7 +1358,7 @@ export function drawChromatogram(svg, read, trimRange) {
       'aria-valuemin': '0', 'aria-valuemax': String(nBases),
       'aria-valuenow': String(which === 'start' ? trimRange.start : trimRange.end),
     });
-    g.appendChild(svgEl('line', { x1: x, x2: x, y1: marginT - 14, y2: qualBase + 12, stroke: which === 'start' ? 'var(--critical)' : 'var(--accent)', 'stroke-width': '2', 'stroke-dasharray': '5 3' }));
+    g.appendChild(svgEl('line', { x1: x, x2: x, y1: marginT - 14, y2: qualBase + 5, stroke: which === 'start' ? 'var(--critical)' : 'var(--accent)', 'stroke-width': '2', 'stroke-dasharray': '5 3' }));
     g.appendChild(svgEl('circle', { cx: x, cy: marginT - 14, r: '8', fill: which === 'start' ? 'var(--critical)' : 'var(--accent)' }));
     svg.appendChild(g);
     handles[which] = g;

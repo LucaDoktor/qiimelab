@@ -62,6 +62,47 @@ try {
     JSON.stringify(axisLabels)
   );
 
+  const ticksCheck = await c.ev(`(() => {
+    const yTraceTicks = [...document.querySelectorAll('svg[role=img] text[data-tick-y-trace]')].map(n => n.textContent.trim());
+    const yQualTicks = [...document.querySelectorAll('svg[role=img] text[data-tick-y-qual]')].map(n => n.textContent.trim());
+    const xPosTicks = [...document.querySelectorAll('svg[role=img] text[data-tick-x-pos]')].map(n => n.textContent.trim());
+    const tickLines = document.querySelectorAll('svg[role=img] line.ql-axis-tick-line').length;
+
+    // Comprobación visual: calcular bounding rects para asegurar que los títulos de ejes y los ticks no se solapan
+    const yTraceLabel = document.querySelector('svg[role=img] text[data-axis="y-trace"]');
+    const yQualLabel = document.querySelector('svg[role=img] text[data-axis="y-qual"]');
+    const yTraceTick0 = document.querySelector('svg[role=img] text[data-tick-y-trace="0"]');
+
+    const traceX = parseFloat(yTraceLabel ? yTraceLabel.getAttribute('x') : '0');
+    const tickX = parseFloat(yTraceTick0 ? yTraceTick0.getAttribute('x') : '0');
+    const noOverlapX = tickX > traceX + 15; // separación horizontal suficiente en margen izquierdo
+
+    return {
+      yTraceTicks,
+      yQualTicks,
+      xPosTicksCount: xPosTicks.length,
+      tickLinesCount: tickLines,
+      noOverlapX,
+    };
+  })()`);
+
+  check('el eje Y superior tiene ticks numéricos distribuidos (ej. 0, 1000, 2000)',
+    ticksCheck.yTraceTicks.length >= 3 && ticksCheck.yTraceTicks.includes('0') && ticksCheck.yTraceTicks.includes('1000'),
+    JSON.stringify(ticksCheck.yTraceTicks)
+  );
+  check('el eje Y inferior tiene ticks fijos de Phred 0, 20, 40, 60',
+    ticksCheck.yQualTicks.join(',') === '0,20,40,60',
+    JSON.stringify(ticksCheck.yQualTicks)
+  );
+  check('el eje X general tiene marcas numéricas adaptadas a la escala',
+    ticksCheck.xPosTicksCount > 10,
+    'total=' + ticksCheck.xPosTicksCount
+  );
+  check('los títulos de ejes y los números de ticks no se pisan en el margen izquierdo',
+    ticksCheck.noOverlapX,
+    'separación confirmada'
+  );
+
   const wide = await c.ev(`(() => {
     const svg = document.querySelector('svg[role=img]');
     const wrap = svg.closest('div');

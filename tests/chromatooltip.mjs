@@ -23,6 +23,8 @@ import {
   clientXToSvgX,
   attachChromatogramTooltip,
   drawChromatogram,
+  getIntensityTicks,
+  getPositionTicks,
 } from '../js/modules/sanger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -326,28 +328,37 @@ console.log('\n--- 6. Verificación de Etiquetas y Unidades Físicas de Ejes (dr
     // 1. Eje Y panel superior: Intensidad (RFU)
     const lblIntensity = chart.labels.intensity;
     check('existe etiqueta de Intensidad (panel superior)', Boolean(lblIntensity));
-    check('texto exacto es "Intensidad (RFU)"', lblIntensity.textContent === 'Intensidad (RFU)');
+    check('texto exacto es "Intensidad (RFU)" (no clave i18n)', lblIntensity.textContent === 'Intensidad (RFU)');
     check('rotado -90 grados', (lblIntensity.getAttribute('transform') || '').includes('rotate(-90'));
     check('anclado centrado (text-anchor="middle")', lblIntensity.getAttribute('text-anchor') === 'middle');
-    check('en margen izquierdo (x=20 <= 25)', parseFloat(lblIntensity.getAttribute('x')) <= 25);
+    check('en margen izquierdo (x=16 <= 20)', parseFloat(lblIntensity.getAttribute('x')) <= 20);
     check('clase .ql-chroma-axis-label', (lblIntensity.getAttribute('class') || '').includes('ql-chroma-axis-label'));
+
+    // Ticks numéricos de Intensidad
+    const traceTicks = getIntensityTicks(50);
+    check('getIntensityTicks genera entre 3 y 4 ticks', traceTicks.length >= 3 && traceTicks.length <= 4, JSON.stringify(traceTicks));
+    check('getIntensityTicks para 2383 genera escala con 1000 y 2000', getIntensityTicks(2383).includes(1000) && getIntensityTicks(2383).includes(2000));
 
     // 2. Eje Y panel inferior: Calidad (Phred Q)
     const lblQuality = chart.labels.quality;
     check('existe etiqueta de Calidad (panel inferior)', Boolean(lblQuality));
-    check('texto exacto es "Calidad (Phred Q)"', lblQuality.textContent === 'Calidad (Phred Q)');
+    check('texto exacto es "Calidad (Phred Q)" (no clave i18n)', lblQuality.textContent === 'Calidad (Phred Q)');
     check('rotado -90 grados', (lblQuality.getAttribute('transform') || '').includes('rotate(-90'));
     check('anclado centrado (text-anchor="middle")', lblQuality.getAttribute('text-anchor') === 'middle');
-    check('en margen izquierdo (x=20 <= 25)', parseFloat(lblQuality.getAttribute('x')) <= 25);
+    check('en margen izquierdo (x=16 <= 20)', parseFloat(lblQuality.getAttribute('x')) <= 20);
     check('clase .ql-chroma-axis-label', (lblQuality.getAttribute('class') || '').includes('ql-chroma-axis-label'));
 
     // 3. Eje X general: Posición (pb)
     const lblPos = chart.labels.position;
     check('existe etiqueta de Posición (eje X general)', Boolean(lblPos));
-    check('texto exacto es "Posición (pb)"', lblPos.textContent === 'Posición (pb)');
+    check('texto exacto es "Posición (pb)" (no clave i18n)', lblPos.textContent === 'Posición (pb)');
     check('centrado horizontalmente (text-anchor="middle")', lblPos.getAttribute('text-anchor') === 'middle');
     check('en margen inferior (y > 250)', parseFloat(lblPos.getAttribute('y')) > 250);
     check('clase .ql-chroma-axis-label', (lblPos.getAttribute('class') || '').includes('ql-chroma-axis-label'));
+
+    // Ticks numéricos de Posición
+    const posTicks = getPositionTicks(1000, 7);
+    check('getPositionTicks adapta marcas cada 50 pb para zoom 7px/base', posTicks.includes(1) && posTicks.includes(50) && posTicks.includes(100));
 
     // Caso sin traza (FASTQ/FASTA sin canales electroforéticos)
     const svgNoTrace = new MockElement('svg');
@@ -360,11 +371,13 @@ console.log('\n--- 6. Verificación de Etiquetas y Unidades Físicas de Ejes (dr
     check('sin traza sí dibuja etiqueta de Calidad (Phred Q)', Boolean(chartNoTrace.labels.quality));
     check('sin traza sí dibuja etiqueta de Posición (pb)', Boolean(chartNoTrace.labels.position));
 
-    // Verificación CSS para .ql-chroma-axis-label
+    // Verificación CSS para .ql-chroma-axis-label, .ql-axis-tick-label, .ql-axis-tick-line
     const css = readFileSync(APP_ROOT + '/css/components.css', 'utf-8');
     check('CSS contiene selector .ql-chroma-axis-label', css.includes('.ql-chroma-axis-label'));
     check('.ql-chroma-axis-label usa color secundario var(--ink-muted)', /\.ql-chroma-axis-label\s*\{[^}]*fill:\s*var\(--ink-muted/s.test(css));
     check('.ql-chroma-axis-label usa fuente pequeña (<= 12px)', /\.ql-chroma-axis-label\s*\{[^}]*font-size:\s*(1[0-2]|9|8)(\.\d+)?px/s.test(css));
+    check('CSS contiene selector .ql-axis-tick-label', css.includes('.ql-axis-tick-label'));
+    check('CSS contiene selector .ql-axis-tick-line', css.includes('.ql-axis-tick-line'));
   } finally {
     globalThis.document = origDoc;
   }
