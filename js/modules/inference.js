@@ -304,6 +304,7 @@ export function mapTaxonomyToFunction(taxaMatrix, databaseJSON, options = {}) {
     includeUnassigned: true,
     unassignedLabel: 'Sin función asignada',
     asPercentage: true,
+    normalizeFunctional: true,
     sampleKey: null,
     ...options
   };
@@ -367,36 +368,51 @@ export function mapTaxonomyToFunction(taxaMatrix, databaseJSON, options = {}) {
 
   const headers = [sampleKey, ...finalFunctions];
 
-  // Construcción de filas compatibles con barplots y diagramas aluviales
+  // Construcción de filas compatibles con barplots y diagramas aluviales.
+  // Normalización Matemática Funcional: se calcula el total funcional por muestra
+  // y se relativiza cada función respecto a dicho total (multiplicado por 100),
+  // garantizando un techo estricto del 100% sin desbordamientos en barplots ni aluviales.
   const rows = samples.map((s) => {
     const row = { [sampleKey]: s };
     const relObj = {};
 
+    let sampleTotalFunctional = 1;
+    if (opts.normalizeFunctional) {
+      sampleTotalFunctional = 0;
+      sortedFunctions.forEach((f) => {
+        sampleTotalFunctional += (sampleFunctionScores[s][f] || 0);
+      });
+      if (opts.includeUnassigned) {
+        sampleTotalFunctional += (sampleUnassignedScores[s] || 0);
+      }
+      if (sampleTotalFunctional <= 0) sampleTotalFunctional = 1;
+    }
+
     sortedFunctions.forEach((f) => {
-      const val = +(sampleFunctionScores[s][f] || 0).toFixed(4);
-      row[f] = val;
-      relObj[f] = opts.asPercentage ? (val / 100) : val;
+      const rawVal = sampleFunctionScores[s][f] || 0;
+      const frac = opts.normalizeFunctional ? (rawVal / sampleTotalFunctional) : (opts.asPercentage ? rawVal / 100 : rawVal);
+      const normVal = opts.asPercentage ? (opts.normalizeFunctional ? +(frac * 100).toFixed(4) : +rawVal.toFixed(4)) : +frac.toFixed(4);
+      row[f] = normVal;
+      relObj[f] = opts.asPercentage ? +(normVal / 100).toFixed(6) : normVal;
     });
 
     if (opts.includeUnassigned) {
-      const unassignedVal = +(sampleUnassignedScores[s] || 0).toFixed(4);
-      row[opts.unassignedLabel] = unassignedVal;
-      relObj[opts.unassignedLabel] = opts.asPercentage ? (unassignedVal / 100) : unassignedVal;
+      const rawUnassigned = sampleUnassignedScores[s] || 0;
+      const unassignedFrac = opts.normalizeFunctional ? (rawUnassigned / sampleTotalFunctional) : (opts.asPercentage ? rawUnassigned / 100 : rawUnassigned);
+      const normUnassignedVal = opts.asPercentage ? (opts.normalizeFunctional ? +(unassignedFrac * 100).toFixed(4) : +rawUnassigned.toFixed(4)) : +unassignedFrac.toFixed(4);
+      row[opts.unassignedLabel] = normUnassignedVal;
+      relObj[opts.unassignedLabel] = opts.asPercentage ? +(normUnassignedVal / 100).toFixed(6) : normUnassignedVal;
     }
 
     row._relative = relObj;
     return row;
   });
 
-  // Vista transpuesta: funciones como filas
+  // Vista transpuesta: funciones como filas con valores normalizados
   const byFunction = finalFunctions.map((f) => {
     const item = { function: f };
-    samples.forEach((s) => {
-      if (f === opts.unassignedLabel) {
-        item[s] = +(sampleUnassignedScores[s] || 0).toFixed(4);
-      } else {
-        item[s] = +(sampleFunctionScores[s][f] || 0).toFixed(4);
-      }
+    samples.forEach((s, sIdx) => {
+      item[s] = rows[sIdx][f];
     });
     return item;
   });
@@ -865,6 +881,18 @@ export function render(container) {
       axesG.appendChild(label);
     });
 
+    const mainTitle = svgEl('text', {
+      x: margin.left + innerW / 2, y: 22,
+      class: 'ce-title ql-chart-main-title',
+      'text-anchor': 'middle',
+      'font-size': '14px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)',
+      'data-ce': 'title'
+    });
+    mainTitle.textContent = t('inference.title') || 'Inferencia Funcional Taxonómica';
+    svg.appendChild(mainTitle);
+
     const yTitle = svgEl('text', {
       x: -(margin.top + innerH / 2),
       y: 18,
@@ -872,10 +900,25 @@ export function render(container) {
       'text-anchor': 'middle',
       'font-size': '12px',
       'font-weight': '600',
-      fill: 'var(--ink-1)'
+      fill: 'var(--ink-1)',
+      class: 'ql-axis-label ql-chart-y-title',
+      'data-ce': 'ytitle'
     });
-    yTitle.textContent = t('inference.yAxisTitle') || 'Abundancia Relativa (%)';
+    yTitle.textContent = t('inference.yAxisTitle') || 'Abundancia Relativa Funcional (%)';
     axesG.appendChild(yTitle);
+
+    const xTitle = svgEl('text', {
+      x: margin.left + innerW / 2,
+      y: H - 10,
+      'text-anchor': 'middle',
+      'font-size': '12px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)',
+      class: 'ql-axis-label ql-chart-x-title',
+      'data-ce': 'xtitle'
+    });
+    xTitle.textContent = opts.groupCol ? (t('barplots.axisSamplesBy', { col: opts.groupCol }) || 'Muestras agrupadas') : (t('barplots.axisSamples') || 'Muestras');
+    axesG.appendChild(xTitle);
     svg.appendChild(axesG);
 
     // Dibujo de barras apiladas
@@ -939,7 +982,7 @@ export function render(container) {
     svg.appendChild(barsG);
 
     // Leyenda lateral interactiva
-    const legendG = svgEl('g', { class: 'ql-legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
+    const legendG = svgEl('g', { class: 'ql-legend', 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
     const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink-1)' });
     legTitle.textContent = t('inference.legendTitle') || 'Funciones Principales';
     legendG.appendChild(legTitle);
@@ -990,9 +1033,11 @@ export function render(container) {
       mount: card,
       filename: 'inferencia_funcional_barplot',
       lang: getLang(),
-      textNodes: [
-        { id: 'yTitle', create: { text: t('inference.yAxisTitle') || 'Abundancia Relativa (%)', x: 20, y: margin.top + innerH / 2, anchor: 'middle' } },
-        { id: 'legTitle', create: { text: t('inference.legendTitle') || 'Funciones Principales', x: W - margin.right + 20, y: margin.top - 10, anchor: 'start' } },
+      elements: [
+        { id: 'title', selector: '[data-ce="title"]' },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ]
     });
   }
@@ -1109,6 +1154,49 @@ export function render(container) {
     });
     svg.appendChild(groupsG);
 
+    // Título principal
+    const mainTitle = svgEl('text', {
+      x: W / 2,
+      y: 22,
+      class: 'ce-title ql-chart-main-title',
+      'text-anchor': 'middle',
+      'font-size': '14px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)',
+      'data-ce': 'title'
+    });
+    mainTitle.textContent = t('inference.alluvialTitle') || 'Flujo Funcional entre Grupos';
+    svg.appendChild(mainTitle);
+
+    // Título eje X
+    const xTitle = svgEl('text', {
+      x: margin.left + (W - margin.left - margin.right) / 2,
+      y: H - 10,
+      'text-anchor': 'middle',
+      'font-size': '12px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)',
+      class: 'ql-axis-label ql-chart-x-title',
+      'data-ce': 'xtitle'
+    });
+    xTitle.textContent = opts.groupCol ? (t('barplots.axisSamplesBy', { col: opts.groupCol }) || 'Grupos') : (t('barplots.axisSamples') || 'Grupos');
+    svg.appendChild(xTitle);
+
+    // Título eje Y
+    const yTitle = svgEl('text', {
+      x: -(margin.top + (H - margin.top - margin.bottom) / 2),
+      y: 18,
+      transform: 'rotate(-90)',
+      'text-anchor': 'middle',
+      'font-size': '12px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)',
+      class: 'ql-axis-label ql-chart-y-title',
+      'data-ce': 'ytitle'
+    });
+    yTitle.textContent = t('inference.yAxisTitle') || 'Abundancia Relativa Funcional (%)';
+    svg.appendChild(yTitle);
+
     card.appendChild(svg);
 
     editor = attachChartEditor({
@@ -1117,6 +1205,11 @@ export function render(container) {
       mount: card,
       filename: 'inferencia_funcional_aluvial',
       lang: getLang(),
+      elements: [
+        { id: 'title', selector: '[data-ce="title"]' },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+      ]
     });
   }
 
@@ -1204,3 +1297,4 @@ export function render(container) {
     if (tooltipEl && tooltipEl.parentNode) tooltipEl.parentNode.removeChild(tooltipEl);
   };
 }
+

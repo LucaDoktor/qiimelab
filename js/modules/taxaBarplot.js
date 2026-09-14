@@ -675,6 +675,9 @@ export function render(container) {
 
       let W = 680;
       let H = 450;
+      let customChartTitle = null;
+      let customXTitle = null;
+      let customYTitle = null;
 
       function drawAlluvialSvg() {
         const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
@@ -732,10 +735,10 @@ export function render(container) {
 
         // Título eje Y
         const yTitle = svgEl('text', {
-          x: 15, y: marginT + usableH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+          x: 15, y: marginT + usableH / 2, class: 'ql-axis-label ql-chart-y-title', 'text-anchor': 'middle',
           transform: 'rotate(-90 15 ' + (marginT + usableH / 2) + ')', 'data-ce': 'ytitle',
         });
-        yTitle.textContent = t('barplots.axisPct');
+        yTitle.textContent = customYTitle !== null ? customYTitle : t('barplots.axisPct');
         svg.appendChild(yTitle);
 
         // Resaltado interactivo de linaje (hover: 100% activo, 10% el resto)
@@ -835,12 +838,17 @@ export function render(container) {
         const xTitle = svgEl('text', {
           x: marginL + (W - marginL - marginR) / 2,
           y: xLabelBase,
-          class: 'ql-axis-label',
+          class: 'ql-axis-label ql-chart-x-title',
           'text-anchor': 'middle',
           'data-ce': 'xtitle',
         });
-        xTitle.textContent = (sortByGroup && groupCol) ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.alluvialAxisGroups');
+        xTitle.textContent = customXTitle !== null ? customXTitle : ((sortByGroup && groupCol) ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.alluvialAxisGroups'));
         svg.appendChild(xTitle);
+
+        if (customChartTitle !== null) {
+          const mainTitle = svg.querySelector('.ql-chart-main-title, .ce-title, [data-ce="title"]');
+          if (mainTitle) mainTitle.textContent = customChartTitle;
+        }
 
         // Leyenda integrada en SVG
         const legTranslateX = marginL;
@@ -869,14 +877,15 @@ export function render(container) {
           nt.textContent = t('barplots.colorsRepeat');
           legG.appendChild(nt);
         }
-        legG.setAttribute('transform', 'translate(' + legTranslateX + ',' + legTranslateY + ')');
+        legG.setAttribute('transform', 'translate(' + legTranslateX + ', ' + legTranslateY + ')');
         svg.appendChild(legG);
 
         if (existingTitle) {
           svg.appendChild(existingTitle);
         }
 
-        if (editor && typeof editor.sync === 'function') {
+        // Si el editor ya existía, sincronizar cambios en caliente
+        if (editor && editor.sync) {
           editor.sync();
         }
       }
@@ -950,6 +959,12 @@ export function render(container) {
             if (payload && payload.id) {
               seriesColorOverrides[payload.id] = payload.color;
             }
+          } else if (action === 'title') {
+            customChartTitle = String(payload);
+          } else if (action === 'xtitle') {
+            customXTitle = String(payload);
+          } else if (action === 'ytitle') {
+            customYTitle = String(payload);
           } else if (action === 'reset') {
             alluvialNodeWidth = 20;
             alluvialNodeGap = 2;
@@ -959,6 +974,9 @@ export function render(container) {
             chartIsItalic = false;
             chartFontSize = 13;
             seriesColorOverrides = {};
+            customChartTitle = null;
+            customXTitle = null;
+            customYTitle = null;
           }
           drawAlluvialSvg();
         });
@@ -971,7 +989,7 @@ export function render(container) {
       editor = attachChartEditor({
         key: 'taxaBarplot-alluvial', svg, mount: chartPanel, filename: t('barplots.alluvialFigTitle'), lang: getLang(),
         elements: [
-          { id: 'title', create: { text: t('barplots.alluvialFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+          { id: 'title', create: { text: t('barplots.alluvialFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title ql-chart-main-title' } },
           { id: 'xtitle', selector: '[data-ce="xtitle"]' },
           { id: 'ytitle', selector: '[data-ce="ytitle"]' },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
@@ -1090,12 +1108,12 @@ export function render(container) {
       });
 
       xLabelBase = marginT + innerH + xTitleGap; // bajo las etiquetas de muestra rotadas
-      const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      const xTitle = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label ql-chart-x-title', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
       xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
       svg.appendChild(xTitle);
 
       const yTitle = svgEl('text', {
-        x: 15, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+        x: 15, y: marginT + innerH / 2, class: 'ql-axis-label ql-chart-y-title', 'text-anchor': 'middle',
         transform: 'rotate(-90 15 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
       });
       yTitle.textContent = t('barplots.axisPct');
@@ -1168,12 +1186,12 @@ export function render(container) {
       });
 
       xLabelBase = marginT + innerCat + 34;
-      const xTitle = svgEl('text', { x: marginL + innerW / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      const xTitle = svgEl('text', { x: marginL + innerW / 2, y: xLabelBase, class: 'ql-axis-label ql-chart-x-title', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
       xTitle.textContent = t('barplots.axisPct');
       svg.appendChild(xTitle);
 
       const yTitle = svgEl('text', {
-        x: 15, y: marginT + innerCat / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+        x: 15, y: marginT + innerCat / 2, class: 'ql-axis-label ql-chart-y-title', 'text-anchor': 'middle',
         transform: 'rotate(-90 15 ' + (marginT + innerCat / 2) + ')', 'data-ce': 'ytitle',
       });
       yTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
@@ -1210,7 +1228,7 @@ export function render(container) {
     editor = attachChartEditor({
       key: horizontal ? 'taxaBarplot-horizontal' : 'taxaBarplot', svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
       elements: [
-        { id: 'title', create: { text: t('barplots.chartFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'title', create: { text: t('barplots.chartFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title ql-chart-main-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },

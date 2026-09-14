@@ -3,7 +3,7 @@
 // 2. Limpieza UI con botones de icono cuadrado (.ql-btn-icon-sq) en la tabla Sanger.
 // 3. Integración en el diagrama aluvial con parámetros geométricos y reactividad.
 
-import { openChartEditor } from '../js/lib/chartEditor.js';
+import { openChartEditor, attachChartEditor } from '../js/lib/chartEditor.js';
 import * as taxaModule from '../js/modules/taxa.js';
 import * as taxaBarplotModule from '../js/modules/taxaBarplot.js';
 import { computeAlluvialLayout } from '../js/lib/alluvial.js';
@@ -66,6 +66,9 @@ function createMockDOM() {
       get firstChild() { return el.children[0] || null; },
       get lastElementChild() { return el.children[el.children.length - 1] || null; },
 
+      get parentNode() { return el.parentElement; },
+      set parentNode(p) { el.parentElement = p; },
+
       setAttribute(k, v) { el.attributes[k] = String(v); },
       getAttribute(k) { return el.attributes[k] || null; },
       removeAttribute(k) { delete el.attributes[k]; },
@@ -80,6 +83,18 @@ function createMockDOM() {
         child.parentElement = el;
         el.children.push(child);
         return child;
+      },
+      insertBefore(newChild, refChild) {
+        if (!newChild) return newChild;
+        if (newChild.parentElement) newChild.parentElement.removeChild(newChild);
+        newChild.parentElement = el;
+        const idx = refChild ? el.children.indexOf(refChild) : -1;
+        if (idx >= 0) {
+          el.children.splice(idx, 0, newChild);
+        } else {
+          el.children.push(newChild);
+        }
+        return newChild;
       },
       removeChild(child) {
         const idx = el.children.indexOf(child);
@@ -116,6 +131,9 @@ function createMockDOM() {
       },
       getBoundingClientRect() {
         return { top: 50, left: 50, width: 600, height: 500, right: 650, bottom: 550 };
+      },
+      getBBox() {
+        return { x: 10, y: 10, width: 100, height: 20 };
       },
       showModal() {
         el.open = true;
@@ -188,8 +206,14 @@ function createMockDOM() {
 
   function matchesSelector(el, selector) {
     if (!el || !selector) return false;
+    if (selector.includes(',')) {
+      return selector.split(',').some((part) => matchesSelector(el, part.trim()));
+    }
     if (selector.startsWith('#')) return el.id === selector.slice(1);
-    if (selector.startsWith('.')) return el.classList.contains(selector.slice(1));
+    if (selector.startsWith('.')) {
+      const cls = selector.slice(1).split(/[ .[:]/)[0];
+      return el.classList.contains(cls);
+    }
     const attrMatch = selector.match(/^([a-z0-9_-]*)\[([a-z0-9_-]+)(?:="([^"]*)")?\]$/i);
     if (attrMatch) {
       const [, tag, k, v] = attrMatch;
@@ -216,8 +240,12 @@ function createMockDOM() {
     }
   }
 
+  const headEl = makeEl('head');
+  const bodyEl = makeEl('body');
+
   const doc = {
-    body: makeEl('body'),
+    head: headEl,
+    body: bodyEl,
     createElement: (tag) => makeEl(tag),
     createElementNS: (ns, tag) => makeEl(tag),
     createTextNode: (txt) => {
@@ -225,13 +253,15 @@ function createMockDOM() {
       el.textContent = txt;
       return el;
     },
-    getElementById: (id) => findFirst(doc.body, '#' + id),
-    querySelector: (sel) => findFirst(doc.body, sel),
+    getElementById: (id) => findFirst(doc.body, '#' + id) || findFirst(doc.head, '#' + id),
+    querySelector: (sel) => findFirst(doc.body, sel) || findFirst(doc.head, sel),
     querySelectorAll: (sel) => {
       const results = [];
       findAll(doc.body, sel, results);
       return results;
     },
+    addEventListener: (type, fn) => {},
+    removeEventListener: (type, fn) => {},
   };
 
   return { doc, makeEl };
@@ -246,6 +276,21 @@ console.log('\n--- 1. Pruebas de infraestructura: openChartEditor en js/lib/char
   };
 
   const dummySvg = makeEl('svg');
+  const dummyMainTitle = makeEl('text');
+  dummyMainTitle.className = 'ql-chart-main-title';
+  dummyMainTitle.textContent = 'Título Original de Prueba';
+  dummySvg.appendChild(dummyMainTitle);
+
+  const dummyXTitle = makeEl('text');
+  dummyXTitle.className = 'ql-chart-x-title';
+  dummyXTitle.textContent = 'Muestras Original';
+  dummySvg.appendChild(dummyXTitle);
+
+  const dummyYTitle = makeEl('text');
+  dummyYTitle.className = 'ql-chart-y-title';
+  dummyYTitle.textContent = 'Abundancia Original';
+  dummySvg.appendChild(dummyYTitle);
+
   const updates = [];
   const initialConfig = {
     title: 'Ajustes del gráfico',
@@ -294,6 +339,46 @@ console.log('\n--- 1. Pruebas de infraestructura: openChartEditor en js/lib/char
     check('pestaña Tipografía se activa al pulsar', typoTabBtn.classList.contains('is-active'));
   }
 
+  // Comprobar campos de edición de títulos en el diálogo
+  const titleInp = dialog.querySelector('#ql-ce-title-input');
+  const xtitleInp = dialog.querySelector('#ql-ce-xtitle-input');
+  const ytitleInp = dialog.querySelector('#ql-ce-ytitle-input');
+
+  check('campo de texto para Título del Gráfico presente (#ql-ce-title-input)', Boolean(titleInp));
+  check('campo de texto para Título Eje X presente (#ql-ce-xtitle-input)', Boolean(xtitleInp));
+  check('campo de texto para Título Eje Y presente (#ql-ce-ytitle-input)', Boolean(ytitleInp));
+
+  if (titleInp) {
+    check('campo Título carga valor del SVG', titleInp.value === 'Título Original de Prueba');
+    titleInp.value = 'Composición de Microbiota Renal';
+    titleInp.dispatchEvent('input');
+    check('evento input en #ql-ce-title-input actualiza inmediatamente .ql-chart-main-title',
+      dummyMainTitle.textContent === 'Composición de Microbiota Renal');
+    const lastUpdate = updates[updates.length - 1];
+    check('evento input dispara onUpdate("title", valor)',
+      lastUpdate && lastUpdate.action === 'title' && lastUpdate.payload === 'Composición de Microbiota Renal');
+  }
+
+  if (xtitleInp) {
+    xtitleInp.value = 'Grupos Clínicos';
+    xtitleInp.dispatchEvent('input');
+    check('evento input en #ql-ce-xtitle-input actualiza inmediatamente .ql-chart-x-title',
+      dummyXTitle.textContent === 'Grupos Clínicos');
+    const lastUpdate = updates[updates.length - 1];
+    check('evento input dispara onUpdate("xtitle", valor)',
+      lastUpdate && lastUpdate.action === 'xtitle' && lastUpdate.payload === 'Grupos Clínicos');
+  }
+
+  if (ytitleInp) {
+    ytitleInp.value = 'Abundancia Relativa Funcional (%)';
+    ytitleInp.dispatchEvent('input');
+    check('evento input en #ql-ce-ytitle-input actualiza inmediatamente .ql-chart-y-title',
+      dummyYTitle.textContent === 'Abundancia Relativa Funcional (%)');
+    const lastUpdate = updates[updates.length - 1];
+    check('evento input dispara onUpdate("ytitle", valor)',
+      lastUpdate && lastUpdate.action === 'ytitle' && lastUpdate.payload === 'Abundancia Relativa Funcional (%)');
+  }
+
   // Comprobar interacción de sliders de geometría
   const nodeWidthSlider = dialog.querySelector('#ql-ce-sl-nodeWidth-r');
   check('slider de ancho de nodos presente', Boolean(nodeWidthSlider));
@@ -340,6 +425,75 @@ console.log('\n--- 1. Pruebas de infraestructura: openChartEditor en js/lib/char
   // Cierre del diálogo
   editorInstance.close();
   check('cerrar diálogo lo retira del body', !doc.body.querySelector('.ql-chart-editor-dialog'));
+
+  // Comprobar attachChartEditor en modo Personalizar (Global Text Editor)
+  const mountAttach = makeEl('div');
+  doc.body.appendChild(mountAttach);
+  const svgAttach = makeEl('svg');
+  const mainSvgT = makeEl('text');
+  mainSvgT.className = 'ql-chart-main-title';
+  mainSvgT.textContent = 'Título Inicial Toolbar';
+  svgAttach.appendChild(mainSvgT);
+
+  const xSvgT = makeEl('text');
+  xSvgT.className = 'ql-chart-x-title';
+  xSvgT.textContent = 'X Inicial Toolbar';
+  svgAttach.appendChild(xSvgT);
+
+  const ySvgT = makeEl('text');
+  ySvgT.className = 'ql-chart-y-title';
+  ySvgT.textContent = 'Y Inicial Toolbar';
+  svgAttach.appendChild(ySvgT);
+
+  attachChartEditor({
+    key: 'testGlobalAttach',
+    svg: svgAttach,
+    mount: mountAttach,
+    filename: 'test_global',
+    lang: 'es',
+    elements: [
+      { id: 'title', selector: '.ql-chart-main-title' },
+      { id: 'xtitle', selector: '.ql-chart-x-title' },
+      { id: 'ytitle', selector: '.ql-chart-y-title' },
+    ]
+  });
+
+  const customBtn = Array.from(mountAttach.querySelectorAll('button')).find((b) => b.innerHTML.includes('Personalizar'));
+  check('attachChartEditor genera botón Personalizar', Boolean(customBtn));
+  if (customBtn) {
+    customBtn.dispatchEvent('click');
+    const titlesSec = mountAttach.querySelector('.ce-titles-section');
+    check('al pulsar Personalizar se despliega la sección de títulos (.ce-titles-section)', Boolean(titlesSec));
+
+    const inpMain = mountAttach.querySelector('.ql-ce-title-input');
+    const inpX = mountAttach.querySelector('.ql-ce-xtitle-input');
+    const inpY = mountAttach.querySelector('.ql-ce-ytitle-input');
+
+    check('sección contiene input de título (.ql-ce-title-input)', Boolean(inpMain));
+    check('sección contiene input de eje X (.ql-ce-xtitle-input)', Boolean(inpX));
+    check('sección contiene input de eje Y (.ql-ce-ytitle-input)', Boolean(inpY));
+
+    if (inpMain) {
+      inpMain.value = 'Título Modificado en Toolbar';
+      inpMain.dispatchEvent('input');
+      check('evento input en toolbar actualiza reactivamente .ql-chart-main-title en SVG',
+        mainSvgT.textContent === 'Título Modificado en Toolbar');
+    }
+
+    if (inpX) {
+      inpX.value = 'Tratamiento A/B';
+      inpX.dispatchEvent('input');
+      check('evento input en toolbar actualiza reactivamente .ql-chart-x-title en SVG',
+        xSvgT.textContent === 'Tratamiento A/B');
+    }
+
+    if (inpY) {
+      inpY.value = 'Abundancia %';
+      inpY.dispatchEvent('input');
+      check('evento input en toolbar actualiza reactivamente .ql-chart-y-title en SVG',
+        ySvgT.textContent === 'Abundancia %');
+    }
+  }
 }
 
 console.log('\n--- 2. Limpieza de tabla Sanger en js/modules/sanger.js ---');

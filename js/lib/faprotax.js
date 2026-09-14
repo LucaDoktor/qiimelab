@@ -286,3 +286,4 @@ export const FUNCTION_NAMES = {
   manganese_oxidation: { es: 'Oxidación de manganeso', en: 'Manganese oxidation' },
   Sin_funcion_asignada: { es: 'Sin función asignada', en: 'Unassigned function' }
 };
+

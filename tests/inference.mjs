@@ -97,17 +97,34 @@ check('Devuelve 2 filas de muestras', result.rows.length === 2);
 const r1 = result.rows[0];
 const r2 = result.rows[1];
 
-// Verificación Muestra 1
-check('Muestra 1 - Nitrificación es 30.0%', Math.abs(r1.nitrification - 30.0) < 1e-4, `got ${r1.nitrification}`);
-check('Muestra 1 - Desnitrificación es 40.0%', Math.abs(r1.denitrification - 40.0) < 1e-4, `got ${r1.denitrification}`);
-check('Muestra 1 - Degradación de hidrocarburos es 40.0%', Math.abs(r1.hydrocarbon_degradation - 40.0) < 1e-4, `got ${r1.hydrocarbon_degradation}`);
-check('Muestra 1 - Quimioheterotrofia es 40.0%', Math.abs(r1.chemoheterotrophy - 40.0) < 1e-4, `got ${r1.chemoheterotrophy}`);
-check('Muestra 1 - Sin función asignada es 30.0%', Math.abs(r1['Sin función asignada'] - 30.0) < 1e-4, `got ${r1['Sin función asignada']}`);
+// Verificación Muestra 1 (Normalización Funcional a 100%)
+// Suma total funcional = 40(denit) + 40(hydroc) + 40(chemo) + 30(nitrif) + 30(unass) = 180%
+// Relativo: nitrif = 30/180 = 16.6667%, otros = 40/180 = 22.2222%
+check('Muestra 1 - Nitrificación normalizada es ~16.67%', Math.abs(r1.nitrification - (30/180*100)) < 0.01, `got ${r1.nitrification}`);
+check('Muestra 1 - Desnitrificación normalizada es ~22.22%', Math.abs(r1.denitrification - (40/180*100)) < 0.01, `got ${r1.denitrification}`);
+check('Muestra 1 - Degradación de hidrocarburos normalizada es ~22.22%', Math.abs(r1.hydrocarbon_degradation - (40/180*100)) < 0.01, `got ${r1.hydrocarbon_degradation}`);
+check('Muestra 1 - Quimioheterotrofia normalizada es ~22.22%', Math.abs(r1.chemoheterotrophy - (40/180*100)) < 0.01, `got ${r1.chemoheterotrophy}`);
+check('Muestra 1 - Sin función asignada normalizada es ~16.67%', Math.abs(r1['Sin función asignada'] - (30/180*100)) < 0.01, `got ${r1['Sin función asignada']}`);
 
-// Verificación Muestra 2
-check('Muestra 2 - Nitrificación es 50.0%', Math.abs(r2.nitrification - 50.0) < 1e-4, `got ${r2.nitrification}`);
-check('Muestra 2 - Desnitrificación es 20.0%', Math.abs(r2.denitrification - 20.0) < 1e-4, `got ${r2.denitrification}`);
-check('Muestra 2 - Sin función asignada es 30.0%', Math.abs(r2['Sin función asignada'] - 30.0) < 1e-4, `got ${r2['Sin función asignada']}`);
+const sumR1 = r1.nitrification + r1.denitrification + r1.hydrocarbon_degradation + r1.chemoheterotrophy + r1['Sin función asignada'];
+check('Muestra 1 - La suma exacta de abundancias relativas funcionales es 100.0%', Math.abs(sumR1 - 100.0) < 1e-2, `suma = ${sumR1}`);
+
+// Verificación Muestra 2 (Normalización Funcional a 100%)
+// Suma total funcional = 50(nitrif) + 20(denit) + 20(hydroc) + 20(chemo) + 30(unass) = 140%
+check('Muestra 2 - Nitrificación normalizada es ~35.71%', Math.abs(r2.nitrification - (50/140*100)) < 0.01, `got ${r2.nitrification}`);
+check('Muestra 2 - Desnitrificación normalizada es ~14.29%', Math.abs(r2.denitrification - (20/140*100)) < 0.01, `got ${r2.denitrification}`);
+check('Muestra 2 - Sin función asignada normalizada es ~21.43%', Math.abs(r2['Sin función asignada'] - (30/140*100)) < 0.01, `got ${r2['Sin función asignada']}`);
+
+const sumR2 = r2.nitrification + r2.denitrification + r2.hydrocarbon_degradation + r2.chemoheterotrophy + r2['Sin función asignada'];
+check('Muestra 2 - La suma exacta de abundancias relativas funcionales es 100.0%', Math.abs(sumR2 - 100.0) < 1e-2, `suma = ${sumR2}`);
+
+// Comprobación de modo crudo sin normalizar (normalizeFunctional: false)
+const rawResult = inference.mapTaxonomyToFunction(mockTaxaData, dbCustom, {
+  includeUnassigned: true,
+  asPercentage: true,
+  normalizeFunctional: false
+});
+check('Modo crudo sin normalizar conserva abundancia original (30.0%)', Math.abs(rawResult.rows[0].nitrification - 30.0) < 1e-4);
 
 console.log('\n--- 4. Manejo estricto de taxones desconocidos (includeUnassigned) ---');
 // Opción includeUnassigned: false
@@ -118,7 +135,10 @@ const resultNoUnassigned = inference.mapTaxonomyToFunction(mockTaxaData, dbCusto
 
 check('Cuando includeUnassigned es false, no incluye columna "Sin función asignada"', !resultNoUnassigned.headers.includes('Sin función asignada'));
 check('Las filas no contienen la clave unassigned', resultNoUnassigned.rows[0]['Sin función asignada'] === undefined);
-check('Las abundancias de rutas identificadas se mantienen intactas (30.0%)', Math.abs(resultNoUnassigned.rows[0].nitrification - 30.0) < 1e-4);
+// Muestra 1 sin unassigned: suma = 40 + 40 + 40 + 30 = 150% -> nitrif = 30/150*100 = 20.0%
+check('Las abundancias normalizadas sin unassigned suman 100% (nitrif=20.0%)', Math.abs(resultNoUnassigned.rows[0].nitrification - 20.0) < 1e-4);
+const sumNoUnass = resultNoUnassigned.rows[0].nitrification + resultNoUnassigned.rows[0].denitrification + resultNoUnassigned.rows[0].hydrocarbon_degradation + resultNoUnassigned.rows[0].chemoheterotrophy;
+check('Muestra 1 sin unassigned suma exactamente 100.0%', Math.abs(sumNoUnass - 100.0) < 1e-2, `suma = ${sumNoUnass}`);
 
 // Taxones clasificados y no clasificados registrados en el objeto
 check('Registra mappedTaxa correctamente', result.mappedTaxa.includes('g__Pseudomonas') && result.mappedTaxa.includes('g__Nitrosomonas'));
@@ -135,8 +155,13 @@ const dbInverted = {
 };
 
 const resultInverted = inference.mapTaxonomyToFunction(mockTaxaData, dbInverted, { asPercentage: true });
-check('Diccionario invertido (Taxón -> [Funciones]) mapea correctamente', Math.abs(resultInverted.rows[0].denitrification - 40.0) < 1e-4);
-check('Diccionario invertido mapea nitrificación', Math.abs(resultInverted.rows[0].nitrification - 30.0) < 1e-4);
+// Total funcional = 40 + 40 + 30 + 30(unassigned) = 140%
+// denitrification = 40/140*100 = 28.5714%
+check('Diccionario invertido (Taxón -> [Funciones]) mapea y normaliza correctamente (~28.57%)', Math.abs(resultInverted.rows[0].denitrification - (40/140*100)) < 0.01);
+check('Diccionario invertido mapea nitrificación normalizada (~21.43%)', Math.abs(resultInverted.rows[0].nitrification - (30/140*100)) < 0.01);
+
+const resultInvertedRaw = inference.mapTaxonomyToFunction(mockTaxaData, dbInverted, { asPercentage: true, normalizeFunctional: false });
+check('Diccionario invertido modo crudo mapea 40.0% exacto', Math.abs(resultInvertedRaw.rows[0].denitrification - 40.0) < 1e-4);
 
 // Formato Array de anotaciones
 const dbArray = [
@@ -145,7 +170,10 @@ const dbArray = [
 ];
 
 const resultArr = inference.mapTaxonomyToFunction(mockTaxaData, dbArray, { asPercentage: true });
-check('Diccionario como Array de objetos [{ taxon, functions }] mapea correctamente', Math.abs(resultArr.rows[0].aromatic_degradation - 40.0) < 1e-4);
+check('Diccionario como Array de objetos [{ taxon, functions }] mapea correctamente (~28.57%)', Math.abs(resultArr.rows[0].aromatic_degradation - (40/140*100)) < 0.01);
+
+const resultArrRaw = inference.mapTaxonomyToFunction(mockTaxaData, dbArray, { asPercentage: true, normalizeFunctional: false });
+check('Diccionario como Array de objetos en modo crudo mapea 40.0%', Math.abs(resultArrRaw.rows[0].aromatic_degradation - 40.0) < 1e-4);
 
 console.log('\n--- 6. Formato compatible con groupTaxaByAbundance (Barplot apilado) ---');
 // La matriz generada debe pasar directamente por groupTaxaByAbundance

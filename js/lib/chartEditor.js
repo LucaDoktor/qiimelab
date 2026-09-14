@@ -70,7 +70,8 @@ const I18N = {
         paletteWarnClash: (name) => 'parecido a "' + name + '" para algunos tipos de daltonismo',
         paletteWarnContrast: 'poco contraste sobre el fondo de la figura',
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
-        fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada' },
+        fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
+        titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -80,7 +81,8 @@ const I18N = {
         paletteWarnClash: (name) => 'similar to "' + name + '" for some kinds of colour blindness',
         paletteWarnContrast: 'low contrast against the figure background',
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
-        fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view' },
+        fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
+        titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -137,6 +139,12 @@ svg.ce-editing .ce-hit:focus-visible { outline:2px solid var(--accent); outline-
 .ce-toolbar .ce-on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600; fill:var(--ink); }
 .ce-hexfield { width:76px; font-family:var(--font-mono); text-transform:uppercase; }
+.ce-titles-section { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-titles-section h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-titles-rows { display:flex; flex-direction:column; gap:6px; max-width:480px; }
+.ce-title-row { display:flex; align-items:center; gap:8px; }
+.ce-title-row label { flex:0 0 130px; font-size:12px; font-weight:500; color:var(--ink-2); }
+.ce-title-row input[type=text] { flex:1; min-width:180px; height:26px; padding:2px 8px; font-size:12px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); color:var(--ink); }
 .ce-palette { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-palette h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
 .ce-pal-btns { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
@@ -300,7 +308,88 @@ export function attachChartEditor(cfg) {
       toolbar.appendChild(bReset);
     }
 
+    if (editing) {
+      toolbar.appendChild(renderTitlesSection());
+    }
+
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
+  }
+
+  function renderTitlesSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-titles ce-titles-section';
+    wrap.innerHTML = '<h5>' + (T.titlesTitle || 'Títulos de la figura') + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-titles-rows';
+
+    const titleDefs = [
+      {
+        id: 'title',
+        label: T.chartTitle || 'Título del Gráfico',
+        selector: '.ql-chart-main-title, .ce-title, [data-ce="title"]',
+        cls: 'ql-ce-title-input',
+      },
+      {
+        id: 'xtitle',
+        label: T.xAxisTitle || 'Título Eje X',
+        selector: '.ql-chart-x-title, [data-ce="xtitle"]',
+        cls: 'ql-ce-xtitle-input',
+      },
+      {
+        id: 'ytitle',
+        label: T.yAxisTitle || 'Título Eje Y',
+        selector: '.ql-chart-y-title, [data-ce="ytitle"]',
+        cls: 'ql-ce-ytitle-input',
+      },
+    ];
+
+    titleDefs.forEach((td) => {
+      const row = document.createElement('div');
+      row.className = 'ce-title-row';
+
+      const lab = document.createElement('label');
+      lab.textContent = td.label;
+      row.appendChild(lab);
+
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'ql-input ce-textfield ' + td.cls;
+      inp.placeholder = td.label;
+
+      const stVal = store[td.id] && typeof store[td.id].text === 'string' ? store[td.id].text : null;
+      if (stVal !== null) {
+        inp.value = stVal;
+      } else {
+        const matching = svg.querySelector(td.selector);
+        if (matching && matching.textContent) {
+          inp.value = matching.textContent.trim();
+        }
+      }
+
+      inp.addEventListener('input', () => {
+        const val = inp.value;
+        const targets = svg.querySelectorAll(td.selector);
+        targets.forEach((target) => {
+          target.textContent = val;
+        });
+        const w = wraps.get(td.id);
+        if (w && w.inner) {
+          w.inner.textContent = val;
+        }
+        const s = st(td.id);
+        s.text = val;
+        decorate(td.id);
+        writeStoreDebounced();
+        if (cfg.onChange) try { cfg.onChange(); } catch (e) {}
+      });
+
+      row.appendChild(inp);
+      rows.appendChild(row);
+    });
+
+    wrap.appendChild(rows);
+    return wrap;
   }
 
   const PALETTE_LABEL = {
@@ -993,6 +1082,16 @@ export function openChartEditor(chartRef, configOptions = {}, onUpdate = () => {
     prevDialog.remove();
   }
 
+  let svgEl = null;
+  if (chartRef) {
+    if (typeof chartRef === 'object' && chartRef.tagName) {
+      svgEl = chartRef.tagName.toLowerCase() === 'svg' ? chartRef : (chartRef.querySelector ? chartRef.querySelector('svg') : null);
+    } else if (typeof chartRef === 'string') {
+      const found = document.querySelector(chartRef);
+      if (found) svgEl = found.tagName.toLowerCase() === 'svg' ? found : found.querySelector('svg');
+    }
+  }
+
   // 2. Clon de configuración y valores por defecto
   const typography = Object.assign({
     fontFamily: 'var(--font-body)',
@@ -1143,10 +1242,66 @@ export function openChartEditor(chartRef, configOptions = {}, onUpdate = () => {
   }
   body.appendChild(panelGeom);
 
-  // --- PANEL 2: TIPOGRAFÍA ---
+  // --- PANEL 2: TIPOGRAFÍA Y TÍTULOS ---
   const panelTypo = document.createElement('div');
   panelTypo.className = 'ql-ce-tab-panel' + (activeTab === 'typography' ? ' is-active' : '');
   panelTypo.setAttribute('data-panel', 'typography');
+
+  // Sección de Títulos globales del gráfico y ejes
+  const modalTitleDefs = [
+    { id: 'title', label: 'Título del Gráfico', inputId: 'ql-ce-title-input', selector: '.ql-chart-main-title, .ce-title, [data-ce="title"]' },
+    { id: 'xtitle', label: 'Título Eje X', inputId: 'ql-ce-xtitle-input', selector: '.ql-chart-x-title, [data-ce="xtitle"]' },
+    { id: 'ytitle', label: 'Título Eje Y', inputId: 'ql-ce-ytitle-input', selector: '.ql-chart-y-title, [data-ce="ytitle"]' },
+  ];
+
+  const titlesSection = document.createElement('div');
+  titlesSection.className = 'ql-field ql-ce-titles-container';
+  titlesSection.innerHTML = '<label style="font-weight:600;">Títulos de la figura</label>' +
+    '<p class="ql-field-help" style="margin-bottom:8px;">Edición reactiva de títulos en tiempo real.</p>';
+
+  const titleRows = document.createElement('div');
+  titleRows.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:6px;margin-bottom:14px;';
+
+  modalTitleDefs.forEach((td) => {
+    const subField = document.createElement('div');
+    subField.className = 'ql-field';
+    subField.style.marginBottom = '6px';
+
+    const lab = document.createElement('label');
+    lab.setAttribute('for', td.inputId);
+    lab.textContent = td.label;
+    subField.appendChild(lab);
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.id = td.inputId;
+    inp.className = 'ql-input ' + td.inputId;
+    inp.placeholder = td.label;
+
+    if (svgEl) {
+      const match = svgEl.querySelector(td.selector);
+      if (match && match.textContent) inp.value = match.textContent.trim();
+    }
+    if (!inp.value && configOptions[td.id]) {
+      inp.value = configOptions[td.id];
+    }
+
+    inp.addEventListener('input', () => {
+      const val = inp.value;
+      if (svgEl) {
+        const matches = svgEl.querySelectorAll(td.selector);
+        matches.forEach((el) => { el.textContent = val; });
+      }
+      currentConfig[td.id] = val;
+      notify(td.id, val);
+    });
+
+    subField.appendChild(inp);
+    titleRows.appendChild(subField);
+  });
+
+  titlesSection.appendChild(titleRows);
+  panelTypo.appendChild(titlesSection);
 
   const fontField = document.createElement('div');
   fontField.className = 'ql-field';
@@ -1324,6 +1479,17 @@ export function openChartEditor(chartRef, configOptions = {}, onUpdate = () => {
         }
       });
     }
+
+    modalTitleDefs.forEach((td) => {
+      const orig = initialConfig[td.id] !== undefined ? initialConfig[td.id] : '';
+      currentConfig[td.id] = orig;
+      const inp = dialog.querySelector('#' + td.inputId);
+      if (inp) inp.value = orig;
+      if (svgEl && orig) {
+        const matches = svgEl.querySelectorAll(td.selector);
+        matches.forEach((el) => { el.textContent = orig; });
+      }
+    });
 
     notify('reset', currentConfig);
   });
