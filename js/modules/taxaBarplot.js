@@ -8,16 +8,19 @@ import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefs
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
-const OTHER_VAR = '--cat-8';
-const TOP_N_DEFAULT = 7, TOP_N_MIN = 3, TOP_N_MAX = 20;
-const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
+export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
+export const OTHER_VAR = '--cat-8';
+export const TOP_N_DEFAULT = 15, TOP_N_MIN = 5, TOP_N_MAX = 50;
+export const MIN_ABUND_DEFAULT = 1, MIN_ABUND_MIN = 0, MIN_ABUND_MAX = 10;
+export const OTHER_COLOR = '#d3d3d3';
+export const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
 
-function shortTaxonName(fullTax) {
-  const parts = fullTax.split(';').map((p) => p.trim()).filter(Boolean);
+export function shortTaxonName(fullTax) {
+  if (!fullTax) return t('barplots.unclassified') || 'Sin clasificar';
+  const parts = String(fullTax).split(';').map((p) => p.trim()).filter(Boolean);
   const last = parts[parts.length - 1] || fullTax;
-  const cleaned = last.replace(/^[a-z]__/i, '');
-  return cleaned || t('barplots.unclassified');
+  const cleaned = String(last).replace(/^[a-z]__/i, '');
+  return cleaned || t('barplots.unclassified') || 'Sin clasificar';
 }
 
 function svgEl(tag, attrs) {
@@ -53,6 +56,201 @@ function resolveVarHex(cv) {
   return CAT_HEX_FALLBACKS[cv] || '#2a78d6';
 }
 
+/**
+ * Agrupa los taxones minoritarios bajo la categoría "Otros" según su abundancia relativa
+ * dataset-wide y el límite topN.
+ *
+ * @param {Object|Array} data - Objeto { headers, rows } o Array de filas (objetos de muestra)
+ * @param {number|Object} [minAbundanceOrOpts=1] - Umbral de abundancia mínima (ej. 1 para 1%, o 0.01) u objeto de opciones
+ * @param {number} [topNParam=15] - Cantidad máxima de taxones principales a conservar (5-50)
+ * @param {Object} [options={}] - Opciones adicionales ({ minPrev, sampleKey, isPercentage })
+ * @returns {{
+ *   headers: string[],
+ *   rows: Object[],
+ *   topTaxa: string[],
+ *   otherTaxa: string[],
+ *   preAggOtherHeaders: string[],
+ *   means: Array<{ header: string, mean: number, prev: number }>,
+ *   series: Array<{ key: string, label: string, colorVar?: string, color?: string, isOther?: boolean }>,
+ *   sampleKey: string,
+ *   hasOther: boolean,
+ *   minAbundance: number,
+ *   topN: number,
+ *   minPrev: number
+ * }}
+ */
+export function groupTaxaByAbundance(data, minAbundanceOrOpts = 1, topNParam = 15, options = {}) {
+  let minAbundance = 1;
+  let topN = 15;
+  let opts = {};
+
+  if (typeof minAbundanceOrOpts === 'object' && minAbundanceOrOpts !== null) {
+    opts = { ...minAbundanceOrOpts };
+    minAbundance = opts.minAbundance !== undefined ? opts.minAbundance : 1;
+    topN = opts.topN !== undefined ? opts.topN : (topNParam !== undefined ? topNParam : 15);
+  } else {
+    opts = { ...options };
+    minAbundance = minAbundanceOrOpts !== undefined ? minAbundanceOrOpts : 1;
+    topN = topNParam !== undefined ? topNParam : 15;
+  }
+
+  // Convertir minAbundance a fracción decimal (ej: 1 o 1% -> 0.01, 5 -> 0.05, 0.01 -> 0.01)
+  let minAbundFrac = 0;
+  if (typeof minAbundance === 'number' && !isNaN(minAbundance)) {
+    if (opts.isPercentage) {
+      minAbundFrac = minAbundance / 100;
+    } else if (minAbundance > 1) {
+      minAbundFrac = minAbundance / 100;
+    } else if (minAbundance === 1 && !opts.isFraction) {
+      minAbundFrac = 0.01;
+    } else {
+      minAbundFrac = Math.max(0, minAbundance);
+    }
+  }
+
+  const minPrev = typeof opts.minPrev === 'number' ? opts.minPrev : 0;
+
+  let headers = [];
+  let rows = [];
+  let sampleKey = opts.sampleKey || null;
+
+  if (data && Array.isArray(data.rows) && Array.isArray(data.headers)) {
+    headers = data.headers.slice();
+    rows = data.rows;
+    sampleKey = sampleKey || headers[0] || 'SampleID';
+  } else if (Array.isArray(data)) {
+    rows = data;
+    if (rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null) {
+      headers = Object.keys(rows[0]);
+      sampleKey = sampleKey || headers[0] || 'SampleID';
+    }
+  } else if (data && typeof data === 'object') {
+    if (Array.isArray(data.rows)) rows = data.rows;
+    if (Array.isArray(data.headers)) headers = data.headers.slice();
+    sampleKey = sampleKey || (headers.length > 0 ? headers[0] : 'SampleID');
+  }
+
+  const taxonHeaders = headers.filter((h, i) => h !== sampleKey && !OTHER_COL_RE.test(String(h).trim()));
+  const preAggOtherHeaders = headers.filter((h, i) => h !== sampleKey && OTHER_COL_RE.test(String(h).trim()));
+
+  const rowSum = (row) => {
+    let sum = 0;
+    for (let i = 0; i < taxonHeaders.length; i++) {
+      sum += parseFloat(row[taxonHeaders[i]]) || 0;
+    }
+    for (let i = 0; i < preAggOtherHeaders.length; i++) {
+      sum += parseFloat(row[preAggOtherHeaders[i]]) || 0;
+    }
+    return sum;
+  };
+
+  const nRows = rows.length || 1;
+  const means = taxonHeaders.map((h) => {
+    let present = 0;
+    let sumFrac = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const t = rowSum(r);
+      const val = parseFloat(r[h]) || 0;
+      if (val > 0) present++;
+      if (t > 0) sumFrac += (val / t);
+    }
+    return {
+      header: h,
+      mean: sumFrac / nRows,
+      prev: present / nRows,
+    };
+  }).sort((a, b) => b.mean - a.mean);
+
+  // Filtro de elegibilidad: cumple umbral de abundancia mínima y prevalencia mínima
+  const eligible = means.filter((m) => {
+    const meetsAbund = m.mean >= (minAbundFrac - 1e-9);
+    const meetsPrev = (m.prev * 100) >= (minPrev - 1e-9);
+    return meetsAbund && meetsPrev;
+  });
+
+  const targetTopN = Math.max(1, topN);
+  const topEligible = eligible.slice(0, targetTopN);
+  const topSet = new Set(topEligible.map((m) => m.header));
+
+  const topTaxa = means.filter((m) => topSet.has(m.header)).map((m) => m.header);
+  const otherTaxa = means.filter((m) => !topSet.has(m.header)).map((m) => m.header);
+  const hasOther = otherTaxa.length > 0 || preAggOtherHeaders.length > 0;
+
+  // Suma de abundancias de taxones minoritarios muestra por muestra asignadas a 'Otros'
+  const groupedRows = rows.map((row) => {
+    const newRow = {};
+    if (sampleKey) newRow[sampleKey] = row[sampleKey];
+    const total = rowSum(row) || 1;
+
+    topTaxa.forEach((th) => {
+      newRow[th] = row[th] !== undefined ? row[th] : 0;
+    });
+
+    let otherSum = 0;
+    otherTaxa.forEach((th) => {
+      otherSum += parseFloat(row[th]) || 0;
+    });
+    preAggOtherHeaders.forEach((poh) => {
+      otherSum += parseFloat(row[poh]) || 0;
+    });
+
+    newRow['Otros'] = otherSum;
+    newRow['__other__'] = otherSum;
+    newRow['Other'] = otherSum;
+
+    newRow['_relative'] = {};
+    topTaxa.forEach((th) => {
+      newRow['_relative'][th] = (parseFloat(row[th]) || 0) / total;
+    });
+    newRow['_relative']['Otros'] = otherSum / total;
+    newRow['_relative']['__other__'] = otherSum / total;
+
+    return newRow;
+  });
+
+  const groupedHeaders = [
+    sampleKey,
+    ...topTaxa,
+    ...(hasOther ? ['Otros'] : [])
+  ];
+
+  // Configuración visual: series. "Otros" siempre al final de la pila con color gris neutro fijo #d3d3d3
+  const series = topTaxa.map((h, i) => ({
+    key: h,
+    label: shortTaxonName(h),
+    colorVar: CAT_VARS[i % CAT_VARS.length],
+  }));
+
+  if (hasOther) {
+    const otherLabel = preAggOtherHeaders.length
+      ? (t('barplots.othersNplus', { n: otherTaxa.length }) || 'Otros')
+      : (otherTaxa.length ? (t('barplots.othersN', { n: otherTaxa.length }) || 'Otros') : (t('barplots.others') || 'Otros'));
+    series.push({
+      key: '__other__',
+      label: otherLabel,
+      colorVar: null,
+      color: OTHER_COLOR,
+      isOther: true,
+    });
+  }
+
+  return {
+    headers: groupedHeaders,
+    rows: groupedRows,
+    topTaxa,
+    otherTaxa,
+    preAggOtherHeaders,
+    means,
+    series,
+    sampleKey,
+    hasOther,
+    minAbundance: minAbundFrac,
+    topN: targetTopN,
+    minPrev,
+  };
+}
+
 function emptyState(container, title, desc) {
   container.innerHTML = '';
   const box = document.createElement('div');
@@ -81,6 +279,7 @@ export function render(container) {
   let sortByGroup = true;
   let groupCol = null;
   let topN = TOP_N_DEFAULT;
+  let minAbundance = MIN_ABUND_DEFAULT;
   let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
   let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
   let view = 'barplot';        // 'barplot' | 'alluvial' | 'biomarkers'
@@ -222,18 +421,39 @@ export function render(container) {
 
     const topField = document.createElement('div');
     topField.className = 'ql-field';
-    topField.innerHTML = '<label for="qlTopN">' + t('barplots.topNLabel') + '</label>' +
+    topField.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<label for="qlTopNr" style="margin:0;">' + t('barplots.topNLabel') + '</label>' +
+      '<span id="qlTopNVal" class="ql-badge">' + topN + '</span>' +
+      '</div>' +
       '<div class="ql-inputrow">' +
-      '<input type="range" id="qlTopNr" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" />' +
+      '<input type="range" id="qlTopNr" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" style="flex:1;" />' +
       '<input type="number" id="qlTopN" class="ql-num-small tabular" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" /></div>' +
       '<p class="ql-field-help">' + t('barplots.topNHelp') + '</p>';
     controls.appendChild(topField);
 
+    const minAbundField = document.createElement('div');
+    minAbundField.className = 'ql-field';
+    minAbundField.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<label for="qlMinAbundR" style="margin:0;">' + t('barplots.minAbundLabel') + '</label>' +
+      '<span id="qlMinAbundVal" class="ql-badge">' + minAbundance + '%</span>' +
+      '</div>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="qlMinAbundR" min="' + MIN_ABUND_MIN + '" max="' + MIN_ABUND_MAX + '" step="0.5" value="' + minAbundance + '" style="flex:1;" />' +
+      '<input type="number" id="qlMinAbund" class="ql-num-small tabular" min="' + MIN_ABUND_MIN + '" max="' + MIN_ABUND_MAX + '" step="0.5" value="' + minAbundance + '" /></div>' +
+      '<p class="ql-field-help">' + t('barplots.minAbundHelp') + '</p>';
+    controls.appendChild(minAbundField);
+
     const prevField = document.createElement('div');
     prevField.className = 'ql-field';
-    prevField.innerHTML = '<label for="qlPrev">' + t('barplots.prevLabel') + '</label>' +
+    prevField.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<label for="qlPrevR" style="margin:0;">' + t('barplots.prevLabel') + '</label>' +
+      '<span id="qlPrevVal" class="ql-badge">' + minPrev + '%</span>' +
+      '</div>' +
       '<div class="ql-inputrow">' +
-      '<input type="range" id="qlPrevR" min="0" max="100" step="5" value="' + minPrev + '" />' +
+      '<input type="range" id="qlPrevR" min="0" max="100" step="5" value="' + minPrev + '" style="flex:1;" />' +
       '<input type="number" id="qlPrev" class="ql-num-small tabular" min="0" max="100" step="5" value="' + minPrev + '" /></div>' +
       '<p class="ql-field-help">' + t('barplots.prevHelp') + '</p>';
     controls.appendChild(prevField);
@@ -296,114 +516,139 @@ export function render(container) {
     grid.appendChild(controls);
     container.appendChild(grid);
 
-    levelSelect.addEventListener('change', () => { level = levelSelect.value; paint(); });
-    {
-      const nInput = topField.querySelector('#qlTopN');
-      const rInput = topField.querySelector('#qlTopNr');
-      const apply = (v) => {
-        const nv = Math.max(TOP_N_MIN, Math.min(TOP_N_MAX, parseInt(v, 10) || TOP_N_DEFAULT));
-        if (nv !== topN) { topN = nv; paint(); }
-      };
-      nInput.addEventListener('change', () => apply(nInput.value));
-      rInput.addEventListener('change', () => apply(rInput.value));
-      rInput.addEventListener('input', () => { nInput.value = rInput.value; });
-    }
-    {
-      const nInput = prevField.querySelector('#qlPrev');
-      const rInput = prevField.querySelector('#qlPrevR');
-      const apply = (v) => {
-        const nv = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
-        if (nv !== minPrev) { minPrev = nv; paint(); }
-      };
-      nInput.addEventListener('change', () => apply(nInput.value));
-      rInput.addEventListener('change', () => apply(rInput.value));
-      rInput.addEventListener('input', () => { nInput.value = rInput.value; });
-    }
-
     // ---- tabla ----
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>' + (view === 'alluvial' ? t('barplots.tableAlluvialTitle') : t('barplots.tableTitle')) + '</h2>';
     container.appendChild(tableCard);
 
-    // ---- datos ----
-    const sampleKey = table.headers[0];
-    // una columna "Others"/"Otros"/"resto" que ya venga en el archivo (formato
-    // TOP14 de QIIME2) se pliega SIEMPRE dentro de "Otros" — nunca se dibuja
-    // como un taxón con su propio color.
-    const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
-    const taxonHeaders = table.headers.filter((h, i) => i !== 0 && !OTHER_COL_RE.test(String(h).trim()));
-    const preAggOtherHeaders = table.headers.filter((h, i) => i !== 0 && OTHER_COL_RE.test(String(h).trim()));
+    levelSelect.addEventListener('change', () => { level = levelSelect.value; paint(); });
 
-    // Cada fila se normaliza por su propia suma: así las barras suman 100%
-    // tanto si el archivo trae conteos crudos, como porcentajes (0–100) o
-    // fracciones (0–1). Es lo correcto para un barplot de abundancia RELATIVA.
-    const rowSum = (row) =>
-      taxonHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0) +
-      preAggOtherHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
-    const otherRaw = (row) =>
-      otherTaxa.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0) +
-      preAggOtherHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
-
-    const nRows = table.rows.length || 1;
-    const means = taxonHeaders.map((h) => {
-      let present = 0;
-      const vals = table.rows.map((r) => {
-        const t = rowSum(r);
-        const v = parseFloat(r[h]) || 0;
-        if (v > 0) present++;
-        return t > 0 ? v / t : 0;
+    let rafId = null;
+    function scheduleRender() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        renderChartAndTable();
       });
-      return { header: h, mean: vals.reduce((a, b) => a + b, 0) / (vals.length || 1), prev: present / nRows };
-    }).sort((a, b) => b.mean - a.mean);
-
-    // filtro de prevalencia: los taxones presentes en menos del umbral % de
-    // muestras no compiten por un color propio; se pliegan dentro de "Otros".
-    const eligible = means.filter((m) => m.prev * 100 >= minPrev);
-    const belowPrev = means.length - eligible.length;
-    const topSet = new Set(eligible.slice(0, topN).map((m) => m.header));
-    const topTaxa = means.filter((m) => topSet.has(m.header)).map((m) => m.header);
-    const otherTaxa = means.filter((m) => !topSet.has(m.header)).map((m) => m.header);
-
-    if (minPrev > 0) {
-      tableCard.insertAdjacentHTML('beforeend',
-        '<p class="ql-field-help" style="margin-top:0">' +
-        t('barplots.prevApplied', { pct: minPrev, n: belowPrev, total: means.length }) + '</p>');
     }
 
-    let sampleOrder = table.rows.map((r) => r[sampleKey]);
-    let groupBySample = {};
-    if (state.metadata && groupCol) {
-      const metaByKey = {};
-      state.metadata.rows.forEach((r) => { metaByKey[r[state.metadata.sampleIdKey]] = r[groupCol]; });
-      groupBySample = metaByKey;
-      if (sortByGroup) {
-        sampleOrder = sampleOrder.slice().sort((a, b) => {
-          const ga = metaByKey[a] || '', gb = metaByKey[b] || '';
-          return ga === gb ? String(a).localeCompare(String(b)) : String(ga).localeCompare(String(gb));
-        });
+    {
+      const nInput = topField.querySelector('#qlTopN');
+      const rInput = topField.querySelector('#qlTopNr');
+      const valBadge = topField.querySelector('#qlTopNVal');
+      const sync = (v, full) => {
+        const nv = Math.max(TOP_N_MIN, Math.min(TOP_N_MAX, parseInt(v, 10) || TOP_N_DEFAULT));
+        topN = nv;
+        nInput.value = nv;
+        rInput.value = nv;
+        if (valBadge) valBadge.textContent = nv;
+        if (full) {
+          if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+          renderChartAndTable();
+        } else {
+          scheduleRender();
+        }
+      };
+      rInput.addEventListener('input', () => sync(rInput.value, false));
+      rInput.addEventListener('change', () => sync(rInput.value, true));
+      nInput.addEventListener('input', () => sync(nInput.value, false));
+      nInput.addEventListener('change', () => sync(nInput.value, true));
+    }
+
+    {
+      const nInput = minAbundField.querySelector('#qlMinAbund');
+      const rInput = minAbundField.querySelector('#qlMinAbundR');
+      const valBadge = minAbundField.querySelector('#qlMinAbundVal');
+      const sync = (v, full) => {
+        const nv = Math.max(MIN_ABUND_MIN, Math.min(MIN_ABUND_MAX, parseFloat(v) || 0));
+        minAbundance = nv;
+        nInput.value = nv;
+        rInput.value = nv;
+        if (valBadge) valBadge.textContent = nv + '%';
+        if (full) {
+          if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+          renderChartAndTable();
+        } else {
+          scheduleRender();
+        }
+      };
+      rInput.addEventListener('input', () => sync(rInput.value, false));
+      rInput.addEventListener('change', () => sync(rInput.value, true));
+      nInput.addEventListener('input', () => sync(nInput.value, false));
+      nInput.addEventListener('change', () => sync(nInput.value, true));
+    }
+
+    {
+      const nInput = prevField.querySelector('#qlPrev');
+      const rInput = prevField.querySelector('#qlPrevR');
+      const valBadge = prevField.querySelector('#qlPrevVal');
+      const sync = (v, full) => {
+        const nv = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
+        minPrev = nv;
+        nInput.value = nv;
+        rInput.value = nv;
+        if (valBadge) valBadge.textContent = nv + '%';
+        if (full) {
+          if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+          renderChartAndTable();
+        } else {
+          scheduleRender();
+        }
+      };
+      rInput.addEventListener('input', () => sync(rInput.value, false));
+      rInput.addEventListener('change', () => sync(rInput.value, true));
+      nInput.addEventListener('input', () => sync(nInput.value, false));
+      nInput.addEventListener('change', () => sync(nInput.value, true));
+    }
+
+    function renderChartAndTable() {
+      if (editor) { editor.destroy(); editor = null; }
+      const grouped = groupTaxaByAbundance(table, minAbundance, topN, { minPrev, isPercentage: true });
+      const { topTaxa, otherTaxa, preAggOtherHeaders, series, means, hasOther } = grouped;
+      const colorsRepeat = topTaxa.length > CAT_VARS.length;
+
+      const pageSub = header.querySelector('.ql-page-sub');
+      if (pageSub) {
+        pageSub.textContent = t('barplots.subtitle', { n: topTaxa.length });
       }
-    }
 
-    const rowsBySample = {};
-    table.rows.forEach((r) => { rowsBySample[r[sampleKey]] = r; });
+      tableCard.innerHTML = '<h2>' + (view === 'alluvial' ? t('barplots.tableAlluvialTitle') : t('barplots.tableTitle')) + '</h2>';
+      if (minPrev > 0) {
+        const eligible = means.filter((m) => m.prev * 100 >= minPrev);
+        const belowPrev = means.length - eligible.length;
+        tableCard.insertAdjacentHTML('beforeend',
+          '<p class="ql-field-help" style="margin-top:0">' +
+          t('barplots.prevApplied', { pct: minPrev, n: belowPrev, total: means.length }) + '</p>');
+      }
 
-    // Hasta 7 taxones = un color de la paleta categórica cada uno. A partir de
-    // ahí los colores se repiten (como en el barplot de QIIME2): la identidad
-    // la lleva la leyenda + el tooltip + la tabla, no el color solo.
-    const series = topTaxa.map((h, i) => ({ key: h, label: shortTaxonName(h), colorVar: CAT_VARS[i % CAT_VARS.length] }));
-    // "Otros" solo si de verdad agrupa algo (taxones fuera del top o una
-    // columna "Other" ya venía en el archivo). Si el top abarca todos los
-    // taxones no se pinta una serie gris de 0 %.
-    const hasOther = otherTaxa.length > 0 || preAggOtherHeaders.length > 0;
-    if (hasOther) {
-      const otherLabel = preAggOtherHeaders.length
-        ? t('barplots.othersNplus', { n: otherTaxa.length })
-        : t('barplots.othersN', { n: otherTaxa.length });
-      series.push({ key: '__other__', label: otherLabel, colorVar: OTHER_VAR });
-    }
-    const colorsRepeat = topTaxa.length > CAT_VARS.length;
+      const sampleKey = table.headers[0];
+      const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
+      const taxonHeaders = table.headers.filter((h, i) => i !== 0 && !OTHER_COL_RE.test(String(h).trim()));
+
+      const rowSum = (row) =>
+        taxonHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0) +
+        preAggOtherHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
+      const otherRaw = (row) =>
+        otherTaxa.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0) +
+        preAggOtherHeaders.reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
+
+      let sampleOrder = table.rows.map((r) => r[sampleKey]);
+      let groupBySample = {};
+      if (state.metadata && groupCol) {
+        const metaByKey = {};
+        state.metadata.rows.forEach((r) => { metaByKey[r[state.metadata.sampleIdKey]] = r[groupCol]; });
+        groupBySample = metaByKey;
+        if (sortByGroup) {
+          sampleOrder = sampleOrder.slice().sort((a, b) => {
+            const ga = metaByKey[a] || '', gb = metaByKey[b] || '';
+            return ga === gb ? String(a).localeCompare(String(b)) : String(ga).localeCompare(String(gb));
+          });
+        }
+      }
+
+      const rowsBySample = {};
+      table.rows.forEach((r) => { rowsBySample[r[sampleKey]] = r; });
 
     if (view === 'alluvial') {
       const resolveGroup = (sortByGroup && groupCol && state.metadata)
@@ -510,7 +755,7 @@ export function render(container) {
         // Enlaces (flujos aluviales Bézier)
         const linksG = svgEl('g', { class: 'ql-alluvial-links' });
         layout.links.forEach((link) => {
-          const fillCol = seriesColorOverrides[link.taxonKey] || 'var(' + link.colorVar + ')';
+          const fillCol = (link.taxonKey === '__other__') ? OTHER_COLOR : (seriesColorOverrides[link.taxonKey] || (link.colorVar ? 'var(' + link.colorVar + ')' : '#2a78d6'));
           const path = svgEl('path', {
             d: link.d,
             class: 'ql-alluvial-link',
@@ -536,7 +781,7 @@ export function render(container) {
         const nodesG = svgEl('g', { class: 'ql-alluvial-nodes' });
         layout.nodes.forEach((node) => {
           if (node.height <= 0) return;
-          const fillCol = seriesColorOverrides[node.taxonKey] || 'var(' + node.colorVar + ')';
+          const fillCol = (node.taxonKey === '__other__') ? OTHER_COLOR : (seriesColorOverrides[node.taxonKey] || (node.colorVar ? 'var(' + node.colorVar + ')' : '#2a78d6'));
           const rect = svgEl('rect', {
             x: node.x,
             y: node.y,
@@ -606,7 +851,7 @@ export function render(container) {
           const col = Math.floor(i / legRows), rw = i % legRows;
           const xx = col * colW, yy = rw * 15;
           const itemG = svgEl('g', { class: 'ql-alluvial-leg-item', style: 'cursor:pointer;', 'data-taxon-key': s.key });
-          const fillCol = seriesColorOverrides[s.key] || 'var(' + s.colorVar + ')';
+          const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           itemG.appendChild(svgEl('rect', {
             x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: fillCol,
             ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
@@ -649,7 +894,7 @@ export function render(container) {
             series: series.map((s) => ({
               id: s.key,
               label: s.label,
-              color: seriesColorOverrides[s.key] || resolveVarHex(s.colorVar),
+              color: (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? resolveVarHex(s.colorVar) : '#2a78d6')),
             })),
             linkOpacity: alluvialLinkOpacity,
           },
@@ -819,9 +1064,10 @@ export function render(container) {
           const yTop = marginT + innerH - (cumulative + val) * innerH;
           const yBot = marginT + innerH - cumulative * innerH;
           const h = Math.max(0, yBot - yTop - gap);
+          const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           const rect = svgEl('rect', {
             x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
-            fill: 'var(' + s.colorVar + ')',
+            fill: fillCol,
             ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
           });
           rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, cx, yTop, chartWrap, svg, W, H, tooltip));
@@ -900,9 +1146,10 @@ export function render(container) {
           const xL = marginL + cumulative * innerW;
           const xR = marginL + (cumulative + val) * innerW;
           const w = Math.max(0, xR - xL - gap);
+          const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           const rect = svgEl('rect', {
             x: xL, y: cy - barH / 2, width: Math.max(w, 0), height: barH,
-            fill: 'var(' + s.colorVar + ')',
+            fill: fillCol,
             ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
           });
           rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, xR, cy, chartWrap, svg, W, H, tooltip));
@@ -941,8 +1188,9 @@ export function render(container) {
     series.forEach((s, i) => {
       const col = Math.floor(i / legRows), rw = i % legRows;
       const xx = col * colW, yy = rw * 15;
+      const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
       legG.appendChild(svgEl('rect', {
-        x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + s.colorVar + ')',
+        x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: fillCol,
         ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
       }));
       const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
@@ -1003,7 +1251,10 @@ export function render(container) {
     tbl.appendChild(tbody);
     scrollDiv.appendChild(tbl);
     tableCard.appendChild(scrollDiv);
+      }
     }
+
+    renderChartAndTable();
   }
 
   // =========================================================================
