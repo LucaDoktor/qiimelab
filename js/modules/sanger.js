@@ -20,8 +20,10 @@ import { attachChartEditor } from '../lib/chartEditor.js';
 import { alignWithWorker } from '../lib/aligner.js';
 import { openPanel } from '../lib/modal.js';
 
-const STORE_KEY = 'qiimelab.sanger';
-const PRIMERS_STORE_KEY = 'qiimelab.primers';
+const STORE_KEY = 'smart-175.sanger';
+const LEGACY_STORE_KEY = 'qiimelab.sanger';
+const PRIMERS_STORE_KEY = 'smart-175.primers';
+const LEGACY_PRIMERS_STORE_KEY = 'qiimelab.primers';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Sin asignación previa de color base A/C/G/T en el resto de la app — se usan
@@ -183,7 +185,7 @@ export function buildOverlapData(fwdOrData, revCompSeq, consensus, opts = {}) {
   let isOverlap = colsA.length > 0 && fStart >= 0;
 
   if (!isOverlap && fwdSeq && rcSeq) {
-    // 1. Intentar ancla por semillas (modelo Sanger de qiimelab)
+    // 1. Intentar ancla por semillas (modelo Sanger de Smart-175)
     const anchor = findSeedAnchor(fwdSeq, rcSeq);
     if (anchor && anchor.reliable) {
       const dEstimate = Math.max(0, Math.min(fwdSeq.length, anchor.diagonal));
@@ -710,7 +712,7 @@ function defaultState() {
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
     if (raw && typeof raw === 'object') {
       const d = defaultState();
       return {
@@ -962,7 +964,7 @@ const METHOD_KEY = {
 
 function sendConsensusToPrimers(sampleId, consensus) {
   let raw;
-  try { raw = JSON.parse(localStorage.getItem(PRIMERS_STORE_KEY) || 'null'); } catch (e) { raw = null; }
+  try { raw = JSON.parse(localStorage.getItem(PRIMERS_STORE_KEY) || localStorage.getItem(LEGACY_PRIMERS_STORE_KEY) || 'null'); } catch (e) { raw = null; }
   if (!raw || !Array.isArray(raw.primers)) {
     raw = {
       tab: 'template', primers: [{ id: 'pr1', name: '', raw: '' }, { id: 'pr2', name: '', raw: '' }],
@@ -1037,16 +1039,63 @@ function sendBatchToNCBI(consensusList) {
 
 // ---------- visor de cromatograma ----------
 
-function clientXToSvgX(svg, clientX) {
-  const rect = svg.getBoundingClientRect();
-  const vb = svg.viewBox.baseVal;
-  if (!rect.width) return vb.x;
-  return vb.x + (clientX - rect.left) * (vb.width / rect.width);
+export function clientXToSvgX(svg, clientX) {
+  const rect = svg && svg.getBoundingClientRect ? svg.getBoundingClientRect() : { left: 0, width: 0 };
+  const vb = svg && svg.viewBox ? svg.viewBox.baseVal : null;
+  const vbW = (vb && vb.width) || parseFloat(svg && svg.style && svg.style.width) || 1000;
+  const vbX = (vb && vb.x) || 0;
+  if (!rect || !rect.width) return vbX + (Number.isFinite(clientX) ? clientX : 0);
+  return vbX + (clientX - rect.left) * (vbW / rect.width);
 }
-function baseIndexAtX(x, nBases, xOfBase) {
+
+export function baseIndexAtX(x, nBases, xOfBase) {
   let lo = 0, hi = Math.max(0, nBases - 1);
   while (lo < hi) { const mid = (lo + hi) >> 1; if (xOfBase(mid) < x) lo = mid + 1; else hi = mid; }
   return lo;
+}
+
+/**
+ * Encuentra el índice del pico (base) más cercano a la coordenada X dada.
+ * @param {number} x
+ * @param {number} nBases
+ * @param {Function} xOfBase
+ * @returns {number}
+ */
+export function nearestBaseIndexAtX(x, nBases, xOfBase) {
+  if (!nBases || nBases <= 0) return -1;
+  let lo = 0, hi = nBases - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (xOfBase(mid) < x) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo > 0 && Math.abs(xOfBase(lo - 1) - x) < Math.abs(xOfBase(lo) - x)) {
+    return lo - 1;
+  }
+  return lo;
+}
+
+/**
+ * Cálculo de Confianza:
+ * Por cada valor Phred (Q), la probabilidad de error es E = 10^(-Q/10).
+ * El porcentaje de confianza es (1 - E) * 100.
+ * @param {number} q
+ * @returns {number}
+ */
+export function phredConfidence(q) {
+  if (!Number.isFinite(q) || q < 0) return 0;
+  const e = Math.pow(10, -q / 10);
+  return (1 - e) * 100;
+}
+
+/**
+ * Formato de confianza: ej. 99.9%
+ * @param {number|null} conf
+ * @returns {string}
+ */
+export function formatConfidence(conf) {
+  if (!Number.isFinite(conf)) return '—';
+  return conf.toFixed(1) + '%';
 }
 
 /**
@@ -1115,6 +1164,20 @@ function drawChromatogram(svg, read, trimRange) {
   }
   svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: qualBase, y2: qualBase, stroke: 'var(--border)', 'stroke-width': '1' }));
 
+  // línea de guía interactiva (crosshair)
+  const guideLine = svgEl('line', {
+    class: 'ql-chroma-crosshair',
+    x1: 0, x2: 0,
+    y1: marginT - 14,
+    y2: qualBase + 12,
+    stroke: 'var(--ink-muted, #71767b)',
+    'stroke-width': '1',
+    'stroke-dasharray': '3 2',
+    style: 'display:none;pointer-events:none;',
+  });
+  guideLine.style.display = 'none';
+  svg.appendChild(guideLine);
+
   const handles = {};
   ['start', 'end'].forEach((which) => {
     const bi = which === 'start' ? trimRange.start : Math.max(0, trimRange.end - 1);
@@ -1131,7 +1194,173 @@ function drawChromatogram(svg, read, trimRange) {
     handles[which] = g;
   });
 
-  return { xOfBase, handles, W, H, nBases };
+  return { xOfBase, handles, W, H, nBases, guideLine };
+}
+
+/**
+ * Añade interactividad (tooltip y crosshair) al cromatograma.
+ * Eventos: mousemove, mouseleave, mouseenter al contenedor o SVG.
+ * @param {object} cfg
+ * @param {SVGSVGElement} cfg.svg
+ * @param {HTMLElement} [cfg.chartWrap]
+ * @param {object} cfg.read
+ * @param {Function} cfg.xOfBase
+ * @param {number} cfg.nBases
+ * @param {SVGLineElement} [cfg.guideLine]
+ * @param {Function} [cfg.isDragging]
+ * @returns {{ tooltip: HTMLElement, guideLine: SVGLineElement, update: Function, hide: Function, destroy: Function }}
+ */
+export function attachChromatogramTooltip(cfg) {
+  const {
+    svg,
+    chartWrap = svg && svg.parentElement,
+    read,
+    xOfBase,
+    nBases = (read && read.sequence ? read.sequence.length : 0),
+    isDragging = () => false,
+  } = cfg;
+
+  if (!svg) return null;
+
+  let guideLine = cfg.guideLine || svg.querySelector('.ql-chroma-crosshair');
+  if (!guideLine) {
+    guideLine = svgEl('line', {
+      class: 'ql-chroma-crosshair',
+      x1: 0, x2: 0, y1: 12, y2: 280,
+      stroke: 'var(--ink-muted, #71767b)',
+      'stroke-width': '1',
+      'stroke-dasharray': '3 2',
+      style: 'display:none;pointer-events:none;',
+    });
+    guideLine.style.display = 'none';
+    svg.appendChild(guideLine);
+  }
+  guideLine.style.display = 'none';
+
+  let tooltip = chartWrap ? chartWrap.querySelector('.ql-chroma-tooltip') : null;
+  if (!tooltip && chartWrap) {
+    tooltip = document.createElement('div');
+    tooltip.className = 'ql-chroma-tooltip';
+    tooltip.style.display = 'none';
+    chartWrap.appendChild(tooltip);
+  }
+
+  function hide() {
+    if (tooltip) tooltip.style.display = 'none';
+    if (guideLine) guideLine.style.display = 'none';
+  }
+
+  function update(e) {
+    if (isDragging()) {
+      hide();
+      return;
+    }
+    if (!read || !read.sequence || nBases <= 0) {
+      hide();
+      return;
+    }
+
+    const svgX = clientXToSvgX(svg, e.clientX);
+    const bi = nearestBaseIndexAtX(svgX, nBases, xOfBase);
+    if (bi < 0 || bi >= nBases) {
+      hide();
+      return;
+    }
+
+    const base = (read.sequence[bi] || '—').toUpperCase();
+    const q = (read.quality && Number.isFinite(read.quality[bi])) ? read.quality[bi] : null;
+    const conf = q != null ? phredConfidence(q) : null;
+    const qStr = q != null ? String(q) : '—';
+    const confStr = formatConfidence(conf);
+
+    if (tooltip) {
+      tooltip.textContent = `Base: ${base} | Phred: ${qStr} | Confianza: ${confStr}`;
+      tooltip.style.display = 'block';
+
+      if (chartWrap) {
+        const wrapRect = chartWrap.getBoundingClientRect ? chartWrap.getBoundingClientRect() : { left: 0, top: 0, width: 600, height: 200 };
+        const scrollLeft = chartWrap.scrollLeft || 0;
+        const scrollTop = chartWrap.scrollTop || 0;
+        const clientWidth = chartWrap.clientWidth || 600;
+
+        const clientX = Number.isFinite(e.clientX) ? e.clientX : (wrapRect.left || 0) + (xOfBase ? xOfBase(bi) : 0);
+        const clientY = Number.isFinite(e.clientY) ? e.clientY : (wrapRect.top || 0) + 50;
+
+        const mouseX = clientX - (wrapRect.left || 0) + scrollLeft;
+        const mouseY = clientY - (wrapRect.top || 0) + scrollTop;
+
+        const ttWidth = tooltip.offsetWidth || 180;
+        const ttHeight = tooltip.offsetHeight || 28;
+
+        let left = mouseX + 12;
+        const clientXRel = clientX - (wrapRect.left || 0);
+        if (clientXRel + 12 + ttWidth > clientWidth) {
+          left = mouseX - ttWidth - 12;
+        }
+        if (left < scrollLeft + 4) {
+          left = scrollLeft + 4;
+        }
+
+        let top = mouseY - ttHeight - 8;
+        const clientYRel = clientY - (wrapRect.top || 0);
+        if (clientYRel - ttHeight - 8 < 0) {
+          top = mouseY + 14;
+        }
+
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+      }
+    }
+
+    if (guideLine && typeof xOfBase === 'function') {
+      const peakX = xOfBase(bi);
+      guideLine.setAttribute('x1', peakX.toFixed(1));
+      guideLine.setAttribute('x2', peakX.toFixed(1));
+      guideLine.style.display = '';
+    }
+  }
+
+  const onMouseMove = (e) => update(e);
+  const onMouseEnter = (e) => update(e);
+  const onMouseLeave = () => hide();
+  const onScroll = () => hide();
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseenter', onMouseEnter);
+  svg.addEventListener('mouseleave', onMouseLeave);
+
+  if (chartWrap) {
+    chartWrap.addEventListener('mousemove', onMouseMove);
+    chartWrap.addEventListener('mouseenter', onMouseEnter);
+    chartWrap.addEventListener('mouseleave', onMouseLeave);
+    chartWrap.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  function destroy() {
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseenter', onMouseEnter);
+    svg.removeEventListener('mouseleave', onMouseLeave);
+    if (chartWrap) {
+      chartWrap.removeEventListener('mousemove', onMouseMove);
+      chartWrap.removeEventListener('mouseenter', onMouseEnter);
+      chartWrap.removeEventListener('mouseleave', onMouseLeave);
+      chartWrap.removeEventListener('scroll', onScroll);
+      if (tooltip && tooltip.parentNode === chartWrap) {
+        chartWrap.removeChild(tooltip);
+      }
+    }
+    if (guideLine && guideLine.parentNode === svg) {
+      svg.removeChild(guideLine);
+    }
+  }
+
+  return {
+    tooltip,
+    guideLine,
+    update,
+    hide,
+    destroy,
+  };
 }
 
 // ---------- render ----------
@@ -1497,7 +1726,8 @@ export function render(container) {
     if (!read.trace) card.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('sanger.noTraceNote') + '</p>');
 
     const chartWrap = document.createElement('div');
-    chartWrap.style.cssText = 'overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-md);padding:8px;';
+    chartWrap.className = 'ql-chroma-wrap';
+    chartWrap.style.cssText = 'overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-md);padding:8px;position:relative;';
     const svg = svgEl('svg', {});
     chartWrap.appendChild(svg);
     card.appendChild(chartWrap);
@@ -1514,6 +1744,15 @@ export function render(container) {
     card.appendChild(legend);
 
     const chart = drawChromatogram(svg, read, trimRange);
+    const chromaTooltip = attachChromatogramTooltip({
+      svg,
+      chartWrap,
+      read,
+      xOfBase: chart.xOfBase,
+      nBases: chart.nBases,
+      guideLine: chart.guideLine,
+      isDragging: () => !!dragging,
+    });
 
     function commitManual(start, end) {
       start = Math.max(0, Math.min(read.sequence.length - 1, Math.round(start)));
@@ -1570,6 +1809,7 @@ export function render(container) {
     }
     function onPointerMove(e) {
       if (!dragging) return;
+      if (chromaTooltip) chromaTooltip.hide();
       const x = clientXToSvgX(svg, e.clientX);
       const bi = baseIndexAtX(x, chart.nBases, chart.xOfBase);
       if (dragging === 'start') { liveStart = Math.min(bi, liveEnd - 1); moveHandleTo('start', liveStart); startInp.value = liveStart; }
@@ -1586,6 +1826,7 @@ export function render(container) {
     ['start', 'end'].forEach((which) => {
       chart.handles[which].addEventListener('pointerdown', (e) => {
         e.preventDefault(); dragging = which; liveStart = trimRange.start; liveEnd = trimRange.end;
+        if (chromaTooltip) chromaTooltip.hide();
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
         stopActiveDrag = onPointerUp;
