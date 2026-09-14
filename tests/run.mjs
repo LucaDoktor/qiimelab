@@ -32,6 +32,8 @@ const SUITE = [
   { name: 'sangertrim', file: 'sangertrim.mjs', kind: 'estático' },
   { name: 'sangeroverlap', file: 'sangeroverlap.mjs', kind: 'estático' },
   { name: 'venngeometry', file: 'venngeometry.mjs', kind: 'estático' },
+  { name: 'labcalc', file: 'labcalc.mjs', kind: 'estático' },
+  { name: 'inference', file: 'inference.mjs', kind: 'estático' },
   { name: 'stats/diversity', file: 'stats/diversity.mjs', kind: 'R' },
   { name: 'stats/rarefaction', file: 'stats/rarefaction.mjs', kind: 'R' },
   { name: 'stats/richness', file: 'stats/richness.mjs', kind: 'R' },

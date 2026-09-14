@@ -1,0 +1,1206 @@
+// Módulo de Inferencia Funcional Taxonómica (FAPROTAX / Custom Dictionaries)
+// Predice perfiles funcionales y ciclos biogeoquímicos a partir de linajes 16S/ITS
+// sin dependencias externas.
+
+import { state, subscribe } from '../state.js';
+import { t, getLang } from '../lib/i18n.js';
+import { DEFAULT_FAPROTAX, FAPROTAX_METADATA, FUNCTION_NAMES } from '../lib/faprotax.js';
+import { groupTaxaByAbundance, CAT_VARS, OTHER_VAR, OTHER_COLOR } from './taxaBarplot.js';
+import { computeGroupTaxaMatrix, computeAlluvialLayout, buildAlluvialLinkPath } from '../lib/alluvial.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
+import { loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+const CAT_FALLBACKS = [
+  '#2a78d6', '#d97706', '#10b981', '#ef4444',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
+  '#f97316', '#6366f1', '#14b8a6', '#e11d48'
+];
+
+function getSeriesColor(index, isOther = false) {
+  if (isOther) return OTHER_COLOR;
+  return CAT_FALLBACKS[index % CAT_FALLBACKS.length];
+}
+
+/**
+ * Normaliza y construye un índice de búsqueda rápida para cualquier base de datos funcional.
+ * Soporta formatos:
+ *  1. { [functionName]: [taxon1, taxon2, ...] } (estándar FAPROTAX)
+ *  2. { [taxonName]: [func1, func2, ...] }
+ *  3. { groups: { ... } } o { functions: { ... } } o { taxa: { ... } }
+ *  4. Array de [{ taxon, functions: [...] }] o [{ function, taxa: [...] }]
+ *
+ * @param {Object|Array} db - Diccionario de funciones
+ * @returns {{
+ *   rawExact: Map<string, Set<string>>,
+ *   rawLower: Map<string, Set<string>>,
+ *   tokenExact: Map<string, Set<string>>,
+ *   tokenClean: Map<string, Set<string>>,
+ *   allFunctions: Set<string>
+ * }}
+ */
+export function buildDatabaseIndex(db) {
+  const rawExact = new Map();
+  const rawLower = new Map();
+  const tokenExact = new Map();
+  const tokenClean = new Map();
+  const allFunctions = new Set();
+
+  if (!db || typeof db !== 'object') {
+    return { rawExact, rawLower, tokenExact, tokenClean, allFunctions };
+  }
+
+  function addMapping(taxon, fnName) {
+    if (!taxon || !fnName) return;
+    const tStr = String(taxon).trim();
+    const fStr = String(fnName).trim();
+    if (!tStr || !fStr) return;
+
+    allFunctions.add(fStr);
+
+    // Exact
+    if (!rawExact.has(tStr)) rawExact.set(tStr, new Set());
+    rawExact.get(tStr).add(fStr);
+
+    const tLower = tStr.toLowerCase();
+    if (!rawLower.has(tLower)) rawLower.set(tLower, new Set());
+    rawLower.get(tLower).add(fStr);
+
+    // Token exacto (ej. g__Pseudomonas o Pseudomonas)
+    if (!tokenExact.has(tLower)) tokenExact.set(tLower, new Set());
+    tokenExact.get(tLower).add(fStr);
+
+    // Token limpio sin prefijo taxonómico (ej. 'pseudomonas')
+    const cleaned = tLower.replace(/^[a-z]__/i, '').trim();
+    if (cleaned) {
+      if (!tokenClean.has(cleaned)) tokenClean.set(cleaned, new Set());
+      tokenClean.get(cleaned).add(fStr);
+    }
+  }
+
+  // Detectar formato del objeto
+  let source = db;
+  if (db.groups && typeof db.groups === 'object') source = db.groups;
+  else if (db.functions && typeof db.functions === 'object') source = db.functions;
+  else if (db.pathways && typeof db.pathways === 'object') source = db.pathways;
+  else if (db.taxa && typeof db.taxa === 'object') source = db.taxa;
+
+  if (Array.isArray(source)) {
+    source.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      if (item.taxon && Array.isArray(item.functions)) {
+        item.functions.forEach((f) => addMapping(item.taxon, f));
+      } else if (item.function && Array.isArray(item.taxa)) {
+        item.taxa.forEach((t) => addMapping(t, item.function));
+      }
+    });
+  } else {
+    for (const [key, value] of Object.entries(source)) {
+      if (Array.isArray(value)) {
+        // Puede ser key = función y value = [taxones], o key = taxón y value = [funciones]
+        // Heurística: si los valores tienen prefijos de linaje (g__, s__, etc.) o nombres conocidos
+        const firstVal = String(value[0] || '');
+        const keyLooksLikeTaxon = /^[a-z]__|;/i.test(key);
+        const valLooksLikeTaxon = /^[a-z]__|;/i.test(firstVal);
+
+        if (keyLooksLikeTaxon && !valLooksLikeTaxon) {
+          // key = taxón, value = [funciones]
+          value.forEach((fn) => addMapping(key, fn));
+        } else {
+          // por defecto: key = función, value = [taxones]
+          value.forEach((tax) => addMapping(tax, key));
+        }
+      } else if (typeof value === 'string') {
+        addMapping(value, key);
+      }
+    }
+  }
+
+  return { rawExact, rawLower, tokenExact, tokenClean, allFunctions };
+}
+
+/**
+ * Encuentra las funciones metabólicas asociadas a un linaje taxonómico según el índice de la base de datos.
+ * Aplica reglas estrictas de concordancia:
+ *  - Coincidencia exacta de la cadena completa de linaje
+ *  - Coincidencia exacta por rango taxonómico (token de género, especie, familia, etc.)
+ *
+ * @param {string} taxonName - Nombre o linaje del taxón (ej. "k__Bacteria;...;g__Pseudomonas")
+ * @param {Object} dbIndex - Índice construido por buildDatabaseIndex
+ * @returns {Set<string>} Conjunto de funciones asociadas
+ */
+export function findFunctionsForTaxon(taxonName, dbIndex) {
+  const result = new Set();
+  if (!taxonName || !dbIndex) return result;
+
+  const raw = String(taxonName).trim();
+  const rawLower = raw.toLowerCase();
+
+  // 1. Coincidencia directa completa
+  if (dbIndex.rawExact.has(raw)) {
+    dbIndex.rawExact.get(raw).forEach((f) => result.add(f));
+  }
+  if (dbIndex.rawLower.has(rawLower)) {
+    dbIndex.rawLower.get(rawLower).forEach((f) => result.add(f));
+  }
+
+  // 2. Partición estricta de linaje por rangos delimitados por ';'
+  const tokens = raw.split(';').map((p) => p.trim()).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const tokLower = tok.toLowerCase();
+
+    // Coincidencia exacta con token con prefijo (ej. 'g__Pseudomonas')
+    if (dbIndex.tokenExact.has(tokLower)) {
+      dbIndex.tokenExact.get(tokLower).forEach((f) => result.add(f));
+    }
+
+    // Coincidencia con nombre limpio de rango (ej. 'Pseudomonas')
+    const tokClean = tokLower.replace(/^[a-z]__/i, '').trim();
+    if (tokClean && dbIndex.tokenClean.has(tokClean)) {
+      dbIndex.tokenClean.get(tokClean).forEach((f) => result.add(f));
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Analiza e identifica la estructura de una matriz taxonómica de entrada.
+ * Soporta:
+ *  - Formato ancho (filas = muestras, columnas = taxones)
+ *  - Formato largo (filas = taxones, columnas = muestras)
+ *  - Array de objetos de muestra
+ *
+ * @param {Object|Array} taxaMatrix
+ * @param {string} [customSampleKey]
+ * @returns {{
+ *   samples: string[],
+ *   taxa: Array<{ name: string, values: Object.<string, number> }>,
+ *   sampleTotals: Object.<string, number>,
+ *   sampleKey: string
+ * }}
+ */
+export function parseTaxaMatrix(taxaMatrix, customSampleKey = null) {
+  let headers = [];
+  let rows = [];
+
+  if (taxaMatrix && Array.isArray(taxaMatrix.rows) && Array.isArray(taxaMatrix.headers)) {
+    headers = taxaMatrix.headers.slice();
+    rows = taxaMatrix.rows;
+  } else if (Array.isArray(taxaMatrix)) {
+    rows = taxaMatrix;
+    if (rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null) {
+      headers = Object.keys(rows[0]);
+    }
+  } else if (taxaMatrix && typeof taxaMatrix === 'object') {
+    if (Array.isArray(taxaMatrix.rows)) rows = taxaMatrix.rows;
+    if (Array.isArray(taxaMatrix.headers)) headers = taxaMatrix.headers.slice();
+  }
+
+  if (rows.length === 0 || headers.length === 0) {
+    return { samples: [], taxa: [], sampleTotals: {}, sampleKey: customSampleKey || 'SampleID' };
+  }
+
+  const sampleKeyCandidate = customSampleKey || headers[0] || 'SampleID';
+  const firstColKey = headers[0];
+
+  // Comprobar si las filas representan taxones (filas = taxones, columnas = muestras)
+  const isTaxonRows = /^(taxon|taxa|otu|asv|feature|featureid|#otu id|species|genus)$/i.test(firstColKey.trim());
+
+  if (isTaxonRows) {
+    const sampleHeaders = headers.slice(1);
+    const sampleTotals = {};
+    sampleHeaders.forEach((s) => { sampleTotals[s] = 0; });
+
+    const taxa = [];
+    rows.forEach((r) => {
+      const taxonName = String(r[firstColKey] || '').trim();
+      if (!taxonName) return;
+      const values = {};
+      sampleHeaders.forEach((s) => {
+        const val = parseFloat(r[s]) || 0;
+        values[s] = val;
+        sampleTotals[s] = (sampleTotals[s] || 0) + val;
+      });
+      taxa.push({ name: taxonName, values });
+    });
+
+    return { samples: sampleHeaders, taxa, sampleTotals, sampleKey: 'SampleID' };
+  }
+
+  // Filas representan muestras (filas = muestras, columnas = taxones)
+  const sampleKey = sampleKeyCandidate;
+  const taxonHeaders = headers.filter((h) => h !== sampleKey);
+  const samples = rows.map((r) => String(r[sampleKey] || '').trim()).filter(Boolean);
+
+  const sampleTotals = {};
+  samples.forEach((s) => { sampleTotals[s] = 0; });
+
+  const taxaMap = new Map();
+  taxonHeaders.forEach((th) => {
+    taxaMap.set(th, { name: th, values: {} });
+  });
+
+  rows.forEach((r) => {
+    const sId = String(r[sampleKey] || '').trim();
+    if (!sId) return;
+    taxonHeaders.forEach((th) => {
+      const val = parseFloat(r[th]) || 0;
+      taxaMap.get(th).values[sId] = val;
+      sampleTotals[sId] = (sampleTotals[sId] || 0) + val;
+    });
+  });
+
+  const taxa = Array.from(taxaMap.values());
+  return { samples, taxa, sampleTotals, sampleKey };
+}
+
+/**
+ * Motor de inferencia funcional estricto: Mapea taxones a rutas metabólicas
+ * según un diccionario de referencia (FAPROTAX o custom).
+ *
+ * @param {Object|Array} taxaMatrix - Matriz taxonómica ({ headers, rows } o Array)
+ * @param {Object|Array} databaseJSON - Base de datos de funciones
+ * @param {Object} [options={}] - Opciones de cálculo
+ * @param {boolean} [options.includeUnassigned=true] - Incluir categoría 'Sin función asignada'
+ * @param {string} [options.unassignedLabel='Sin función asignada'] - Etiqueta para taxones no asignados
+ * @param {boolean} [options.asPercentage=true] - Devolver abundancias en % (0-100) en lugar de fracciones (0-1)
+ * @param {string} [options.sampleKey=null] - Nombre de la columna de muestras
+ * @returns {{
+ *   headers: string[],
+ *   rows: Object[],
+ *   functions: string[],
+ *   samples: string[],
+ *   sampleKey: string,
+ *   byFunction: Object[],
+ *   mappedTaxa: string[],
+ *   unassignedTaxa: string[],
+ *   mappingStats: {
+ *     totalTaxa: number,
+ *     mappedTaxaCount: number,
+ *     unassignedTaxaCount: number,
+ *     coveragePercent: number,
+ *     averageMappedAbundance: number
+ *   }
+ * }}
+ */
+export function mapTaxonomyToFunction(taxaMatrix, databaseJSON, options = {}) {
+  const opts = {
+    includeUnassigned: true,
+    unassignedLabel: 'Sin función asignada',
+    asPercentage: true,
+    sampleKey: null,
+    ...options
+  };
+
+  const dbIndex = buildDatabaseIndex(databaseJSON);
+  const parsed = parseTaxaMatrix(taxaMatrix, opts.sampleKey);
+  const { samples, taxa, sampleTotals, sampleKey } = parsed;
+
+  const mappedTaxaSet = new Set();
+  const unassignedTaxaSet = new Set();
+  const activeFunctions = new Set();
+
+  // Matriz de acumulación muestra -> función -> valor
+  const sampleFunctionScores = {};
+  const sampleUnassignedScores = {};
+  const sampleMappedAbund = {};
+
+  samples.forEach((s) => {
+    sampleFunctionScores[s] = {};
+    sampleUnassignedScores[s] = 0;
+    sampleMappedAbund[s] = 0;
+  });
+
+  // Iteración estricta sobre cada ASV/OTU / taxón
+  taxa.forEach((tax) => {
+    const matchedFns = findFunctionsForTaxon(tax.name, dbIndex);
+    const hasMatch = matchedFns.size > 0;
+
+    if (hasMatch) {
+      mappedTaxaSet.add(tax.name);
+      matchedFns.forEach((f) => activeFunctions.add(f));
+    } else {
+      unassignedTaxaSet.add(tax.name);
+    }
+
+    samples.forEach((s) => {
+      const total = sampleTotals[s] || 1;
+      const raw = tax.values[s] || 0;
+      const frac = total > 0 ? (raw / total) : 0;
+      const value = opts.asPercentage ? (frac * 100) : frac;
+
+      if (hasMatch) {
+        sampleMappedAbund[s] += value;
+        matchedFns.forEach((f) => {
+          sampleFunctionScores[s][f] = (sampleFunctionScores[s][f] || 0) + value;
+        });
+      } else {
+        sampleUnassignedScores[s] += value;
+      }
+    });
+  });
+
+  const sortedFunctions = Array.from(activeFunctions).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+
+  const finalFunctions = [...sortedFunctions];
+  if (opts.includeUnassigned) {
+    finalFunctions.push(opts.unassignedLabel);
+  }
+
+  const headers = [sampleKey, ...finalFunctions];
+
+  // Construcción de filas compatibles con barplots y diagramas aluviales
+  const rows = samples.map((s) => {
+    const row = { [sampleKey]: s };
+    const relObj = {};
+
+    sortedFunctions.forEach((f) => {
+      const val = +(sampleFunctionScores[s][f] || 0).toFixed(4);
+      row[f] = val;
+      relObj[f] = opts.asPercentage ? (val / 100) : val;
+    });
+
+    if (opts.includeUnassigned) {
+      const unassignedVal = +(sampleUnassignedScores[s] || 0).toFixed(4);
+      row[opts.unassignedLabel] = unassignedVal;
+      relObj[opts.unassignedLabel] = opts.asPercentage ? (unassignedVal / 100) : unassignedVal;
+    }
+
+    row._relative = relObj;
+    return row;
+  });
+
+  // Vista transpuesta: funciones como filas
+  const byFunction = finalFunctions.map((f) => {
+    const item = { function: f };
+    samples.forEach((s) => {
+      if (f === opts.unassignedLabel) {
+        item[s] = +(sampleUnassignedScores[s] || 0).toFixed(4);
+      } else {
+        item[s] = +(sampleFunctionScores[s][f] || 0).toFixed(4);
+      }
+    });
+    return item;
+  });
+
+  // Métricas estadísticas de cobertura
+  const totalTaxa = taxa.length;
+  const mappedTaxaCount = mappedTaxaSet.size;
+  const unassignedTaxaCount = unassignedTaxaSet.size;
+  const coveragePercent = totalTaxa > 0 ? +((mappedTaxaCount / totalTaxa) * 100).toFixed(2) : 0;
+
+  let totalMappedPct = 0;
+  samples.forEach((s) => {
+    totalMappedPct += sampleMappedAbund[s];
+  });
+  const averageMappedAbundance = samples.length > 0 ? +(totalMappedPct / samples.length).toFixed(2) : 0;
+
+  return {
+    headers,
+    rows,
+    functions: finalFunctions,
+    samples,
+    sampleKey,
+    byFunction,
+    mappedTaxa: Array.from(mappedTaxaSet),
+    unassignedTaxa: Array.from(unassignedTaxaSet),
+    mappingStats: {
+      totalTaxa,
+      mappedTaxaCount,
+      unassignedTaxaCount,
+      coveragePercent,
+      averageMappedAbundance,
+    }
+  };
+}
+
+/**
+ * Traduce el identificador técnico de la función a un nombre legible por el usuario.
+ */
+export function formatFunctionName(key, lang = 'es') {
+  if (FUNCTION_NAMES[key]) {
+    return FUNCTION_NAMES[key][lang] || FUNCTION_NAMES[key]['es'] || key;
+  }
+  return key.replace(/_/g, ' ');
+}
+
+// ---------------------------------------------------------------------------
+// Renderizador de Interfaz Gráfica (UI)
+// ---------------------------------------------------------------------------
+
+export function render(container) {
+  let activeDb = DEFAULT_FAPROTAX;
+  let activeDbInfo = {
+    name: FAPROTAX_METADATA.name,
+    isCustom: false,
+    version: FAPROTAX_METADATA.version
+  };
+
+  let currentLevel = 6; // Nivel de género por defecto
+  let viewMode = 'barplot'; // 'barplot' | 'alluvial' | 'table'
+  let topN = 15;
+  let minAbundance = 1; // 1%
+  let minPrev = 0;
+  let selectedGroupCol = null;
+  let editor = null;
+  let tooltipEl = null;
+
+  function ensureTooltip() {
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'ql-tooltip';
+      tooltipEl.style.position = 'fixed';
+      tooltipEl.style.display = 'none';
+      tooltipEl.style.zIndex = '9999';
+      tooltipEl.style.pointerEvents = 'none';
+      document.body.appendChild(tooltipEl);
+    }
+  }
+
+  function getTaxaTable() {
+    if (state.taxaBarplot && state.taxaBarplot.levels) {
+      const lvls = Object.keys(state.taxaBarplot.levels).sort((a, b) => Number(a) - Number(b));
+      if (lvls.length > 0) {
+        if (!state.taxaBarplot.levels[currentLevel]) {
+          currentLevel = lvls.includes('6') ? 6 : Number(lvls[lvls.length - 1]);
+        }
+        return {
+          table: state.taxaBarplot.levels[currentLevel],
+          levels: lvls,
+        };
+      }
+    }
+    if (state.taxaCounts && state.taxaCounts.rows && state.taxaCounts.rows.length > 0) {
+      return {
+        table: state.taxaCounts,
+        levels: [],
+      };
+    }
+    return null;
+  }
+
+  function paint() {
+    if (editor) { editor.destroy(); editor = null; }
+    container.innerHTML = '';
+    ensureTooltip();
+
+    // Cabecera del módulo
+    const header = document.createElement('header');
+    header.className = 'ql-page-header';
+    header.innerHTML =
+      '<p class="ql-eyebrow">' + (t('inference.eyebrow') || 'ANÁLISIS METABÓLICO') + '</p>' +
+      '<h1 class="ql-page-title">' + (t('inference.title') || 'Inferencia Funcional Taxonómica') + '</h1>' +
+      '<p class="ql-page-sub">' + (t('inference.subtitle') || 'Predicción estricta de rutas metabólicas y biogeoquímicas a partir de perfiles 16S/ITS') + '</p>';
+    container.appendChild(header);
+
+    // Aviso Metodológico Permanente (Requisito estricto)
+    const alertBanner = document.createElement('aside');
+    alertBanner.className = 'ql-alert-warning ql-inference-banner';
+    alertBanner.setAttribute('role', 'alert');
+    alertBanner.innerHTML =
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+      '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>' +
+      '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' +
+      '</svg>' +
+      '<div>' +
+      '<strong>' + (t('inference.warningTitle') || 'Nota metodológica:') + '</strong> ' +
+      (t('inference.warningText') || 'La inferencia funcional por 16S/ITS es predictiva. Para confirmación del potencial genómico se requiere secuenciación Shotgun. Cite siempre la base de datos de referencia utilizada.') +
+      '</div>';
+    container.appendChild(alertBanner);
+
+    const taxaInfo = getTaxaTable();
+    if (!taxaInfo || !taxaInfo.table || !taxaInfo.table.rows || taxaInfo.table.rows.length === 0) {
+      // Estado vacío
+      const emptyCard = document.createElement('div');
+      emptyCard.className = 'ql-card ql-empty';
+      emptyCard.innerHTML =
+        '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">' +
+        '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' +
+        '</svg>' +
+        '<h3>' + (t('inference.emptyTitle') || 'No se han detectado tablas taxonómicas') + '</h3>' +
+        '<p>' + (t('inference.emptyDesc') || 'Para predecir el perfil funcional se necesita una tabla de taxonomía o abundancia por taxón (QIIME2 barplot o conteos).') + '</p>';
+      mountExampleButtons(emptyCard, { real: loadRealCommunityData });
+      container.appendChild(emptyCard);
+      return;
+    }
+
+    // Ejecución del motor de inferencia matemática
+    const inferredMatrix = mapTaxonomyToFunction(taxaInfo.table, activeDb, {
+      includeUnassigned: true,
+      asPercentage: true,
+      unassignedLabel: t('inference.unassigned') || 'Sin función asignada',
+    });
+
+    // Panel de métricas estadísticas
+    const statsContainer = document.createElement('div');
+    statsContainer.className = 'ql-inference-stats-grid';
+    const stats = inferredMatrix.mappingStats;
+    statsContainer.innerHTML =
+      '<div class="ql-inference-stat-card">' +
+      '<div class="ql-inference-stat-label">' + (t('inference.statTotalTaxa') || 'Taxones Evaluados') + '</div>' +
+      '<div class="ql-inference-stat-val">' + stats.totalTaxa + '</div>' +
+      '</div>' +
+      '<div class="ql-inference-stat-card">' +
+      '<div class="ql-inference-stat-label">' + (t('inference.statMappedTaxa') || 'Taxones Anotados') + '</div>' +
+      '<div class="ql-inference-stat-val" style="color:var(--accent);">' + stats.mappedTaxaCount + '</div>' +
+      '</div>' +
+      '<div class="ql-inference-stat-card">' +
+      '<div class="ql-inference-stat-label">' + (t('inference.statUnassigned') || 'Sin Función') + '</div>' +
+      '<div class="ql-inference-stat-val" style="color:var(--ink-3);">' + stats.unassignedTaxaCount + '</div>' +
+      '</div>' +
+      '<div class="ql-inference-stat-card">' +
+      '<div class="ql-inference-stat-label">' + (t('inference.statCoverage') || 'Cobertura Taxonómica') + '</div>' +
+      '<div class="ql-inference-stat-val">' + stats.coveragePercent + '%</div>' +
+      '</div>' +
+      '<div class="ql-inference-stat-card">' +
+      '<div class="ql-inference-stat-label">' + (t('inference.statFunctions') || 'Rutas Detectadas') + '</div>' +
+      '<div class="ql-inference-stat-val">' + (inferredMatrix.functions.length - 1) + '</div>' +
+      '</div>';
+    container.appendChild(statsContainer);
+
+    // Controles y visualización principal
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-sidebar';
+
+    const mainPanel = document.createElement('div');
+    mainPanel.className = 'ql-main';
+
+    // Barra de herramientas de vistas (Sub-pestañas: Barras / Aluvial / Tabla)
+    const viewTabs = document.createElement('div');
+    viewTabs.className = 'ql-segmented';
+    viewTabs.style.marginBottom = '16px';
+    [
+      ['barplot', t('inference.tabBarplot') || 'Gráfico de Barras Apiladas'],
+      ['alluvial', t('inference.tabAlluvial') || 'Diagrama Aluvial'],
+      ['table', t('inference.tabTable') || 'Matriz de Funciones'],
+    ].forEach(([v, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ql-seg-btn' + (viewMode === v ? ' is-on' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        if (viewMode !== v) {
+          viewMode = v;
+          paint();
+        }
+      });
+      viewTabs.appendChild(btn);
+    });
+    mainPanel.appendChild(viewTabs);
+
+    const chartCard = document.createElement('div');
+    chartCard.className = 'ql-card';
+    mainPanel.appendChild(chartCard);
+
+    // Barra lateral de controles
+    const sidebar = document.createElement('aside');
+    sidebar.className = 'ql-sidebar';
+
+    // Selector de Base de Datos
+    const dbCard = document.createElement('div');
+    dbCard.className = 'ql-field';
+    dbCard.innerHTML =
+      '<label>' + (t('inference.dbLabel') || 'Base de datos de inferencia') + '</label>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">' +
+      '<button type="button" class="ql-btn ' + (!activeDbInfo.isCustom ? 'ql-btn-primary' : '') + '" id="ql-btn-faprotax">' +
+      (t('inference.loadFaprotax') || 'FAPROTAX estándar') +
+      '</button>' +
+      '<label class="ql-btn ' + (activeDbInfo.isCustom ? 'ql-btn-primary' : '') + '" style="cursor:pointer;margin:0;">' +
+      (t('inference.uploadCustom') || 'Subir JSON...') +
+      '<input type="file" id="ql-upload-db" accept=".json" style="display:none;" />' +
+      '</label>' +
+      '</div>' +
+      '<div class="ql-badge" style="display:inline-block;margin-top:4px;">' +
+      'DB: ' + escapeHtml(activeDbInfo.name) +
+      '</div>';
+
+    const btnFaprotax = dbCard.querySelector('#ql-btn-faprotax');
+    btnFaprotax.addEventListener('click', () => {
+      activeDb = DEFAULT_FAPROTAX;
+      activeDbInfo = { name: FAPROTAX_METADATA.name, isCustom: false, version: FAPROTAX_METADATA.version };
+      paint();
+    });
+
+    const fileInput = dbCard.querySelector('#ql-upload-db');
+    fileInput.addEventListener('change', (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsedJson = JSON.parse(e.target.result);
+          activeDb = parsedJson;
+          activeDbInfo = {
+            name: file.name,
+            isCustom: true,
+            version: 'Custom JSON',
+          };
+          paint();
+        } catch (err) {
+          alert(t('inference.jsonError') || 'Error al procesar el archivo JSON: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+    sidebar.appendChild(dbCard);
+
+    // Selector de nivel taxonómico si hay varios
+    if (taxaInfo.levels && taxaInfo.levels.length > 1) {
+      const lvlField = document.createElement('div');
+      lvlField.className = 'ql-field';
+      lvlField.innerHTML = '<label>' + (t('barplots.levelLabel') || 'Nivel Taxonómico') + '</label>';
+      const lvlSelect = document.createElement('select');
+      taxaInfo.levels.forEach((l) => {
+        const opt = document.createElement('option');
+        opt.value = l;
+        opt.textContent = (t('barplots.level', { n: l }) || 'Nivel ' + l) + (Number(l) === 6 ? ' (Género)' : Number(l) === 7 ? ' (Especie)' : '');
+        if (Number(l) === currentLevel) opt.selected = true;
+        lvlSelect.appendChild(opt);
+      });
+      lvlSelect.addEventListener('change', () => {
+        currentLevel = Number(lvlSelect.value);
+        paint();
+      });
+      lvlField.appendChild(lvlSelect);
+      sidebar.appendChild(lvlField);
+    }
+
+    // Selector de grupo de metadatos (si hay metadatos)
+    let metaCols = [];
+    if (state.metadata && Array.isArray(state.metadata.headers)) {
+      metaCols = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
+    }
+    if (metaCols.length > 0) {
+      const grpField = document.createElement('div');
+      grpField.className = 'ql-field';
+      grpField.innerHTML = '<label>' + (t('barplots.groupCol') || 'Agrupar por metadato') + '</label>';
+      const grpSelect = document.createElement('select');
+      const defOpt = document.createElement('option');
+      defOpt.value = '';
+      defOpt.textContent = t('barplots.noGroup') || '(Sin agrupar / Muestras individuales)';
+      grpSelect.appendChild(defOpt);
+      metaCols.forEach((col) => {
+        const opt = document.createElement('option');
+        opt.value = col;
+        opt.textContent = col;
+        if (selectedGroupCol === col) opt.selected = true;
+        grpSelect.appendChild(opt);
+      });
+      grpSelect.addEventListener('change', () => {
+        selectedGroupCol = grpSelect.value || null;
+        paint();
+      });
+      grpField.appendChild(grpSelect);
+      sidebar.appendChild(grpField);
+    }
+
+    // Controles de filtrado y agrupamiento en "Otros"
+    const topNField = document.createElement('div');
+    topNField.className = 'ql-field';
+    topNField.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<label for="qlInfTopN" style="margin:0;">' + (t('inference.topNLabel') || 'Top N funciones') + '</label>' +
+      '<span class="ql-badge">' + topN + '</span>' +
+      '</div>' +
+      '<input type="range" id="qlInfTopN" min="5" max="50" step="1" value="' + topN + '" style="width:100%;" />';
+    const topNInput = topNField.querySelector('#qlInfTopN');
+    topNInput.addEventListener('input', (e) => {
+      topN = parseInt(e.target.value, 10) || 15;
+      topNField.querySelector('.ql-badge').textContent = topN;
+    });
+    topNInput.addEventListener('change', () => paint());
+    sidebar.appendChild(topNField);
+
+    const minAbundField = document.createElement('div');
+    minAbundField.className = 'ql-field';
+    minAbundField.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<label for="qlInfMinAbund" style="margin:0;">' + (t('inference.minAbundLabel') || 'Abundancia mínima') + '</label>' +
+      '<span class="ql-badge">' + minAbundance + '%</span>' +
+      '</div>' +
+      '<input type="range" id="qlInfMinAbund" min="0" max="10" step="0.5" value="' + minAbundance + '" style="width:100%;" />';
+    const minAbundInput = minAbundField.querySelector('#qlInfMinAbund');
+    minAbundInput.addEventListener('input', (e) => {
+      minAbundance = parseFloat(e.target.value) || 0;
+      minAbundField.querySelector('.ql-badge').textContent = minAbundance + '%';
+    });
+    minAbundInput.addEventListener('change', () => paint());
+    sidebar.appendChild(minAbundField);
+
+    // Botón de exportación CSV
+    const exportField = document.createElement('div');
+    exportField.className = 'ql-field';
+    exportField.style.marginTop = '20px';
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'ql-btn';
+    exportBtn.style.width = '100%';
+    exportBtn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>' +
+      '</svg> ' + (t('inference.exportCsv') || 'Exportar matriz (CSV)');
+    exportBtn.addEventListener('click', () => {
+      const csvContent = generateCsv(inferredMatrix);
+      downloadBlob(csvContent, 'inferencia_funcional_' + activeDbInfo.name.replace(/\.[^/.]+$/, '') + '.csv', 'text/csv;charset=utf-8;');
+    });
+    exportField.appendChild(exportBtn);
+    sidebar.appendChild(exportField);
+
+    grid.appendChild(mainPanel);
+    grid.appendChild(sidebar);
+    container.appendChild(grid);
+
+    // Renderizar la vista seleccionada en chartCard
+    if (viewMode === 'barplot') {
+      renderStackedBarplot(chartCard, inferredMatrix, {
+        topN,
+        minAbundance,
+        minPrev,
+        groupCol: selectedGroupCol,
+      });
+    } else if (viewMode === 'alluvial') {
+      renderAlluvialDiagram(chartCard, inferredMatrix, {
+        topN,
+        minAbundance,
+        groupCol: selectedGroupCol,
+      });
+    } else if (viewMode === 'table') {
+      renderDataTable(chartCard, inferredMatrix);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Renderizadores específicos de vista
+  // -------------------------------------------------------------------------
+
+  function renderStackedBarplot(card, matrix, opts) {
+    card.innerHTML = '';
+    const grouped = groupTaxaByAbundance(matrix, opts.minAbundance, opts.topN, {
+      minPrev: opts.minPrev,
+      isPercentage: true,
+      sampleKey: matrix.sampleKey,
+    });
+
+    const { topTaxa, series, hasOther } = grouped;
+    let rows = grouped.rows;
+
+    // Ordenar muestras por grupo si aplica
+    const resolveGroup = opts.groupCol ? makeGroupResolver(state.metadata, opts.groupCol) : null;
+    if (resolveGroup) {
+      rows = rows.slice().sort((a, b) => {
+        const gA = resolveGroup(a[matrix.sampleKey]) || '';
+        const gB = resolveGroup(b[matrix.sampleKey]) || '';
+        return gA.localeCompare(gB, undefined, { numeric: true }) ||
+               String(a[matrix.sampleKey]).localeCompare(String(b[matrix.sampleKey]), undefined, { numeric: true });
+      });
+    }
+
+    const nSamples = rows.length;
+    const margin = { top: 40, right: 220, bottom: 90, left: 60 };
+    const barWidth = Math.max(14, Math.min(36, Math.floor(700 / (nSamples || 1))));
+    const plotWidth = Math.max(500, nSamples * (barWidth + 4));
+    const W = plotWidth + margin.left + margin.right;
+    const H = 460;
+    const innerW = W - margin.left - margin.right;
+    const innerH = H - margin.top - margin.bottom;
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      class: 'ql-svg',
+      role: 'img',
+      'aria-label': t('inference.chartAria') || 'Gráfico de barras apiladas de funciones metabólicas',
+      style: 'max-width:100%;height:auto;display:block;'
+    });
+
+    // Ejes de coordenadas
+    const axesG = svgEl('g', { class: 'ql-axes' });
+    axesG.appendChild(svgEl('line', {
+      x1: margin.left, y1: margin.top,
+      x2: margin.left, y2: margin.top + innerH,
+      stroke: 'var(--border-strong)', 'stroke-width': '1.2'
+    }));
+    axesG.appendChild(svgEl('line', {
+      x1: margin.left, y1: margin.top + innerH,
+      x2: margin.left + innerW, y2: margin.top + innerH,
+      stroke: 'var(--border-strong)', 'stroke-width': '1.2'
+    }));
+
+    // Ticks eje Y (0% a 100%)
+    [0, 25, 50, 75, 100].forEach((pct) => {
+      const y = margin.top + innerH - (pct / 100) * innerH;
+      const tick = svgEl('line', {
+        x1: margin.left - 5, y1: y,
+        x2: margin.left + innerW, y2: y,
+        stroke: pct === 0 ? 'var(--border-strong)' : 'var(--border-subtle)',
+        'stroke-dasharray': pct === 0 ? 'none' : '3 3',
+        'stroke-width': '1'
+      });
+      axesG.appendChild(tick);
+
+      const label = svgEl('text', {
+        x: margin.left - 8, y: y + 4,
+        'text-anchor': 'end',
+        'font-size': '11px',
+        fill: 'var(--ink-2)'
+      });
+      label.textContent = pct + '%';
+      axesG.appendChild(label);
+    });
+
+    const yTitle = svgEl('text', {
+      x: -(margin.top + innerH / 2),
+      y: 18,
+      transform: 'rotate(-90)',
+      'text-anchor': 'middle',
+      'font-size': '12px',
+      'font-weight': '600',
+      fill: 'var(--ink-1)'
+    });
+    yTitle.textContent = t('inference.yAxisTitle') || 'Abundancia Relativa (%)';
+    axesG.appendChild(yTitle);
+    svg.appendChild(axesG);
+
+    // Dibujo de barras apiladas
+    const barsG = svgEl('g', { class: 'ql-bars' });
+    const stepX = innerW / nSamples;
+
+    rows.forEach((r, sIdx) => {
+      const sId = String(r[matrix.sampleKey]);
+      const x = margin.left + sIdx * stepX + (stepX - barWidth) / 2;
+      let curYFrac = 0;
+
+      // Renderizar series en orden
+      series.forEach((sObj, cIdx) => {
+        const fKey = sObj.key;
+        const val = parseFloat(r[fKey]) || 0;
+        const frac = val / 100;
+        if (frac <= 0) return;
+
+        const h = frac * innerH;
+        const y = margin.top + innerH - (curYFrac + frac) * innerH;
+        curYFrac += frac;
+
+        const rect = svgEl('rect', {
+          x, y,
+          width: barWidth,
+          height: Math.max(0.5, h),
+          fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(cIdx, sObj.isOther),
+          stroke: 'var(--surface)',
+          'stroke-width': '0.5',
+          'data-sample': sId,
+          'data-function': fKey,
+          'data-val': val.toFixed(2),
+        });
+
+        rect.addEventListener('mouseenter', (ev) => {
+          tooltipEl.style.display = 'block';
+          tooltipEl.innerHTML =
+            '<strong>' + escapeHtml(sId) + '</strong><br/>' +
+            escapeHtml(formatFunctionName(fKey, getLang())) + ': <b>' + val.toFixed(2) + '%</b>';
+          positionTooltip(ev);
+        });
+        rect.addEventListener('mousemove', positionTooltip);
+        rect.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+
+        barsG.appendChild(rect);
+      });
+
+      // Etiqueta del eje X (nombre de muestra)
+      const xLabel = svgEl('text', {
+        x: x + barWidth / 2,
+        y: margin.top + innerH + 14,
+        'text-anchor': 'end',
+        'font-size': '10.5px',
+        fill: 'var(--ink-2)',
+        transform: `rotate(-45, ${x + barWidth / 2}, ${margin.top + innerH + 14})`
+      });
+      xLabel.textContent = sId.length > 14 ? sId.slice(0, 12) + '…' : sId;
+      barsG.appendChild(xLabel);
+    });
+
+    svg.appendChild(barsG);
+
+    // Leyenda lateral interactiva
+    const legendG = svgEl('g', { class: 'ql-legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
+    const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink-1)' });
+    legTitle.textContent = t('inference.legendTitle') || 'Funciones Principales';
+    legendG.appendChild(legTitle);
+
+    series.forEach((sObj, i) => {
+      if (i > 22) return; // Limitar tamaño de leyenda
+      const y = 20 + i * 18;
+      const gItem = svgEl('g', { style: 'cursor:pointer;' });
+
+      const swatch = svgEl('rect', {
+        x: 0, y: y - 10,
+        width: 12, height: 12,
+        rx: 2,
+        fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(i, sObj.isOther)
+      });
+      gItem.appendChild(swatch);
+
+      const fName = formatFunctionName(sObj.key, getLang());
+      const label = svgEl('text', {
+        x: 18, y: y,
+        'font-size': '11px',
+        fill: 'var(--ink-2)'
+      });
+      label.textContent = fName.length > 22 ? fName.slice(0, 20) + '…' : fName;
+      gItem.appendChild(label);
+
+      gItem.addEventListener('mouseenter', () => {
+        barsG.querySelectorAll('rect').forEach((r) => {
+          if (r.getAttribute('data-function') !== sObj.key) {
+            r.style.opacity = '0.2';
+          }
+        });
+      });
+      gItem.addEventListener('mouseleave', () => {
+        barsG.querySelectorAll('rect').forEach((r) => { r.style.opacity = '1'; });
+      });
+
+      legendG.appendChild(gItem);
+    });
+
+    svg.appendChild(legendG);
+    card.appendChild(svg);
+
+    // Conectar editor de gráficos
+    editor = attachChartEditor({
+      key: 'inference-barplot',
+      svg,
+      mount: card,
+      filename: 'inferencia_funcional_barplot',
+      lang: getLang(),
+      textNodes: [
+        { id: 'yTitle', create: { text: t('inference.yAxisTitle') || 'Abundancia Relativa (%)', x: 20, y: margin.top + innerH / 2, anchor: 'middle' } },
+        { id: 'legTitle', create: { text: t('inference.legendTitle') || 'Funciones Principales', x: W - margin.right + 20, y: margin.top - 10, anchor: 'start' } },
+      ]
+    });
+  }
+
+  function renderAlluvialDiagram(card, matrix, opts) {
+    card.innerHTML = '';
+    const resolveGroup = opts.groupCol ? makeGroupResolver(state.metadata, opts.groupCol) : (s) => s;
+    const grouped = groupTaxaByAbundance(matrix, opts.minAbundance, opts.topN, {
+      isPercentage: true,
+      sampleKey: matrix.sampleKey,
+    });
+
+    const { topTaxa, hasOther } = grouped;
+    const preAgg = hasOther ? ['Otros'] : [];
+
+    const groupMatrixRes = computeGroupTaxaMatrix(grouped.rows, matrix.sampleKey, topTaxa, resolveGroup, {
+      preAggOtherHeaders: preAgg,
+    });
+
+    if (!groupMatrixRes.groups || groupMatrixRes.groups.length < 2) {
+      card.innerHTML =
+        '<div class="ql-empty" style="padding:40px 20px;">' +
+        '<p>' + (t('inference.alluvialNeedGroups') || 'El diagrama aluvial requiere al menos 2 grupos o muestras para trazar el flujo funcional.') + '</p>' +
+        '</div>';
+      return;
+    }
+
+    const W = 880;
+    const H = 480;
+    const margin = { top: 40, right: 180, bottom: 50, left: 60 };
+
+    const layout = computeAlluvialLayout(groupMatrixRes, {
+      width: W,
+      height: H,
+      margin,
+      nodeWidth: 20,
+      nodeGap: 3,
+    });
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      class: 'ql-svg',
+      role: 'img',
+      'aria-label': t('inference.alluvialAria') || 'Diagrama aluvial de flujos funcionales entre grupos',
+      style: 'max-width:100%;height:auto;display:block;'
+    });
+
+    // Enlaces / Flujos aluviales (Bézier cúbicas)
+    const linksG = svgEl('g', { class: 'ql-alluvial-links' });
+    layout.links.forEach((lk) => {
+      const d = buildAlluvialLinkPath(lk.x0, lk.y0, lk.h0, lk.x1, lk.y1, lk.h1);
+      const isOther = lk.taxonKey === '__other__' || lk.taxonKey === 'Otros';
+      const cIdx = topTaxa.indexOf(lk.taxonKey);
+      const color = isOther ? OTHER_COLOR : getSeriesColor(cIdx >= 0 ? cIdx : 0, isOther);
+
+      const path = svgEl('path', {
+        d,
+        fill: color,
+        'fill-opacity': '0.45',
+        stroke: 'none',
+        'data-taxon': lk.taxonKey,
+      });
+
+      path.addEventListener('mouseenter', (ev) => {
+        path.setAttribute('fill-opacity', '0.85');
+        tooltipEl.style.display = 'block';
+        tooltipEl.innerHTML =
+          '<strong>' + escapeHtml(formatFunctionName(lk.taxonKey, getLang())) + '</strong><br/>' +
+          escapeHtml(lk.sourceGroup) + ' → ' + escapeHtml(lk.targetGroup) + '<br/>' +
+          'Flujo medio: <b>' + (lk.value * 100).toFixed(2) + '%</b>';
+        positionTooltip(ev);
+      });
+      path.addEventListener('mousemove', positionTooltip);
+      path.addEventListener('mouseleave', () => {
+        path.setAttribute('fill-opacity', '0.45');
+        tooltipEl.style.display = 'none';
+      });
+
+      linksG.appendChild(path);
+    });
+    svg.appendChild(linksG);
+
+    // Nodos (bloques de cada grupo)
+    const nodesG = svgEl('g', { class: 'ql-alluvial-nodes' });
+    layout.nodes.forEach((nd) => {
+      const isOther = nd.taxonKey === '__other__' || nd.taxonKey === 'Otros';
+      const cIdx = topTaxa.indexOf(nd.taxonKey);
+      const color = isOther ? OTHER_COLOR : getSeriesColor(cIdx >= 0 ? cIdx : 0, isOther);
+
+      const rect = svgEl('rect', {
+        x: nd.x, y: nd.y,
+        width: nd.width, height: Math.max(1, nd.height),
+        fill: color,
+        stroke: 'var(--surface)',
+        'stroke-width': '0.5'
+      });
+      nodesG.appendChild(rect);
+    });
+    svg.appendChild(nodesG);
+
+    // Títulos de grupos (columnas X)
+    const groupsG = svgEl('g', { class: 'ql-alluvial-group-labels' });
+    layout.groups.forEach((g) => {
+      const label = svgEl('text', {
+        x: g.x + g.width / 2,
+        y: H - margin.bottom + 22,
+        'text-anchor': 'middle',
+        'font-size': '12px',
+        'font-weight': '600',
+        fill: 'var(--ink-1)'
+      });
+      label.textContent = g.name;
+      groupsG.appendChild(label);
+    });
+    svg.appendChild(groupsG);
+
+    card.appendChild(svg);
+
+    editor = attachChartEditor({
+      key: 'inference-alluvial',
+      svg,
+      mount: card,
+      filename: 'inferencia_funcional_aluvial',
+      lang: getLang(),
+    });
+  }
+
+  function renderDataTable(card, matrix) {
+    card.innerHTML = '';
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'ql-table-wrap';
+    tableWrap.style.maxHeight = '500px';
+    tableWrap.style.overflow = 'auto';
+
+    const table = document.createElement('table');
+    table.className = 'ql-table';
+
+    const thead = document.createElement('thead');
+    const trHead = document.createElement('tr');
+    matrix.headers.forEach((h) => {
+      const th = document.createElement('th');
+      th.textContent = h === matrix.sampleKey ? (t('common.sample') || 'Muestra') : formatFunctionName(h, getLang());
+      trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    matrix.rows.forEach((r) => {
+      const tr = document.createElement('tr');
+      matrix.headers.forEach((h) => {
+        const td = document.createElement('td');
+        if (h === matrix.sampleKey) {
+          td.textContent = r[h];
+          td.style.fontWeight = '600';
+        } else {
+          td.textContent = (r[h] !== undefined ? (+r[h]).toFixed(2) + '%' : '0.00%');
+          td.className = 'tabular';
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    card.appendChild(tableWrap);
+  }
+
+  function positionTooltip(ev) {
+    if (!tooltipEl) return;
+    const x = ev.clientX + 14;
+    const y = ev.clientY + 14;
+    tooltipEl.style.left = `${x}px`;
+    tooltipEl.style.top = `${y}px`;
+  }
+
+  function generateCsv(matrix) {
+    const lines = [];
+    lines.push(matrix.headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','));
+    matrix.rows.forEach((r) => {
+      const rowVals = matrix.headers.map((h) => {
+        const val = r[h] !== undefined ? r[h] : 0;
+        return typeof val === 'number' ? val.toFixed(4) : `"${String(val).replace(/"/g, '""')}"`;
+      });
+      lines.push(rowVals.join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function downloadBlob(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Suscribirse a cambios del estado global
+  const unsubscribe = subscribe(() => paint());
+  paint();
+
+  return () => {
+    if (unsubscribe) unsubscribe();
+    if (editor) editor.destroy();
+    if (tooltipEl && tooltipEl.parentNode) tooltipEl.parentNode.removeChild(tooltipEl);
+  };
+}

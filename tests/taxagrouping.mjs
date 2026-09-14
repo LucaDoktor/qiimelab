@@ -145,3 +145,4 @@ if (failed) {
   console.log('✅ Todos los tests de taxagrouping pasaron exitosamente.');
   process.exit(0);
 }
+
