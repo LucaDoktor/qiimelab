@@ -1,7 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, openChartEditor } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore } from '../lib/stats.js';
@@ -24,6 +24,33 @@ function svgEl(tag, attrs) {
   const e = document.createElementNS(SVG_NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   return e;
+}
+
+const CAT_HEX_FALLBACKS = {
+  '--cat-1': '#2a78d6',
+  '--cat-2': '#d97706',
+  '--cat-3': '#10b981',
+  '--cat-4': '#ef4444',
+  '--cat-5': '#8b5cf6',
+  '--cat-6': '#ec4899',
+  '--cat-7': '#06b6d4',
+  '--cat-8': '#6b7280',
+};
+
+function resolveVarHex(cv) {
+  if (typeof window !== 'undefined' && window.getComputedStyle) {
+    try {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(cv).trim();
+      if (raw && raw.startsWith('#')) return raw;
+      if (raw && raw.startsWith('rgb')) {
+        const rgb = raw.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          return '#' + rgb.slice(0, 3).map((x) => parseInt(x, 10).toString(16).padStart(2, '0')).join('');
+        }
+      }
+    } catch (e) {}
+  }
+  return CAT_HEX_FALLBACKS[cv] || '#2a78d6';
 }
 
 function emptyState(container, title, desc) {
@@ -56,11 +83,20 @@ export function render(container) {
   let topN = TOP_N_DEFAULT;
   let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
   let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
-  let view = 'barplot';        // 'barplot' | 'biomarkers'
+  let view = 'barplot';        // 'barplot' | 'alluvial' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
   let bmScore = 'cliffs';      // 'cliffs' | 'lda' — qué score manda en el gráfico y el orden por defecto
   let bmSort = { key: 'delta', dir: 'desc' };
   let editor = null;
+  let alluvialNodeWidth = 20;
+  let alluvialNodeGap = 2;
+  let alluvialLinkOpacity = 0.4;
+  let chartFontFamily = 'var(--font-body)';
+  let chartIsBold = false;
+  let chartIsItalic = false;
+  let chartFontSize = 13;
+  let seriesColorOverrides = {};
+  let openTaxaChartEditor = () => {};
 
   function paint() {
     if (editor) { editor.destroy(); editor = null; }
@@ -113,7 +149,29 @@ export function render(container) {
     // ---- panel principal: gráfico ----
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + (view === 'alluvial' ? t('barplots.alluvialNote') : t('barplots.chartNote')) + '</p>';
+
+    const chartHeader = document.createElement('div');
+    chartHeader.className = 'ql-chart-header';
+    const noteP = document.createElement('p');
+    noteP.className = 'ql-panel-note';
+    noteP.style.margin = '0';
+    noteP.textContent = (view === 'alluvial' ? t('barplots.alluvialNote') : t('barplots.chartNote'));
+    chartHeader.appendChild(noteP);
+
+    const settingsBtn = document.createElement('button');
+    settingsBtn.type = 'button';
+    settingsBtn.className = 'ql-btn ql-btn-sm ql-btn-settings';
+    settingsBtn.title = t('barplots.settingsBtnTitle');
+    settingsBtn.setAttribute('aria-label', t('barplots.settingsBtnTitle'));
+    settingsBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> <span>' + t('barplots.settingsBtn') + '</span>';
+    if (view !== 'alluvial') {
+      settingsBtn.style.display = 'none';
+    }
+    settingsBtn.addEventListener('click', () => {
+      openTaxaChartEditor();
+    });
+    chartHeader.appendChild(settingsBtn);
+    chartPanel.appendChild(chartHeader);
 
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
@@ -370,187 +428,298 @@ export function render(container) {
         return;
       }
 
-      const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
-      const legRows = Math.ceil(series.length / legCols);
-      const colorsRepeat = topTaxa.length > CAT_VARS.length;
+      let W = 680;
+      let H = 450;
 
-      const marginL = 56, marginR = 36, marginT = 44;
-      const usableH = 340;
-      const numG = groupMatrixData.groups.length;
-      const colStep = Math.max(120, Math.min(240, 800 / Math.max(numG - 1, 1)));
-      const W = Math.max(680, marginL + marginR + (numG - 1) * colStep + 30);
-      const axisGap = 54;
-      const marginB = axisGap + 16 + legRows * 15 + (colorsRepeat ? 20 : 4);
-      const H = marginT + usableH + marginB;
+      function drawAlluvialSvg() {
+        const legCols = series.length > 13 ? 3 : series.length > 6 ? 2 : 1;
+        const legRows = Math.ceil(series.length / legCols);
+        const colorsRepeat = topTaxa.length > CAT_VARS.length;
 
-      const layout = computeAlluvialLayout(
-        {
-          groups: groupMatrixData.groups,
-          taxa: series,
-          matrix: groupMatrixData.matrix,
-          sampleCounts: groupMatrixData.sampleCounts,
-        },
-        {
-          width: W,
-          height: marginT + usableH + 30,
-          margin: { top: marginT, right: marginR, bottom: 30, left: marginL },
-          nodeWidth: 20,
-          nodeGap: 2,
-        }
-      );
+        const marginL = 56, marginR = 36, marginT = 44;
+        const usableH = 340;
+        const numG = groupMatrixData.groups.length;
+        const colStep = Math.max(120, Math.min(240, 800 / Math.max(numG - 1, 1)));
+        W = Math.max(680, marginL + marginR + (numG - 1) * colStep + 30);
+        const axisGap = 54;
+        const marginB = axisGap + 16 + legRows * 15 + (colorsRepeat ? 20 : 4);
+        H = marginT + usableH + marginB;
 
-      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-      svg.style.width = W + 'px';
-      svg.style.maxWidth = 'none';
-      while (svg.firstChild) svg.removeChild(svg.firstChild);
+        const layout = computeAlluvialLayout(
+          {
+            groups: groupMatrixData.groups,
+            taxa: series,
+            matrix: groupMatrixData.matrix,
+            sampleCounts: groupMatrixData.sampleCounts,
+          },
+          {
+            width: W,
+            height: marginT + usableH + 30,
+            margin: { top: marginT, right: marginR, bottom: 30, left: marginL },
+            nodeWidth: alluvialNodeWidth,
+            nodeGap: alluvialNodeGap,
+          }
+        );
 
-      // Líneas de referencia del eje Y (0%, 25%, 50%, 75%, 100%)
-      [0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
-        const y = marginT + usableH - frac * usableH;
-        svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
-        const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
-        tk.textContent = Math.round(frac * 100) + '%';
-        svg.appendChild(tk);
-      });
-      svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + usableH, class: 'ql-baseline-line' }));
+        svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+        svg.style.width = W + 'px';
+        svg.style.maxWidth = 'none';
+        svg.style.fontFamily = chartFontFamily;
+        if (chartIsBold) svg.style.fontWeight = 'bold';
+        else svg.style.removeProperty('font-weight');
+        if (chartIsItalic) svg.style.fontStyle = 'italic';
+        else svg.style.removeProperty('font-style');
+        if (chartFontSize) svg.style.fontSize = chartFontSize + 'px';
+        else svg.style.removeProperty('font-size');
 
-      // Título eje Y
-      const yTitle = svgEl('text', {
-        x: 15, y: marginT + usableH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
-        transform: 'rotate(-90 15 ' + (marginT + usableH / 2) + ')', 'data-ce': 'ytitle',
-      });
-      yTitle.textContent = t('barplots.axisPct');
-      svg.appendChild(yTitle);
+        const existingTitle = svg.querySelector('.ce-title');
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-      // Resaltado interactivo de linaje (hover: 100% activo, 10% el resto)
-      const highlightTaxon = (taxonKey) => {
-        svg.classList.add('is-highlighting');
-        svg.querySelectorAll('[data-taxon-key]').forEach((el) => {
-          el.classList.toggle('is-highlighted', el.getAttribute('data-taxon-key') === taxonKey);
+        // Líneas de referencia del eje Y (0%, 25%, 50%, 75%, 100%)
+        [0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
+          const y = marginT + usableH - frac * usableH;
+          svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+          const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+          tk.textContent = Math.round(frac * 100) + '%';
+          svg.appendChild(tk);
         });
-      };
+        svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + usableH, class: 'ql-baseline-line' }));
 
-      const clearHighlight = () => {
-        svg.classList.remove('is-highlighting');
-        svg.querySelectorAll('.is-highlighted').forEach((el) => el.classList.remove('is-highlighted'));
-        tooltip.classList.remove('is-show');
-      };
+        // Título eje Y
+        const yTitle = svgEl('text', {
+          x: 15, y: marginT + usableH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+          transform: 'rotate(-90 15 ' + (marginT + usableH / 2) + ')', 'data-ce': 'ytitle',
+        });
+        yTitle.textContent = t('barplots.axisPct');
+        svg.appendChild(yTitle);
 
-      // Enlaces (flujos aluviales Bézier)
-      const linksG = svgEl('g', { class: 'ql-alluvial-links' });
-      layout.links.forEach((link) => {
-        const path = svgEl('path', {
-          d: link.d,
-          class: 'ql-alluvial-link',
-          fill: 'var(' + link.colorVar + ')',
-          'data-taxon-key': link.taxonKey,
-          ...(link.taxonKey === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(link.colorVar) }),
-        });
-        path.addEventListener('mouseenter', () => {
-          highlightTaxon(link.taxonKey);
-          const midY = (link.y0 + link.h0 / 2 + link.y1 + link.h1 / 2) / 2;
-          const detail = '<strong>' + escapeHtml(link.taxonLabel) + '</strong><br>' +
-            escapeHtml(link.sourceGroup) + ': ' + (link.sourceFraction * 100).toFixed(1) + '% &rarr; ' +
-            escapeHtml(link.targetGroup) + ': ' + (link.targetFraction * 100).toFixed(1) + '%';
-          showAlluvialTooltip(link.taxonLabel, detail, link.cx, midY, chartWrap, svg, W, H, tooltip);
-        });
-        path.addEventListener('mouseleave', clearHighlight);
-        linksG.appendChild(path);
-      });
-      svg.appendChild(linksG);
+        // Resaltado interactivo de linaje (hover: 100% activo, 10% el resto)
+        const highlightTaxon = (taxonKey) => {
+          svg.classList.add('is-highlighting');
+          svg.querySelectorAll('[data-taxon-key]').forEach((el) => {
+            el.classList.toggle('is-highlighted', el.getAttribute('data-taxon-key') === taxonKey);
+          });
+        };
 
-      // Nodos (bloques apilados en cada columna)
-      const nodesG = svgEl('g', { class: 'ql-alluvial-nodes' });
-      layout.nodes.forEach((node) => {
-        if (node.height <= 0) return;
-        const rect = svgEl('rect', {
-          x: node.x,
-          y: node.y,
-          width: node.width,
-          height: node.height,
-          rx: 2,
-          class: 'ql-alluvial-node',
-          fill: 'var(' + node.colorVar + ')',
-          'data-taxon-key': node.taxonKey,
-          ...(node.taxonKey === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(node.colorVar) }),
-        });
-        rect.addEventListener('mouseenter', () => {
-          highlightTaxon(node.taxonKey);
-          const detail = '<strong>' + escapeHtml(node.taxonLabel) + '</strong><br>' +
-            escapeHtml(node.group) + ': ' + (node.fraction * 100).toFixed(1) + '%';
-          showAlluvialTooltip(node.taxonLabel, detail, node.x + node.width / 2, node.y, chartWrap, svg, W, H, tooltip);
-        });
-        rect.addEventListener('mouseleave', clearHighlight);
-        nodesG.appendChild(rect);
-      });
-      svg.appendChild(nodesG);
+        const clearHighlight = () => {
+          svg.classList.remove('is-highlighting');
+          svg.querySelectorAll('.is-highlighted').forEach((el) => el.classList.remove('is-highlighted'));
+          tooltip.classList.remove('is-show');
+        };
 
-      // Etiquetas de columnas (grupos) y tamaño muestral (n)
-      layout.columns.forEach((col) => {
-        const cx = col.x + col.width / 2;
-        const gt = svgEl('text', {
-          x: cx,
-          y: marginT + usableH + 18,
-          class: 'ql-tick-label',
-          'text-anchor': 'middle',
-          'font-weight': '600',
+        // Enlaces (flujos aluviales Bézier)
+        const linksG = svgEl('g', { class: 'ql-alluvial-links' });
+        layout.links.forEach((link) => {
+          const fillCol = seriesColorOverrides[link.taxonKey] || 'var(' + link.colorVar + ')';
+          const path = svgEl('path', {
+            d: link.d,
+            class: 'ql-alluvial-link',
+            fill: fillCol,
+            style: 'fill-opacity: ' + alluvialLinkOpacity + ';',
+            'data-taxon-key': link.taxonKey,
+            ...(link.taxonKey === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(link.colorVar) }),
+          });
+          path.addEventListener('mouseenter', () => {
+            highlightTaxon(link.taxonKey);
+            const midY = (link.y0 + link.h0 / 2 + link.y1 + link.h1 / 2) / 2;
+            const detail = '<strong>' + escapeHtml(link.taxonLabel) + '</strong><br>' +
+              escapeHtml(link.sourceGroup) + ': ' + (link.sourceFraction * 100).toFixed(1) + '% &rarr; ' +
+              escapeHtml(link.targetGroup) + ': ' + (link.targetFraction * 100).toFixed(1) + '%';
+            showAlluvialTooltip(link.taxonLabel, detail, link.cx, midY, chartWrap, svg, W, H, tooltip);
+          });
+          path.addEventListener('mouseleave', clearHighlight);
+          linksG.appendChild(path);
         });
-        gt.textContent = col.group;
-        svg.appendChild(gt);
+        svg.appendChild(linksG);
 
-        if (col.sampleCount > 0) {
-          const nt = svgEl('text', {
+        // Nodos (bloques apilados en cada columna)
+        const nodesG = svgEl('g', { class: 'ql-alluvial-nodes' });
+        layout.nodes.forEach((node) => {
+          if (node.height <= 0) return;
+          const fillCol = seriesColorOverrides[node.taxonKey] || 'var(' + node.colorVar + ')';
+          const rect = svgEl('rect', {
+            x: node.x,
+            y: node.y,
+            width: node.width,
+            height: node.height,
+            rx: 2,
+            class: 'ql-alluvial-node',
+            fill: fillCol,
+            'data-taxon-key': node.taxonKey,
+            ...(node.taxonKey === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(node.colorVar) }),
+          });
+          rect.addEventListener('mouseenter', () => {
+            highlightTaxon(node.taxonKey);
+            const detail = '<strong>' + escapeHtml(node.taxonLabel) + '</strong><br>' +
+              escapeHtml(node.group) + ': ' + (node.fraction * 100).toFixed(1) + '%';
+            showAlluvialTooltip(node.taxonLabel, detail, node.x + node.width / 2, node.y, chartWrap, svg, W, H, tooltip);
+          });
+          rect.addEventListener('mouseleave', clearHighlight);
+          nodesG.appendChild(rect);
+        });
+        svg.appendChild(nodesG);
+
+        // Etiquetas de columnas (grupos) y tamaño muestral (n)
+        layout.columns.forEach((col) => {
+          const cx = col.x + col.width / 2;
+          const gt = svgEl('text', {
             x: cx,
-            y: marginT + usableH + 32,
+            y: marginT + usableH + 18,
             class: 'ql-tick-label',
             'text-anchor': 'middle',
-            fill: 'var(--ink-muted)',
+            'font-weight': '600',
           });
-          nt.textContent = 'n = ' + col.sampleCount;
-          svg.appendChild(nt);
+          gt.textContent = col.group;
+          svg.appendChild(gt);
+
+          if (col.sampleCount > 0) {
+            const nt = svgEl('text', {
+              x: cx,
+              y: marginT + usableH + 32,
+              class: 'ql-tick-label',
+              'text-anchor': 'middle',
+              fill: 'var(--ink-muted)',
+            });
+            nt.textContent = 'n = ' + col.sampleCount;
+            svg.appendChild(nt);
+          }
+        });
+
+        // Título eje X
+        const xLabelBase = marginT + usableH + 48;
+        const xTitle = svgEl('text', {
+          x: marginL + (W - marginL - marginR) / 2,
+          y: xLabelBase,
+          class: 'ql-axis-label',
+          'text-anchor': 'middle',
+          'data-ce': 'xtitle',
+        });
+        xTitle.textContent = (sortByGroup && groupCol) ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.alluvialAxisGroups');
+        svg.appendChild(xTitle);
+
+        // Leyenda integrada en SVG
+        const legTranslateX = marginL;
+        const legTranslateY = xLabelBase + 18;
+        const legG = svgEl('g', { 'data-ce': 'legend' });
+        const colW = Math.min(260, Math.max(150, (W - legTranslateX - 12) / legCols));
+        series.forEach((s, i) => {
+          const col = Math.floor(i / legRows), rw = i % legRows;
+          const xx = col * colW, yy = rw * 15;
+          const itemG = svgEl('g', { class: 'ql-alluvial-leg-item', style: 'cursor:pointer;', 'data-taxon-key': s.key });
+          const fillCol = seriesColorOverrides[s.key] || 'var(' + s.colorVar + ')';
+          itemG.appendChild(svgEl('rect', {
+            x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: fillCol,
+            ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+          }));
+          const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+          lt.textContent = s.label;
+          itemG.appendChild(lt);
+          itemG.addEventListener('mouseenter', () => highlightTaxon(s.key));
+          itemG.addEventListener('mouseleave', clearHighlight);
+          legG.appendChild(itemG);
+        });
+        if (colorsRepeat) {
+          const nt = svgEl('text', { x: 0, y: legRows * 15 + 4, class: 'ql-tick-label' });
+          nt.setAttribute('fill', 'var(--ink-muted)');
+          nt.textContent = t('barplots.colorsRepeat');
+          legG.appendChild(nt);
         }
-      });
+        legG.setAttribute('transform', 'translate(' + legTranslateX + ',' + legTranslateY + ')');
+        svg.appendChild(legG);
 
-      // Título eje X
-      const xLabelBase = marginT + usableH + 48;
-      const xTitle = svgEl('text', {
-        x: marginL + (W - marginL - marginR) / 2,
-        y: xLabelBase,
-        class: 'ql-axis-label',
-        'text-anchor': 'middle',
-        'data-ce': 'xtitle',
-      });
-      xTitle.textContent = (sortByGroup && groupCol) ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.alluvialAxisGroups');
-      svg.appendChild(xTitle);
+        if (existingTitle) {
+          svg.appendChild(existingTitle);
+        }
 
-      // Leyenda integrada en SVG
-      const legTranslateX = marginL;
-      const legTranslateY = xLabelBase + 18;
-      const legG = svgEl('g', { 'data-ce': 'legend' });
-      const colW = Math.min(260, Math.max(150, (W - legTranslateX - 12) / legCols));
-      series.forEach((s, i) => {
-        const col = Math.floor(i / legRows), rw = i % legRows;
-        const xx = col * colW, yy = rw * 15;
-        const itemG = svgEl('g', { class: 'ql-alluvial-leg-item', style: 'cursor:pointer;', 'data-taxon-key': s.key });
-        itemG.appendChild(svgEl('rect', {
-          x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + s.colorVar + ')',
-          ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
-        }));
-        const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
-        lt.textContent = s.label;
-        itemG.appendChild(lt);
-        itemG.addEventListener('mouseenter', () => highlightTaxon(s.key));
-        itemG.addEventListener('mouseleave', clearHighlight);
-        legG.appendChild(itemG);
-      });
-      if (colorsRepeat) {
-        const nt = svgEl('text', { x: 0, y: legRows * 15 + 4, class: 'ql-tick-label' });
-        nt.setAttribute('fill', 'var(--ink-muted)');
-        nt.textContent = t('barplots.colorsRepeat');
-        legG.appendChild(nt);
+        if (editor && typeof editor.sync === 'function') {
+          editor.sync();
+        }
       }
-      legG.setAttribute('transform', 'translate(' + legTranslateX + ',' + legTranslateY + ')');
-      svg.appendChild(legG);
+
+      openTaxaChartEditor = () => {
+        const configOptions = {
+          title: t('chartEditor.title') || 'Ajustes de la figura',
+          typography: {
+            fontFamily: chartFontFamily,
+            isBold: chartIsBold,
+            isItalic: chartIsItalic,
+            fontSize: chartFontSize,
+          },
+          colors: {
+            series: series.map((s) => ({
+              id: s.key,
+              label: s.label,
+              color: seriesColorOverrides[s.key] || resolveVarHex(s.colorVar),
+            })),
+            linkOpacity: alluvialLinkOpacity,
+          },
+          geometry: {
+            sliders: [
+              {
+                id: 'nodeWidth',
+                label: t('chartEditor.nodeWidth') || 'Ancho de los nodos/barras',
+                min: 6,
+                max: 60,
+                step: 2,
+                value: alluvialNodeWidth,
+                unit: 'px',
+              },
+              {
+                id: 'nodeGap',
+                label: t('chartEditor.nodeGap') || 'Separación entre nodos',
+                min: 0,
+                max: 15,
+                step: 1,
+                value: alluvialNodeGap,
+                unit: 'px',
+              },
+              {
+                id: 'linkOpacity',
+                label: t('chartEditor.linkOpacity') || 'Opacidad de los flujos',
+                min: 0.1,
+                max: 0.95,
+                step: 0.05,
+                value: alluvialLinkOpacity,
+                isPercent: true,
+              },
+            ],
+          },
+        };
+
+        openChartEditor(svg, configOptions, (action, payload) => {
+          if (action === 'nodeWidth') {
+            alluvialNodeWidth = Number(payload);
+          } else if (action === 'nodeGap') {
+            alluvialNodeGap = Number(payload);
+          } else if (action === 'linkOpacity') {
+            alluvialLinkOpacity = Number(payload);
+          } else if (action === 'fontFamily') {
+            chartFontFamily = String(payload);
+          } else if (action === 'isBold') {
+            chartIsBold = Boolean(payload);
+          } else if (action === 'isItalic') {
+            chartIsItalic = Boolean(payload);
+          } else if (action === 'fontSize') {
+            chartFontSize = Number(payload);
+          } else if (action === 'seriesColor') {
+            if (payload && payload.id) {
+              seriesColorOverrides[payload.id] = payload.color;
+            }
+          } else if (action === 'reset') {
+            alluvialNodeWidth = 20;
+            alluvialNodeGap = 2;
+            alluvialLinkOpacity = 0.4;
+            chartFontFamily = 'var(--font-body)';
+            chartIsBold = false;
+            chartIsItalic = false;
+            chartFontSize = 13;
+            seriesColorOverrides = {};
+          }
+          drawAlluvialSvg();
+        });
+      };
+
+      drawAlluvialSvg();
 
       // Editor de gráfico
       if (editor) editor.destroy();

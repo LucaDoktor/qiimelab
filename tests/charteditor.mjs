@@ -1,0 +1,426 @@
+// tests/charteditor.mjs — Test unitario y de integración para:
+// 1. Editor gráfico global (openChartEditor en js/lib/chartEditor.js).
+// 2. Limpieza UI con botones de icono cuadrado (.ql-btn-icon-sq) en la tabla Sanger.
+// 3. Integración en el diagrama aluvial con parámetros geométricos y reactividad.
+
+import { openChartEditor } from '../js/lib/chartEditor.js';
+import * as taxaModule from '../js/modules/taxa.js';
+import * as taxaBarplotModule from '../js/modules/taxaBarplot.js';
+import { computeAlluvialLayout } from '../js/lib/alluvial.js';
+
+let failed = false;
+function check(label, condition, detail = '') {
+  const ok = Boolean(condition);
+  console.log((ok ? '  ✓ ' : '  ✗ ') + label + (detail ? '  ' + detail : ''));
+  if (!ok) failed = true;
+}
+
+// ---- Mini entorno DOM mock para testing de componentes UI ----
+function createMockDOM() {
+  const listeners = new Map();
+  let nextId = 1;
+
+  function makeEl(tagName) {
+    const el = {
+      _uid: nextId++,
+      tagName: tagName.toUpperCase(),
+      attributes: {},
+      style: {},
+      classList: {
+        _classes: new Set(),
+        add(...cls) { cls.forEach((c) => el.classList._classes.add(c)); },
+        remove(...cls) { cls.forEach((c) => el.classList._classes.delete(c)); },
+        toggle(cls, force) {
+          if (force === undefined) {
+            if (el.classList._classes.has(cls)) el.classList._classes.delete(cls);
+            else el.classList._classes.add(cls);
+          } else if (force) {
+            el.classList._classes.add(cls);
+          } else {
+            el.classList._classes.delete(cls);
+          }
+        },
+        contains(cls) { return el.classList._classes.has(cls); },
+      },
+      children: [],
+      parentElement: null,
+      _value: '',
+      _checked: false,
+      _listeners: {},
+
+      get id() { return el.attributes.id || ''; },
+      set id(val) { el.attributes.id = val; },
+
+      get className() { return Array.from(el.classList._classes).join(' '); },
+      set className(val) {
+        el.classList._classes.clear();
+        String(val || '').split(/\s+/).filter(Boolean).forEach((c) => el.classList._classes.add(c));
+      },
+
+      get value() { return el._value; },
+      set value(v) { el._value = String(v); },
+
+      get checked() { return el._checked; },
+      set checked(v) { el._checked = Boolean(v); },
+
+      get firstChild() { return el.children[0] || null; },
+      get lastElementChild() { return el.children[el.children.length - 1] || null; },
+
+      setAttribute(k, v) { el.attributes[k] = String(v); },
+      getAttribute(k) { return el.attributes[k] || null; },
+      removeAttribute(k) { delete el.attributes[k]; },
+      hasAttribute(k) { return k in el.attributes; },
+
+      appendChild(child) {
+        if (!child) return child;
+        if (typeof child === 'string') {
+          child = makeEl('#text');
+          child.textContent = child;
+        }
+        child.parentElement = el;
+        el.children.push(child);
+        return child;
+      },
+      removeChild(child) {
+        const idx = el.children.indexOf(child);
+        if (idx >= 0) {
+          el.children.splice(idx, 1);
+          child.parentElement = null;
+        }
+        return child;
+      },
+      remove() {
+        if (el.parentElement) {
+          el.parentElement.removeChild(el);
+        }
+      },
+      addEventListener(type, fn) {
+        el._listeners[type] = el._listeners[type] || [];
+        el._listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!el._listeners[type]) return;
+        el._listeners[type] = el._listeners[type].filter((cb) => cb !== fn);
+      },
+      dispatchEvent(type, ev = {}) {
+        const list = el._listeners[type] || [];
+        list.forEach((cb) => cb({ target: el, ...ev }));
+      },
+      querySelector(selector) {
+        return findFirst(el, selector);
+      },
+      querySelectorAll(selector) {
+        const results = [];
+        findAll(el, selector, results);
+        return results;
+      },
+      getBoundingClientRect() {
+        return { top: 50, left: 50, width: 600, height: 500, right: 650, bottom: 550 };
+      },
+      showModal() {
+        el.open = true;
+        el.setAttribute('open', '');
+      },
+      close() {
+        el.open = false;
+        el.removeAttribute('open');
+        el.dispatchEvent('close');
+      },
+    };
+
+    // Helper para innerHTML sencillo
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return el._innerHTML || ''; },
+      set(html) {
+        el._innerHTML = html;
+        parseSimpleHtml(html, el);
+      },
+    });
+
+    return el;
+  }
+
+  function parseSimpleHtml(html, parent) {
+    parent.children = [];
+    const tagRegex = /<([a-z0-9-]+)([^>]*)>(.*?)<\/\1>|<([a-z0-9-]+)([^>]*)\/>/gis;
+    let match;
+    let hasChildren = false;
+    while ((match = tagRegex.exec(html)) !== null) {
+      hasChildren = true;
+      const tag = match[1] || match[4];
+      const attrsStr = match[2] || match[5] || '';
+      const inner = match[3] || '';
+      const child = makeEl(tag);
+      parseAttrs(attrsStr, child);
+      if (inner) child.innerHTML = inner;
+      parent.appendChild(child);
+    }
+    if (!hasChildren && html.includes('<')) {
+      // Tags autocontenidos como input
+      const singleTagRegex = /<([a-z0-9-]+)([^>]*)>/gi;
+      let m2;
+      while ((m2 = singleTagRegex.exec(html)) !== null) {
+        const tag = m2[1];
+        const attrsStr = m2[2] || '';
+        const child = makeEl(tag);
+        parseAttrs(attrsStr, child);
+        parent.appendChild(child);
+      }
+    }
+  }
+
+  function parseAttrs(attrStr, el) {
+    const attrRegex = /([a-z0-9_:-]+)(?:="([^"]*)")?/gi;
+    let match;
+    while ((match = attrRegex.exec(attrStr)) !== null) {
+      const name = match[1];
+      const val = match[2] !== undefined ? match[2] : '';
+      if (name === 'id') el.id = val;
+      else if (name === 'class') el.className = val;
+      else if (name === 'type') { el.type = val; el.setAttribute('type', val); }
+      else if (name === 'value') { el.value = val; el.setAttribute('value', val); }
+      else if (name === 'min') { el.min = val; el.setAttribute('min', val); }
+      else if (name === 'max') { el.max = val; el.setAttribute('max', val); }
+      else if (name === 'step') { el.step = val; el.setAttribute('step', val); }
+      else el.setAttribute(name, val);
+    }
+  }
+
+  function matchesSelector(el, selector) {
+    if (!el || !selector) return false;
+    if (selector.startsWith('#')) return el.id === selector.slice(1);
+    if (selector.startsWith('.')) return el.classList.contains(selector.slice(1));
+    const attrMatch = selector.match(/^([a-z0-9_-]*)\[([a-z0-9_-]+)(?:="([^"]*)")?\]$/i);
+    if (attrMatch) {
+      const [, tag, k, v] = attrMatch;
+      if (tag && el.tagName.toLowerCase() !== tag.toLowerCase()) return false;
+      if (v === undefined) return el.hasAttribute(k);
+      return el.getAttribute(k) === v || (k === 'type' && el.type === v);
+    }
+    return el.tagName.toLowerCase() === selector.toLowerCase();
+  }
+
+  function findFirst(root, selector) {
+    for (const child of root.children) {
+      if (matchesSelector(child, selector)) return child;
+      const sub = findFirst(child, selector);
+      if (sub) return sub;
+    }
+    return null;
+  }
+
+  function findAll(root, selector, acc) {
+    for (const child of root.children) {
+      if (matchesSelector(child, selector)) acc.push(child);
+      findAll(child, selector, acc);
+    }
+  }
+
+  const doc = {
+    body: makeEl('body'),
+    createElement: (tag) => makeEl(tag),
+    createElementNS: (ns, tag) => makeEl(tag),
+    createTextNode: (txt) => {
+      const el = makeEl('#text');
+      el.textContent = txt;
+      return el;
+    },
+    getElementById: (id) => findFirst(doc.body, '#' + id),
+    querySelector: (sel) => findFirst(doc.body, sel),
+    querySelectorAll: (sel) => {
+      const results = [];
+      findAll(doc.body, sel, results);
+      return results;
+    },
+  };
+
+  return { doc, makeEl };
+}
+
+console.log('\n--- 1. Pruebas de infraestructura: openChartEditor en js/lib/chartEditor.js ---');
+{
+  const { doc, makeEl } = createMockDOM();
+  globalThis.document = doc;
+  globalThis.window = {
+    getComputedStyle: () => ({ getPropertyValue: () => '#2a78d6' }),
+  };
+
+  const dummySvg = makeEl('svg');
+  const updates = [];
+  const initialConfig = {
+    title: 'Ajustes del gráfico',
+    typography: {
+      fontFamily: 'var(--font-body)',
+      fontSize: 14,
+      isBold: false,
+      isItalic: false,
+    },
+    colors: {
+      series: [
+        { id: 'tax1', label: 'Bacteroides', color: '#2a78d6' },
+        { id: 'tax2', label: 'Prevotella', color: '#d97706' },
+      ],
+      linkOpacity: 0.4,
+    },
+    geometry: {
+      sliders: [
+        { id: 'nodeWidth', label: 'Ancho de nodos', min: 10, max: 50, step: 2, value: 20, unit: 'px' },
+        { id: 'nodeGap', label: 'Espaciado vertical', min: 0, max: 10, step: 1, value: 2, unit: 'px' },
+        { id: 'linkOpacity', label: 'Opacidad', min: 0.1, max: 0.9, step: 0.05, value: 0.4, isPercent: true },
+      ],
+    },
+  };
+
+  const editorInstance = openChartEditor(dummySvg, initialConfig, (action, payload, fullCfg) => {
+    updates.push({ action, payload, fullCfg });
+  });
+
+  const dialog = doc.body.querySelector('.ql-chart-editor-dialog');
+  check('crea elemento dialog con clase ql-chart-editor-dialog', Boolean(dialog));
+  check('el diálogo está abierto (showModal invocado)', dialog && dialog.open === true);
+
+  // Navegación de pestañas
+  const tabBtns = dialog.querySelectorAll('.ql-ce-tab-btn');
+  check('contiene 3 pestañas (Geometría, Tipografía, Colores)', tabBtns.length === 3);
+
+  const panels = dialog.querySelectorAll('.ql-ce-tab-panel');
+  check('contiene 3 paneles asociados a las pestañas', panels.length === 3);
+
+  // Comprobar cambio de pestaña
+  const typoTabBtn = Array.from(tabBtns).find((b) => b.getAttribute('data-tab') === 'typography');
+  check('existe botón de pestaña Tipografía', Boolean(typoTabBtn));
+  if (typoTabBtn) {
+    typoTabBtn.dispatchEvent('click');
+    check('pestaña Tipografía se activa al pulsar', typoTabBtn.classList.contains('is-active'));
+  }
+
+  // Comprobar interacción de sliders de geometría
+  const nodeWidthSlider = dialog.querySelector('#ql-ce-sl-nodeWidth-r');
+  check('slider de ancho de nodos presente', Boolean(nodeWidthSlider));
+  if (nodeWidthSlider) {
+    nodeWidthSlider.value = 36;
+    nodeWidthSlider.dispatchEvent('input');
+    const lastUpdate = updates[updates.length - 1];
+    check('mover slider nodeWidth dispara callback onUpdate con valor numérico 36',
+      lastUpdate && lastUpdate.action === 'nodeWidth' && lastUpdate.payload === 36);
+  }
+
+  const linkOpacitySlider = dialog.querySelector('#ql-ce-sl-linkOpacity-r');
+  check('slider de opacidad de flujos presente', Boolean(linkOpacitySlider));
+  if (linkOpacitySlider) {
+    linkOpacitySlider.value = 75; // 75%
+    linkOpacitySlider.dispatchEvent('input');
+    const lastUpdate = updates[updates.length - 1];
+    check('mover slider linkOpacity (porcentual) convierte a fracción 0.75',
+      lastUpdate && lastUpdate.action === 'linkOpacity' && Math.abs(lastUpdate.payload - 0.75) < 1e-4);
+  }
+
+  // Comprobar tipografía
+  const fontSelect = dialog.querySelector('#ql-ce-font-select');
+  check('selector de fuente presente', Boolean(fontSelect));
+  if (fontSelect) {
+    fontSelect.value = 'var(--font-mono)';
+    fontSelect.dispatchEvent('change');
+    const lastUpdate = updates[updates.length - 1];
+    check('cambiar fuente dispara onUpdate(fontFamily)',
+      lastUpdate && lastUpdate.action === 'fontFamily' && lastUpdate.payload === 'var(--font-mono)');
+  }
+
+  // Comprobar checkbox de negrita
+  const boldChk = dialog.querySelector('input[type="checkbox"]');
+  check('checkbox de estilo presente', Boolean(boldChk));
+  if (boldChk) {
+    boldChk.checked = true;
+    boldChk.dispatchEvent('change');
+    const lastUpdate = updates[updates.length - 1];
+    check('marcar negrita dispara onUpdate(isBold, true)',
+      lastUpdate && lastUpdate.action === 'isBold' && lastUpdate.payload === true);
+  }
+
+  // Cierre del diálogo
+  editorInstance.close();
+  check('cerrar diálogo lo retira del body', !doc.body.querySelector('.ql-chart-editor-dialog'));
+}
+
+console.log('\n--- 2. Limpieza de tabla Sanger en js/modules/sanger.js ---');
+{
+  const { doc, makeEl } = createMockDOM();
+  globalThis.document = doc;
+
+  // Importar el archivo crudo de sanger.js para verificar la estructura generada
+  const sangerJsContent = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('../js/modules/sanger.js', import.meta.url), 'utf8')
+  );
+
+  check('tabla Sanger usa contenedor flexbox ql-table-actions', sangerJsContent.includes('actionsGroup.className = \'ql-table-actions\';'));
+  check('tabla Sanger usa botones cuadrados ql-btn-icon-sq', sangerJsContent.includes('ovBtn.className = \'ql-btn-icon-sq\';') && sangerJsContent.includes('compBtn.className = \'ql-btn-icon-sq\';'));
+  check('botón de solapamiento tiene icono SVG de ojo', sangerJsContent.includes('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>'));
+  check('botón de comparación tiene icono SVG de capas', sangerJsContent.includes('<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>'));
+  check('botones tienen atributo title para accesibilidad y tooltip hover', sangerJsContent.includes('ovBtn.title = t(\'sanger.inspectOverlapTitle\');') && sangerJsContent.includes('compBtn.title = t(\'sanger.compareWithRef\');'));
+  check('se eliminaron los botones de texto antiguos "Ver solapamiento" de la tabla', !sangerJsContent.includes('ovBtn.textContent = t(\'sanger.inspectOverlap\')'));
+  check('se eliminaron los botones de texto antiguos "Comparar con Referencia" de la tabla', !sangerJsContent.includes('compBtn.textContent = t(\'sanger.compareWithRef\')'));
+}
+
+console.log('\n--- 3. Integración en el Diagrama Aluvial (js/modules/taxa.js y taxaBarplot.js) ---');
+{
+  check('taxa.js exporta función render correctamente', typeof taxaModule.render === 'function');
+  check('taxaBarplot.js exporta función render correctamente', typeof taxaBarplotModule.render === 'function');
+
+  // Verificar que computeAlluvialLayout responde correctamente a cambios de geometría
+  const mockData = {
+    groups: ['Control', 'Tratamiento'],
+    taxa: [
+      { key: 't1', label: 'Bacteroides', colorVar: '--cat-1' },
+      { key: 't2', label: 'Prevotella', colorVar: '--cat-2' },
+    ],
+    matrix: {
+      Control: { t1: 0.6, t2: 0.4 },
+      Tratamiento: { t1: 0.3, t2: 0.7 },
+    },
+    sampleCounts: { Control: 5, Tratamiento: 5 },
+  };
+
+  const layoutDefault = computeAlluvialLayout(mockData, {
+    width: 600,
+    height: 400,
+    margin: { top: 20, right: 20, bottom: 20, left: 20 },
+    nodeWidth: 20,
+    nodeGap: 2,
+  });
+
+  const layoutWide = computeAlluvialLayout(mockData, {
+    width: 600,
+    height: 400,
+    margin: { top: 20, right: 20, bottom: 20, left: 20 },
+    nodeWidth: 40,
+    nodeGap: 8,
+  });
+
+  check('nodo estándar tiene ancho 20', layoutDefault.nodes[0].width === 20);
+  check('nodo expandido tiene ancho 40', layoutWide.nodes[0].width === 40);
+  check('el cambio geométrico se refleja en las curvas de enlace Bézier',
+    layoutDefault.links[0].d !== layoutWide.links[0].d);
+
+  // Verificar que el SVG generado en taxaBarplot tiene el botón de ajustes
+  const taxaBarplotContent = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('../js/modules/taxaBarplot.js', import.meta.url), 'utf8')
+  );
+
+  check('taxaBarplot.js incluye botón de ajustes con icono de engranaje',
+    taxaBarplotContent.includes('ql-btn-settings') && taxaBarplotContent.includes('settingsBtnTitle'));
+  check('taxaBarplot.js invoca openChartEditor en openTaxaChartEditor',
+    taxaBarplotContent.includes('openChartEditor(svg, configOptions'));
+  check('taxaBarplot.js actualiza geometría en tiempo real (alluvialNodeWidth, alluvialNodeGap, alluvialLinkOpacity)',
+    taxaBarplotContent.includes('alluvialNodeWidth = Number(payload)') &&
+    taxaBarplotContent.includes('alluvialNodeGap = Number(payload)') &&
+    taxaBarplotContent.includes('alluvialLinkOpacity = Number(payload)'));
+}
+
+console.log('\n--- 4. Resumen de resultados ---');
+if (failed) {
+  console.error('❌ Fallaron algunos tests.');
+  process.exit(1);
+} else {
+  console.log('✅ Todos los tests pasaron exitosamente.');
+  process.exit(0);
+}

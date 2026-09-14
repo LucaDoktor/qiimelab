@@ -135,3 +135,4 @@ console.log('\n--- 4. Casos límite (taxón que aparece o desaparece) ---');
 
 console.log('\nRESULTADO ALLUVIAL: ' + (failed ? 'FAIL' : 'PASS'));
 process.exit(failed ? 1 : 0);
+
