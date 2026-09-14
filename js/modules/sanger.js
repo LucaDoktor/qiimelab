@@ -13,7 +13,7 @@
 import { t, getLang } from '../lib/i18n.js';
 import { parseAb1 } from '../lib/ab1Parser.js';
 import { trimRead } from '../lib/sangerTrim.js';
-import { mergeReads, reverseComplement } from '../lib/sangerOverlap.js';
+import { mergeReads, reverseComplement, findSeedAnchor, overlapAlign, windowedIdentityTrim } from '../lib/sangerOverlap.js';
 import { listZipEntries, readZipEntry } from '../lib/minizip.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
@@ -127,6 +127,258 @@ export function renderAlignmentHTML(result, opts = {}) {
   }
 
   return `<pre class="ql-code ql-align-result-pre"><code>${lines.join('\n')}</code></pre>`;
+}
+
+/**
+ * Renderiza el solapamiento entre la lectura Forward recortada y el Reverse
+ * Complement recortado sobre el Consenso, apilados en bloques monoespaciados
+ * con coordenadas 1-indexadas, resaltado de zonas no solapadas (solo Forward /
+ * solo RevComp) y marcado de mismatches resueltos en el consenso.
+ *
+ * @param {string|Object} fwdOrData - Secuencia Forward recortada o un objeto { fwdSeq, revCompSeq, consensus, ... }
+ * @param {string} [revCompSeq] - Secuencia Reverse Complement recortada
+ * @param {string} [consensus] - Secuencia consenso resultante
+ * @param {Object} [opts] - Opciones (lineLength, colsA, colsB, fStart, rStart, etc.)
+ * @returns {string} HTML seguro con el bloque <pre class="ql-code ql-overlap-pre"><code>...</code></pre>
+ */
+export function renderOverlapHTML(fwdOrData, revCompSeq, consensus, opts = {}) {
+  let fwdSeq = '';
+  let rcSeq = '';
+  let consSeq = '';
+  let options = opts;
+
+  if (typeof fwdOrData === 'object' && fwdOrData !== null && !Array.isArray(fwdOrData)) {
+    fwdSeq = fwdOrData.fwdSeq || fwdOrData.forward || '';
+    rcSeq = fwdOrData.revCompSeq || fwdOrData.rcSeq || fwdOrData.reverseComplement || '';
+    consSeq = fwdOrData.consensus || '';
+    options = revCompSeq && typeof revCompSeq === 'object' ? revCompSeq : opts;
+  } else {
+    fwdSeq = fwdOrData || '';
+    rcSeq = revCompSeq || '';
+    consSeq = consensus || '';
+  }
+
+  if (!fwdSeq && !rcSeq && !consSeq) {
+    return `<pre class="ql-code ql-overlap-pre"><code>${t('sanger.overlapNoData')}</code></pre>`;
+  }
+
+  const { lineLength = 60 } = options;
+
+  let colsA = options.colsA || '';
+  let colsB = options.colsB || '';
+  let fStart = Number.isFinite(options.fStart) ? options.fStart : -1;
+  let rStart = Number.isFinite(options.rStart) ? options.rStart : 0;
+  let isOverlap = colsA.length > 0 && fStart >= 0;
+
+  if (!isOverlap && fwdSeq && rcSeq) {
+    // 1. Intentar ancla por semillas (modelo Sanger de qiimelab)
+    const anchor = findSeedAnchor(fwdSeq, rcSeq);
+    if (anchor && anchor.reliable) {
+      const dEstimate = Math.max(0, Math.min(fwdSeq.length, anchor.diagonal));
+      const winFStart = Math.max(0, dEstimate - 40);
+      const winF = fwdSeq.slice(winFStart);
+      const winR = rcSeq.slice(0, Math.min(rcSeq.length, fwdSeq.length - dEstimate + 40));
+      const aln = overlapAlign(winF, winR);
+      if (aln.colsA.length > 0) {
+        const trimEnd = windowedIdentityTrim(aln.colsA, aln.colsB);
+        if (trimEnd > 0) {
+          colsA = aln.colsA.slice(0, trimEnd);
+          colsB = aln.colsB.slice(0, trimEnd);
+          fStart = winFStart + aln.aStart;
+          rStart = aln.bStart;
+          isOverlap = true;
+        }
+      }
+    }
+
+    // 2. Fallback: alineamiento directo de extremos libres si no hubo ancla k=15
+    if (!isOverlap) {
+      const aln = overlapAlign(fwdSeq, rcSeq);
+      if (aln.colsA.length > 0 && aln.score > 0) {
+        const trimEnd = windowedIdentityTrim(aln.colsA, aln.colsB);
+        if (trimEnd > 0) {
+          colsA = aln.colsA.slice(0, trimEnd);
+          colsB = aln.colsB.slice(0, trimEnd);
+          fStart = aln.aStart;
+          rStart = aln.bStart;
+          isOverlap = true;
+        }
+      }
+    }
+  }
+
+  // Construcción de la matriz de columnas común
+  const cols = [];
+
+  if (isOverlap) {
+    // A. Flanco 5' que sobrepase en RevComp (raro)
+    for (let j = 0; j < rStart; j++) {
+      cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+    }
+
+    // B. Flanco 5' solo Forward
+    for (let i = 0; i < fStart; i++) {
+      cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+    }
+
+    // C. Región de solapamiento
+    let consPos = cols.length;
+    let fBases = 0, rBases = 0;
+    for (let k = 0; k < colsA.length; k++) {
+      const ca = colsA[k];
+      const cb = colsB[k];
+      if (ca !== '-') fBases++;
+      if (cb !== '-') rBases++;
+
+      const isMatch = ca === cb && ca !== '-';
+      const isMismatch = ca !== cb && ca !== '-' && cb !== '-';
+
+      let cc = consSeq && consPos < consSeq.length ? consSeq[consPos] : (isMatch ? ca : (ca === '-' ? cb : (cb === '-' ? ca : ca)));
+      if (cc !== '-') consPos++;
+
+      cols.push({
+        f: ca,
+        r: cb,
+        m: isMatch ? '|' : (isMismatch ? '·' : ' '),
+        c: cc,
+        type: isMatch ? 'overlap-match' : (isMismatch ? 'overlap-mismatch' : 'overlap-gap'),
+      });
+    }
+
+    // D. Flanco 3' de Forward si sobrara (raro)
+    for (let i = fStart + fBases; i < fwdSeq.length; i++) {
+      cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+    }
+
+    // E. Flanco 3' solo RevComp
+    for (let j = rStart + rBases; j < rcSeq.length; j++) {
+      cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+    }
+  } else {
+    // Modo sin solapamiento (stitched o lecturas separadas)
+    if (fwdSeq) {
+      for (let i = 0; i < fwdSeq.length; i++) {
+        cols.push({ f: fwdSeq[i], r: ' ', m: ' ', c: fwdSeq[i], type: 'fwd-only' });
+      }
+    }
+    const nBridgeMatch = consSeq ? consSeq.slice(fwdSeq.length).match(/^N+/) : null;
+    const nGap = nBridgeMatch ? nBridgeMatch[0].length : (fwdSeq && rcSeq ? 10 : 0);
+    for (let k = 0; k < nGap; k++) {
+      cols.push({ f: ' ', r: ' ', m: ' ', c: 'N', type: 'gap-stitch' });
+    }
+    if (rcSeq) {
+      for (let j = 0; j < rcSeq.length; j++) {
+        cols.push({ f: ' ', r: rcSeq[j], m: ' ', c: rcSeq[j], type: 'rev-only' });
+      }
+    }
+  }
+
+  // Estadísticas del solapamiento
+  let overlapBases = 0;
+  let matches = 0;
+  let mismatches = 0;
+  for (let i = 0; i < cols.length; i++) {
+    if (cols[i].type === 'overlap-match') { overlapBases++; matches++; }
+    else if (cols[i].type === 'overlap-mismatch') { overlapBases++; mismatches++; }
+    else if (cols[i].type === 'overlap-gap') { overlapBases++; }
+  }
+  const identityPct = overlapBases > 0 ? ((matches / overlapBases) * 100).toFixed(1) + '%' : '—';
+  const headerLine = `Forward: ${fwdSeq.length} pb | RevComp: ${rcSeq.length} pb | ${t('sanger.overlapStatOverlapLen')}: ${overlapBases} pb | ${t('sanger.overlapStatIdentity')}: ${identityPct} (${matches}/${overlapBases}) | ${t('sanger.overlapStatMismatches')}: ${mismatches} | ${t('sanger.overlapStatConsensusLen')}: ${consSeq.length || cols.length} pb`;
+
+  const lines = [headerLine];
+
+  const maxCoord = Math.max(fwdSeq.length, rcSeq.length, consSeq.length, cols.length);
+  const padLen = Math.max(5, String(maxCoord).length);
+
+  function padNum(n) {
+    return n != null ? String(n).padStart(padLen) : ' '.repeat(padLen);
+  }
+
+  function formatRow(chunk, getCharAndClass) {
+    let out = '';
+    let curClass = '';
+    for (let i = 0; i < chunk.length; i++) {
+      const { ch, cls } = getCharAndClass(chunk[i]);
+      const safeCh = ch === ' ' ? ' ' : escapeHtml(ch);
+      if (cls !== curClass) {
+        if (curClass) out += '</span>';
+        if (cls) out += `<span class="${cls}">`;
+        curClass = cls;
+      }
+      out += safeCh;
+    }
+    if (curClass) out += '</span>';
+    return out;
+  }
+
+  let fCounter = 0;
+  let rCounter = 0;
+  let cCounter = 0;
+
+  for (let offset = 0; offset < cols.length; offset += lineLength) {
+    const chunk = cols.slice(offset, offset + lineLength);
+
+    let startF = null, endF = null;
+    let startR = null, endR = null;
+    let startC = null, endC = null;
+
+    for (let i = 0; i < chunk.length; i++) {
+      const col = chunk[i];
+      if (col.f !== ' ' && col.f !== '-') {
+        fCounter++;
+        if (startF === null) startF = fCounter;
+        endF = fCounter;
+      }
+      if (col.r !== ' ' && col.r !== '-') {
+        rCounter++;
+        if (startR === null) startR = rCounter;
+        endR = rCounter;
+      }
+      if (col.c !== ' ' && col.c !== '-') {
+        cCounter++;
+        if (startC === null) startC = cCounter;
+        endC = cCounter;
+      }
+    }
+
+    const htmlFwd = formatRow(chunk, (col) => {
+      if (col.f === ' ') return { ch: ' ', cls: '' };
+      if (col.type === 'fwd-only') return { ch: col.f, cls: 'ql-overlap-fwd' };
+      if (col.type === 'overlap-mismatch') return { ch: col.f, cls: 'ql-overlap-mismatch' };
+      return { ch: col.f, cls: '' };
+    });
+
+    const htmlMat = formatRow(chunk, (col) => {
+      if (col.type === 'overlap-mismatch') return { ch: col.m, cls: 'ql-overlap-mismatch-mark' };
+      return { ch: col.m, cls: '' };
+    });
+
+    const htmlRev = formatRow(chunk, (col) => {
+      if (col.r === ' ') return { ch: ' ', cls: '' };
+      if (col.type === 'rev-only') return { ch: col.r, cls: 'ql-overlap-rev' };
+      if (col.type === 'overlap-mismatch') return { ch: col.r, cls: 'ql-overlap-mismatch' };
+      return { ch: col.r, cls: '' };
+    });
+
+    const htmlCons = formatRow(chunk, (col) => {
+      if (col.type === 'fwd-only') return { ch: col.c, cls: 'ql-overlap-fwd' };
+      if (col.type === 'rev-only') return { ch: col.c, cls: 'ql-overlap-rev' };
+      if (col.type === 'overlap-mismatch') return { ch: col.c, cls: 'ql-overlap-resolved' };
+      return { ch: col.c, cls: '' };
+    });
+
+    const endFLabel = endF != null ? `  ${endF}` : '';
+    const endRLabel = endR != null ? `  ${endR}` : '';
+    const endCLabel = endC != null ? `  ${endC}` : '';
+
+    lines.push('');
+    lines.push(`Forward   ${padNum(startF)}  ${htmlFwd}${endFLabel}`);
+    lines.push(`          ${padNum(null)}  ${htmlMat}`);
+    lines.push(`RevComp   ${padNum(startR)}  ${htmlRev}${endRLabel}`);
+    lines.push(`Consenso  ${padNum(startC)}  ${htmlCons}${endCLabel}`);
+  }
+
+  return `<pre class="ql-code ql-overlap-pre"><code>${lines.join('\n')}</code></pre>`;
 }
 
 function defaultState() {
@@ -369,7 +621,7 @@ function computeResult(sample, s) {
     const r = slice(sample.reverse, rTrim);
     const expectedAmpliconLen = parseFloat(s.expectedAmplicon) > 0 ? parseFloat(s.expectedAmplicon) : null;
     const res = mergeReads(f, r, { expectedAmpliconLen, ampliconTolerance: s.ampliconTolerance });
-    return { ...base, ...res };
+    return { ...base, ...res, fSeq: f.sequence, rcSeq: reverseComplement(r.sequence) };
   }
   if (fOk) {
     const f = slice(sample.forward, fTrim);
@@ -585,6 +837,7 @@ export function render(container) {
         id: r.id, method: r.method, needsReview: r.needsReview, reason: r.reason,
         overlapLen: r.overlapLen, matches: r.matches, identity: r.identity, nAmbiguous: r.nAmbiguous,
         fLen: r.fLen, rLen: r.rLen, consensus: r.consensus,
+        fSeq: r.fSeq || '', rcSeq: r.rcSeq || '',
       };
     });
   }
@@ -1069,7 +1322,7 @@ export function render(container) {
     const tbl = document.createElement('table');
     tbl.className = 'ql-table';
     tbl.innerHTML = '<thead><tr><th>' + t('sanger.colSample') + '</th><th>' + t('sanger.colMethod') + '</th>' +
-      '<th>' + t('sanger.colOverlap') + '</th><th>' + t('sanger.colIdentity') + '</th><th>' + t('sanger.colLen') + '</th><th>' + t('sanger.colReview') + '</th><th></th></tr></thead>';
+      '<th>' + t('sanger.colOverlap') + '</th><th>' + t('sanger.colIdentity') + '</th><th>' + t('sanger.colLen') + '</th><th>' + t('sanger.colReview') + '</th><th style="min-width:240px;"></th></tr></thead>';
     const tbody = document.createElement('tbody');
 
     function createComparePanel(resultItem) {
@@ -1168,6 +1421,81 @@ export function render(container) {
       targetTr.after(compTr);
     }
 
+    function createOverlapPanel(resultItem) {
+      const panel = document.createElement('div');
+      panel.className = 'ql-overlap-panel';
+
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;';
+      head.innerHTML = '<strong>' + t('sanger.overlapPanelTitle') + ': ' + escapeHtml(resultItem.id) + '</strong>';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ql-btn ql-btn-ghost ql-btn-sm';
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Cerrar');
+      closeBtn.addEventListener('click', () => {
+        const pTr = panel.closest('tr.ql-overlap-row');
+        if (pTr) pTr.remove(); else panel.remove();
+      });
+      head.appendChild(closeBtn);
+      panel.appendChild(head);
+
+      let fSeq = resultItem.fSeq || '';
+      let rcSeq = resultItem.rcSeq || '';
+      if ((!fSeq || !rcSeq) && samples.has(resultItem.id)) {
+        const sample = samples.get(resultItem.id);
+        const fTrim = sample.forward ? effectiveTrim(sample, 'forward', sample.forward, s) : null;
+        const rTrim = sample.reverse ? effectiveTrim(sample, 'reverse', sample.reverse, s) : null;
+        if (sample.forward && fTrim && !fTrim.discarded) {
+          fSeq = slice(sample.forward, fTrim).sequence;
+        }
+        if (sample.reverse && rTrim && !rTrim.discarded) {
+          rcSeq = reverseComplement(slice(sample.reverse, rTrim).sequence);
+        }
+      }
+
+      if (resultItem.method === 'stitched') {
+        const note = document.createElement('p');
+        note.className = 'ql-panel-note';
+        note.style.color = 'var(--warning)';
+        note.textContent = t('sanger.overlapMethodStitched');
+        panel.appendChild(note);
+      }
+
+      const legend = document.createElement('div');
+      legend.className = 'ql-overlap-legend';
+      legend.innerHTML =
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#0284c7;"></span> ' + t('sanger.legendFwdOnly') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:var(--ink-muted);"></span> ' + t('sanger.legendOverlap') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:var(--critical);"></span> ' + t('sanger.legendMismatch') + '</span>' +
+        '<span class="ql-overlap-legend-item"><span class="ql-overlap-legend-box" style="background:#9333ea;"></span> ' + t('sanger.legendRevOnly') + '</span>';
+      panel.appendChild(legend);
+
+      const out = document.createElement('div');
+      out.innerHTML = renderOverlapHTML(fSeq, rcSeq, resultItem.consensus);
+      panel.appendChild(out);
+
+      return panel;
+    }
+
+    function toggleOverlapRow(targetTr, resultItem) {
+      const next = targetTr.nextElementSibling;
+      if (next && next.classList.contains('ql-overlap-row')) {
+        next.remove();
+        return;
+      }
+      tbody.querySelectorAll('.ql-overlap-row').forEach((el) => el.remove());
+
+      const ovTr = document.createElement('tr');
+      ovTr.className = 'ql-overlap-row';
+      const td = document.createElement('td');
+      td.colSpan = 7;
+      td.appendChild(createOverlapPanel(resultItem));
+      ovTr.appendChild(td);
+      targetTr.after(ovTr);
+    }
+
     results.forEach((r) => {
       const tr = document.createElement('tr');
       if (r.needsReview) tr.style.background = 'color-mix(in srgb, var(--warning) 10%, transparent)';
@@ -1179,8 +1507,26 @@ export function render(container) {
         '<td>' + (r.overlapLen ? fmtPct(r.identity) : '—') + '</td>' +
         '<td>' + (r.consensus.length || '—') + '</td>' +
         '<td>' + (r.needsReview ? '<span class="ql-badge ql-badge-warn">' + t('sanger.reviewNeeded') + '</span>' : t('sanger.reviewOk')) + '</td>' +
-        '<td style="text-align:right;"></td>';
+        '<td style="text-align:right;white-space:nowrap;"></td>';
       if (r.consensus) {
+        const actionsCell = tr.lastElementChild;
+        if (r.method === 'merged' || r.method === 'stitched' || (r.fLen > 0 && r.rLen > 0)) {
+          const ovBtn = document.createElement('button');
+          ovBtn.type = 'button';
+          ovBtn.className = 'ql-btn ql-btn-sm';
+          ovBtn.style.marginRight = '6px';
+          ovBtn.textContent = t('sanger.inspectOverlap');
+          ovBtn.title = t('sanger.inspectOverlapTitle');
+          ovBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            s.selectedSampleId = r.id;
+            save(s);
+            paintDetail(r);
+            toggleOverlapRow(tr, r);
+          });
+          actionsCell.appendChild(ovBtn);
+        }
+
         const compBtn = document.createElement('button');
         compBtn.type = 'button';
         compBtn.className = 'ql-btn ql-btn-sm';
@@ -1193,7 +1539,7 @@ export function render(container) {
           paintDetail(r);
           toggleCompareRow(tr, r);
         });
-        tr.lastElementChild.appendChild(compBtn);
+        actionsCell.appendChild(compBtn);
       }
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => { s.selectedSampleId = r.id; save(s); paintDetail(r); });
@@ -1284,6 +1630,25 @@ export function render(container) {
       sendBtn.addEventListener('click', () => sendConsensusToPrimers(r.id, r.consensus));
       btnRow.appendChild(copyBtn); btnRow.appendChild(sendBtn);
       if (r.consensus) {
+        if (r.method === 'merged' || r.method === 'stitched' || (r.fLen > 0 && r.rLen > 0)) {
+          const ovDetailBtn = document.createElement('button');
+          ovDetailBtn.type = 'button';
+          ovDetailBtn.className = 'ql-btn';
+          ovDetailBtn.textContent = t('sanger.inspectOverlap');
+          ovDetailBtn.title = t('sanger.inspectOverlapTitle');
+          let ovDetailPanel = null;
+          ovDetailBtn.addEventListener('click', () => {
+            if (ovDetailPanel && ovDetailPanel.parentElement) {
+              ovDetailPanel.remove();
+              ovDetailPanel = null;
+            } else {
+              ovDetailPanel = createOverlapPanel(r);
+              detailWrap.appendChild(ovDetailPanel);
+            }
+          });
+          btnRow.appendChild(ovDetailBtn);
+        }
+
         const compDetailBtn = document.createElement('button');
         compDetailBtn.type = 'button';
         compDetailBtn.className = 'ql-btn';
