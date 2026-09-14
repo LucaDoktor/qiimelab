@@ -5,6 +5,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { DEFAULT_FAPROTAX, FAPROTAX_METADATA, FUNCTION_NAMES } from '../lib/faprotax.js';
+import { DEFAULT_PHENOTYPES, PHENOTYPES_METADATA, PHENOTYPE_NAMES } from '../lib/phenotypes.js';
 import { groupTaxaByAbundance, CAT_VARS, OTHER_VAR, OTHER_COLOR } from './taxaBarplot.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout, buildAlluvialLinkPath } from '../lib/alluvial.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
@@ -98,21 +99,29 @@ export function buildDatabaseIndex(db) {
   else if (db.functions && typeof db.functions === 'object') source = db.functions;
   else if (db.pathways && typeof db.pathways === 'object') source = db.pathways;
   else if (db.taxa && typeof db.taxa === 'object') source = db.taxa;
+  else if (db.traits && typeof db.traits === 'object') source = db.traits;
 
-  if (Array.isArray(source)) {
-    source.forEach((item) => {
-      if (!item || typeof item !== 'object') return;
-      if (item.taxon && Array.isArray(item.functions)) {
-        item.functions.forEach((f) => addMapping(item.taxon, f));
-      } else if (item.function && Array.isArray(item.taxa)) {
-        item.taxa.forEach((t) => addMapping(t, item.function));
-      }
-    });
-  } else {
-    for (const [key, value] of Object.entries(source)) {
+  function traverse(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      obj.forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        if (item.taxon && Array.isArray(item.functions)) {
+          item.functions.forEach((f) => addMapping(item.taxon, f));
+        } else if (item.function && Array.isArray(item.taxa)) {
+          item.taxa.forEach((t) => addMapping(t, item.function));
+        } else if (item.taxon && Array.isArray(item.traits)) {
+          item.traits.forEach((t) => addMapping(item.taxon, t));
+        } else if (item.trait && Array.isArray(item.taxa)) {
+          item.taxa.forEach((t) => addMapping(t, item.trait));
+        }
+      });
+      return;
+    }
+
+    for (const [key, value] of Object.entries(obj)) {
       if (Array.isArray(value)) {
         // Puede ser key = función y value = [taxones], o key = taxón y value = [funciones]
-        // Heurística: si los valores tienen prefijos de linaje (g__, s__, etc.) o nombres conocidos
         const firstVal = String(value[0] || '');
         const keyLooksLikeTaxon = /^[a-z]__|;/i.test(key);
         const valLooksLikeTaxon = /^[a-z]__|;/i.test(firstVal);
@@ -126,9 +135,14 @@ export function buildDatabaseIndex(db) {
         }
       } else if (typeof value === 'string') {
         addMapping(value, key);
+      } else if (value && typeof value === 'object') {
+        // Objeto anidado (categoría fenotípica ej. gram_stain -> { gram_positive: [...] })
+        traverse(value);
       }
     }
   }
+
+  traverse(source);
 
   return { rawExact, rawLower, tokenExact, tokenClean, allFunctions };
 }
@@ -455,6 +469,12 @@ export function formatFunctionName(key, lang = 'es') {
   if (FUNCTION_NAMES[key]) {
     return FUNCTION_NAMES[key][lang] || FUNCTION_NAMES[key]['es'] || key;
   }
+  if (PHENOTYPE_NAMES[key]) {
+    return PHENOTYPE_NAMES[key][lang] || PHENOTYPE_NAMES[key]['es'] || key;
+  }
+  const tKey = 'inference.trait_' + key;
+  const translated = t(tKey);
+  if (translated && translated !== tKey) return translated;
   return key.replace(/_/g, ' ');
 }
 
@@ -463,12 +483,16 @@ export function formatFunctionName(key, lang = 'es') {
 // ---------------------------------------------------------------------------
 
 export function render(container) {
+  let selectedDbType = 'faprotax'; // 'faprotax' | 'phenotypes' | 'custom'
   let activeDb = DEFAULT_FAPROTAX;
   let activeDbInfo = {
     name: FAPROTAX_METADATA.name,
     isCustom: false,
+    type: 'faprotax',
     version: FAPROTAX_METADATA.version
   };
+  let customDb = null;
+  let customDbInfo = null;
 
   let currentLevel = 6; // Nivel de género por defecto
   let viewMode = 'barplot'; // 'barplot' | 'alluvial' | 'table'
@@ -518,13 +542,15 @@ export function render(container) {
     container.innerHTML = '';
     ensureTooltip();
 
-    // Cabecera del módulo
+    const isPhenotypes = selectedDbType === 'phenotypes';
+
+    // Cabecera del módulo adaptativa según base de datos activa
     const header = document.createElement('header');
     header.className = 'ql-page-header';
     header.innerHTML =
-      '<p class="ql-eyebrow">' + (t('inference.eyebrow') || 'ANÁLISIS METABÓLICO') + '</p>' +
-      '<h1 class="ql-page-title">' + (t('inference.title') || 'Inferencia Funcional Taxonómica') + '</h1>' +
-      '<p class="ql-page-sub">' + (t('inference.subtitle') || 'Predicción estricta de rutas metabólicas y biogeoquímicas a partir de perfiles 16S/ITS') + '</p>';
+      '<p class="ql-eyebrow">' + (isPhenotypes ? (t('inference.eyebrowPhenotypes') || 'RASGOS FENOTÍPICOS Y ECOLÓGICOS') : (t('inference.eyebrow') || 'ANÁLISIS METABÓLICO')) + '</p>' +
+      '<h1 class="ql-page-title">' + (isPhenotypes ? (t('inference.titlePhenotypes') || 'Inferencia Fenotípica y Morfológica') : (t('inference.title') || 'Inferencia Funcional Taxonómica')) + '</h1>' +
+      '<p class="ql-page-sub">' + (isPhenotypes ? (t('inference.subtitlePhenotypes') || 'Predicción de tinción Gram, morfología celular, movilidad, esporulación, temperatura, pH, enzimas y ecología a partir de perfiles 16S/ITS') : (t('inference.subtitle') || 'Predicción estricta de rutas metabólicas y biogeoquímicas a partir de perfiles 16S/ITS')) + '</p>';
     container.appendChild(header);
 
     // Aviso Metodológico Permanente (Requisito estricto)
@@ -587,7 +613,7 @@ export function render(container) {
       '<div class="ql-inference-stat-val">' + stats.coveragePercent + '%</div>' +
       '</div>' +
       '<div class="ql-inference-stat-card">' +
-      '<div class="ql-inference-stat-label">' + (t('inference.statFunctions') || 'Rutas Detectadas') + '</div>' +
+      '<div class="ql-inference-stat-label">' + (isPhenotypes ? (t('inference.statTraits') || 'Rasgos Detectados') : (t('inference.statFunctions') || 'Rutas Detectadas')) + '</div>' +
       '<div class="ql-inference-stat-val">' + (inferredMatrix.functions.length - 1) + '</div>' +
       '</div>';
     container.appendChild(statsContainer);
@@ -630,48 +656,89 @@ export function render(container) {
     const sidebar = document.createElement('aside');
     sidebar.className = 'ql-sidebar';
 
-    // Selector de Base de Datos
+    // Selector de Base de Datos desplegable (<select>)
     const dbCard = document.createElement('div');
     dbCard.className = 'ql-field';
     dbCard.innerHTML =
-      '<label>' + (t('inference.dbLabel') || 'Base de datos de inferencia') + '</label>' +
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">' +
-      '<button type="button" class="ql-btn ' + (!activeDbInfo.isCustom ? 'ql-btn-primary' : '') + '" id="ql-btn-faprotax">' +
-      (t('inference.loadFaprotax') || 'FAPROTAX estándar') +
-      '</button>' +
-      '<label class="ql-btn ' + (activeDbInfo.isCustom ? 'ql-btn-primary' : '') + '" style="cursor:pointer;margin:0;">' +
-      (t('inference.uploadCustom') || 'Subir JSON...') +
+      '<label for="ql-select-db">' + (t('inference.dbLabel') || 'Base de datos de inferencia') + '</label>' +
+      '<select id="ql-select-db" class="ql-select" style="width:100%;margin-bottom:8px;">' +
+      '<option value="faprotax"' + (selectedDbType === 'faprotax' ? ' selected' : '') + '>' +
+      (t('inference.dbMetabolism') || 'Metabolismo (FAPROTAX)') +
+      '</option>' +
+      '<option value="phenotypes"' + (selectedDbType === 'phenotypes' ? ' selected' : '') + '>' +
+      (t('inference.dbPhenotypes') || 'Fenotipo y Morfología (BacDive/metaTraits)') +
+      '</option>' +
+      '<option value="custom"' + (selectedDbType === 'custom' ? ' selected' : '') + '>' +
+      (t('inference.dbCustom') || 'Cargar JSON Personalizado') +
+      '</option>' +
+      '</select>' +
       '<input type="file" id="ql-upload-db" accept=".json" style="display:none;" />' +
-      '</label>' +
-      '</div>' +
-      '<div class="ql-badge" style="display:inline-block;margin-top:4px;">' +
-      'DB: ' + escapeHtml(activeDbInfo.name) +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
+      '<span class="ql-badge" style="display:inline-block;">DB: ' + escapeHtml(activeDbInfo.name) + '</span>' +
+      (selectedDbType === 'custom' && customDb
+        ? '<button type="button" class="ql-btn ql-btn-sm" id="ql-btn-reupload" style="font-size:11px;padding:2px 8px;cursor:pointer;">' +
+          (t('inference.changeCustomFile') || 'Cambiar archivo…') + '</button>'
+        : '') +
       '</div>';
 
-    const btnFaprotax = dbCard.querySelector('#ql-btn-faprotax');
-    btnFaprotax.addEventListener('click', () => {
-      activeDb = DEFAULT_FAPROTAX;
-      activeDbInfo = { name: FAPROTAX_METADATA.name, isCustom: false, version: FAPROTAX_METADATA.version };
-      paint();
+    const selectDb = dbCard.querySelector('#ql-select-db');
+    const fileInput = dbCard.querySelector('#ql-upload-db');
+    const btnReupload = dbCard.querySelector('#ql-btn-reupload');
+
+    selectDb.addEventListener('change', () => {
+      const val = selectDb.value;
+      if (val === 'faprotax') {
+        selectedDbType = 'faprotax';
+        activeDb = DEFAULT_FAPROTAX;
+        activeDbInfo = { name: FAPROTAX_METADATA.name, isCustom: false, type: 'faprotax', version: FAPROTAX_METADATA.version };
+        paint();
+      } else if (val === 'phenotypes') {
+        selectedDbType = 'phenotypes';
+        activeDb = DEFAULT_PHENOTYPES;
+        activeDbInfo = { name: PHENOTYPES_METADATA.name, isCustom: false, type: 'phenotypes', version: PHENOTYPES_METADATA.version };
+        paint();
+      } else if (val === 'custom') {
+        if (customDb) {
+          selectedDbType = 'custom';
+          activeDb = customDb;
+          activeDbInfo = customDbInfo;
+          paint();
+        } else {
+          fileInput.click();
+        }
+      }
     });
 
-    const fileInput = dbCard.querySelector('#ql-upload-db');
+    if (btnReupload) {
+      btnReupload.addEventListener('click', () => fileInput.click());
+    }
+
     fileInput.addEventListener('change', (ev) => {
       const file = ev.target.files && ev.target.files[0];
-      if (!file) return;
+      if (!file) {
+        if (!customDb) {
+          selectDb.value = selectedDbType;
+        }
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const parsedJson = JSON.parse(e.target.result);
-          activeDb = parsedJson;
-          activeDbInfo = {
+          customDb = parsedJson;
+          customDbInfo = {
             name: file.name,
             isCustom: true,
+            type: 'custom',
             version: 'Custom JSON',
           };
+          selectedDbType = 'custom';
+          activeDb = customDb;
+          activeDbInfo = customDbInfo;
           paint();
         } catch (err) {
-          alert(t('inference.jsonError') || 'Error al procesar el archivo JSON: ' + err.message);
+          alert((t('inference.jsonError') || 'Error al procesar el archivo JSON: ') + err.message);
+          selectDb.value = selectedDbType;
         }
       };
       reader.readAsText(file);
@@ -775,7 +842,8 @@ export function render(container) {
       '</svg> ' + (t('inference.exportCsv') || 'Exportar matriz (CSV)');
     exportBtn.addEventListener('click', () => {
       const csvContent = generateCsv(inferredMatrix);
-      downloadBlob(csvContent, 'inferencia_funcional_' + activeDbInfo.name.replace(/\.[^/.]+$/, '') + '.csv', 'text/csv;charset=utf-8;');
+      const prefix = isPhenotypes ? 'inferencia_fenotipica_' : 'inferencia_funcional_';
+      downloadBlob(csvContent, prefix + activeDbInfo.name.replace(/\.[^/.]+$/, '') + '.csv', 'text/csv;charset=utf-8;');
     });
     exportField.appendChild(exportBtn);
     sidebar.appendChild(exportField);
@@ -890,7 +958,9 @@ export function render(container) {
       fill: 'var(--ink-1)',
       'data-ce': 'title'
     });
-    mainTitle.textContent = t('inference.title') || 'Inferencia Funcional Taxonómica';
+    mainTitle.textContent = isPhenotypes
+      ? (t('inference.titlePhenotypes') || 'Inferencia Fenotípica y Morfológica')
+      : (t('inference.title') || 'Inferencia Funcional Taxonómica');
     svg.appendChild(mainTitle);
 
     const yTitle = svgEl('text', {
@@ -984,7 +1054,9 @@ export function render(container) {
     // Leyenda lateral interactiva
     const legendG = svgEl('g', { class: 'ql-legend', 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
     const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink-1)' });
-    legTitle.textContent = t('inference.legendTitle') || 'Funciones Principales';
+    legTitle.textContent = isPhenotypes
+      ? (t('inference.legendPhenotypes') || 'Rasgos Principales')
+      : (t('inference.legendTitle') || 'Funciones Principales');
     legendG.appendChild(legTitle);
 
     series.forEach((sObj, i) => {

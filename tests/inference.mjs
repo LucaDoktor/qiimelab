@@ -203,10 +203,89 @@ check('Traducción de inference.title existe en ES', typeof esTitle === 'string'
 const esWarn = i18n.t('inference.warningText');
 check('Aviso metodológico permanente presente en i18n', typeof esWarn === 'string' && esWarn.includes('predictiva'), esWarn);
 
+console.log('\n--- 8. Base de datos fenotípica y ecológica (BacDive / metaTraits) ---');
+const phenotypes = await import('../js/lib/phenotypes.js');
+
+check('phenotypes.js exporta DEFAULT_PHENOTYPES', typeof phenotypes.DEFAULT_PHENOTYPES === 'object' && phenotypes.DEFAULT_PHENOTYPES !== null);
+check('phenotypes.js exporta PHENOTYPES_METADATA', typeof phenotypes.PHENOTYPES_METADATA === 'object' && phenotypes.PHENOTYPES_METADATA !== null);
+check('phenotypes.js exporta PHENOTYPE_CATEGORIES', typeof phenotypes.PHENOTYPE_CATEGORIES === 'object');
+check('phenotypes.js exporta PHENOTYPE_NAMES', typeof phenotypes.PHENOTYPE_NAMES === 'object');
+
+const expectedCats = [
+  'gram_stain', 'cell_morphology', 'motility', 'sporulation', 'oxygen_requirement',
+  'temperature_range', 'ph_range', 'key_enzymes', 'ecology', 'salinity'
+];
+expectedCats.forEach((cat) => {
+  check(`DEFAULT_PHENOTYPES contiene categoría ${cat}`, Boolean(phenotypes.DEFAULT_PHENOTYPES[cat]));
+});
+
+const phenoIndex = inference.buildDatabaseIndex(phenotypes.DEFAULT_PHENOTYPES);
+
+// 1. Pseudomonas
+const pseudoTraits = inference.findFunctionsForTaxon('g__Pseudomonas', phenoIndex);
+check('Pseudomonas se anota con múltiples rasgos', pseudoTraits.size >= 8, `obtenidos ${pseudoTraits.size}`);
+check('Pseudomonas es Gram negativo', pseudoTraits.has('gram_negative'));
+check('Pseudomonas es bacilo', pseudoTraits.has('bacillus'));
+check('Pseudomonas es móvil', pseudoTraits.has('motile'));
+check('Pseudomonas es aerobio', pseudoTraits.has('aerobe'));
+check('Pseudomonas es mesófilo', pseudoTraits.has('mesophile'));
+check('Pseudomonas es catalasa positiva', pseudoTraits.has('catalase_positive'));
+check('Pseudomonas es oxidasa positiva', pseudoTraits.has('oxidase_positive'));
+check('Pseudomonas es formador de biopelícula', pseudoTraits.has('biofilm_forming'));
+check('Pseudomonas tiene potencial patógeno', pseudoTraits.has('pathogenic'));
+
+// 2. Clostridium
+const clostTraits = inference.findFunctionsForTaxon('g__Clostridium', phenoIndex);
+check('Clostridium es Gram positivo', clostTraits.has('gram_positive'));
+check('Clostridium es formador de esporas', clostTraits.has('spore_forming'));
+check('Clostridium es anaerobio estricto', clostTraits.has('anaerobe'));
+check('Clostridium es mesófilo', clostTraits.has('mesophile'));
+check('Clostridium es catalasa negativa', clostTraits.has('catalase_negative'));
+
+// 3. Lactobacillus & Streptococcus (acidófilos / fermentadores lácticos)
+const lactoTraits = inference.findFunctionsForTaxon('g__Lactobacillus', phenoIndex);
+check('Lactobacillus es Gram positivo', lactoTraits.has('gram_positive'));
+check('Lactobacillus es acidófilo', lactoTraits.has('acidophile'));
+check('Lactobacillus es catalasa negativa', lactoTraits.has('catalase_negative'));
+check('Lactobacillus es anaerobio facultativo', lactoTraits.has('facultative_anaerobe'));
+
+// 4. Extremófilos: Temperatura, Salinidad, Psicrófilos
+const thermusTraits = inference.findFunctionsForTaxon('g__Thermus', phenoIndex);
+check('Thermus es termófilo', thermusTraits.has('thermophile'));
+check('Thermus es extremófilo', thermusTraits.has('extremophile'));
+
+const psychroTraits = inference.findFunctionsForTaxon('g__Psychrobacter', phenoIndex);
+check('Psychrobacter es psicrófilo', psychroTraits.has('psychrophile'));
+check('Psychrobacter es extremófilo', psychroTraits.has('extremophile'));
+
+const haloTraits = inference.findFunctionsForTaxon('g__Halomonas', phenoIndex);
+check('Halomonas es halófilo', haloTraits.has('halophile'));
+check('Halomonas es halotolerante', haloTraits.has('halotolerant'));
+
+// 5. Traducciones y formato de nombres
+check('formatFunctionName traduce biofilm_forming a español', inference.formatFunctionName('biofilm_forming', 'es').includes('biopelícula'));
+check('formatFunctionName traduce thermophile a español', inference.formatFunctionName('thermophile', 'es').includes('Termófilo'));
+check('formatFunctionName traduce acidophile a español', inference.formatFunctionName('acidophile', 'es').includes('Acidófilo'));
+check('formatFunctionName traduce catalase_positive a español', inference.formatFunctionName('catalase_positive', 'es').includes('Catalasa positiva'));
+
+// 6. Traducciones en i18n
+check('i18n inference.dbMetabolism existe', i18n.t('inference.dbMetabolism') === 'Metabolismo (FAPROTAX)');
+check('i18n inference.dbPhenotypes existe', i18n.t('inference.dbPhenotypes') === 'Fenotipo y Morfología (BacDive/metaTraits)');
+check('i18n inference.dbCustom existe', i18n.t('inference.dbCustom') === 'Cargar JSON Personalizado');
+
+// 7. Ejecución de mapTaxonomyToFunction con DEFAULT_PHENOTYPES
+const phenoMatrix = inference.mapTaxonomyToFunction(mockTaxaData, phenotypes.DEFAULT_PHENOTYPES, {
+  includeUnassigned: true,
+  asPercentage: true
+});
+check('mapTaxonomyToFunction procesa DEFAULT_PHENOTYPES', phenoMatrix && phenoMatrix.rows.length === 2);
+check('phenoMatrix detecta rasgos activos', phenoMatrix.functions.length > 5);
+check('phenoMatrix Muestra 1 detecta biofilm_forming', typeof phenoMatrix.rows[0].biofilm_forming === 'number' && phenoMatrix.rows[0].biofilm_forming > 0);
+
 if (failed) {
   console.error('\n❌ Algunos tests de inferencia funcional fallaron.');
   process.exit(1);
 } else {
-  console.log('\n✅ TODOS LOS TESTS DE INFERENCIA FUNCIONAL PASARON EXITOSAMENTE (100%).');
+  console.log('\n✅ TODOS LOS TESTS DE INFERENCIA FUNCIONAL Y FENOTÍPICA PASARON EXITOSAMENTE (100%).');
   process.exit(0);
 }
