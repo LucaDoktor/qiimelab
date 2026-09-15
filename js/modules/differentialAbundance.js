@@ -9,7 +9,7 @@ import { formatP } from '../lib/stats.js';
 import { partitionByMask, drawVenn } from '../lib/setDiagram.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 
 const MARGIN = { top: 48, right: 28, bottom: 86, left: 58 };
@@ -291,6 +291,16 @@ export function render(container) {
     chartWrap.appendChild(tooltip);
     chartPanel.appendChild(chartWrap);
     grid.appendChild(chartPanel);
+
+    // delegación de hover: un único listener en el svg (persiste entre
+    // llamadas a renderChart() al escribir en la búsqueda o mover sliders),
+    // en vez de un listener por punto/celda. Cada render* asigna
+    // activeTooltip antes de repintar sus elementos con [data-tt].
+    let activeTooltip = null;
+    delegateHover(svg, '[data-tt]', {
+      onEnter: (el) => { if (activeTooltip) activeTooltip(el); },
+      onLeave: () => hideTooltip(tooltip),
+    });
 
     const controls = document.createElement('aside');
     controls.className = 'ql-card ql-panel';
@@ -575,7 +585,11 @@ export function render(container) {
       const pointsLayer = svgEl('g', {});
       g.appendChild(pointsLayer);
       const pointNodes = [];
-      data.forEach((d) => {
+      activeTooltip = (el) => {
+        const d = data[+el.dataset.tt];
+        showTooltip(d, +el.dataset.cx, +el.dataset.cy);
+      };
+      data.forEach((d, i) => {
         const cx = xScale(d.lfc), cy = yScale(d.neglog);
         const matches = hasSearch && d.taxon.toLowerCase().includes(searchTerm);
         const dim = hasSearch && !matches;
@@ -585,10 +599,9 @@ export function render(container) {
         }
         const c = svgEl('circle', {
           cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6,
+          'data-tt': i, 'data-cx': cx, 'data-cy': cy,
           ...(d.status === 'ns' ? {} : { 'data-ce-series-fill': d.status }),
         });
-        c.addEventListener('mouseenter', () => showTooltip(d, cx, cy));
-        c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
         pointsLayer.appendChild(c);
         pointNodes.push({ d, cx, cy });
       });
@@ -672,6 +685,10 @@ export function render(container) {
         [thresholds.lfc, -thresholds.lfc].forEach((v) => g.appendChild(svgEl('line', { x1: xScale(v), x2: xScale(v), y1: mT, y2: mT + plotH, class: 'ql-threshold-line' })));
       }
 
+      activeTooltip = (el) => {
+        const d = sig[+el.dataset.tt];
+        showTooltip(d, +el.dataset.cx, +el.dataset.cy);
+      };
       sig.forEach((d, i) => {
         const y = mT + i * rowH + rowH / 2;
         const matches = anyMatch && d.taxon.toLowerCase().includes(searchTerm);
@@ -680,9 +697,10 @@ export function render(container) {
         const row = svgEl('g', dim ? { opacity: 0.25 } : {});
         if (matches) row.appendChild(svgEl('rect', { x: mL - 6, y: y - rowH / 2 + 1, width: innerW + 12, height: rowH - 2, fill: 'var(--accent-soft)', rx: 3 }));
         row.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(d.lfc), y1: y, y2: y, stroke: col, 'stroke-width': 2, 'data-ce-series-stroke': d.status }));
-        const dot = svgEl('circle', { cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-ce-series-fill': d.status });
-        dot.addEventListener('mouseenter', () => showTooltip(d, xScale(d.lfc), y));
-        dot.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+        const dot = svgEl('circle', {
+          cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-ce-series-fill': d.status,
+          'data-tt': i, 'data-cx': xScale(d.lfc), 'data-cy': y,
+        });
         row.appendChild(dot);
         const lbl = svgEl('text', { x: mL - 12, y: y + 4, class: 'ql-tick-label', 'text-anchor': 'end' });
         lbl.textContent = entLabel(d.taxon);
@@ -746,6 +764,12 @@ export function render(container) {
       sig.forEach((d) => (single ? [d.lfc] : d.lfcExtra).forEach((v) => { if (v != null && isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v)); }));
       maxAbs = maxAbs || 1;
 
+      activeTooltip = (el) => {
+        const [ri, ci] = el.dataset.tt.split(':').map(Number);
+        const d = sig[ri], cl = colLabels[ci];
+        const v = single ? d.lfc : d.lfcExtra[ci];
+        tooltipRaw(escapeHtml(d.taxon), (nCols > 1 ? escapeHtml(cl) + ' · ' : '') + 'log2FC ' + (v == null ? '—' : v.toFixed(2)), +el.dataset.cx, +el.dataset.cy, d.taxon);
+      };
       sig.forEach((d, ri) => {
         const y = mT + ri * rowH;
         const matches = anyMatch && d.taxon.toLowerCase().includes(searchTerm);
@@ -753,9 +777,10 @@ export function render(container) {
         colLabels.forEach((cl, ci) => {
           const v = single ? d.lfc : d.lfcExtra[ci];
           const x = mL + ci * cellW;
-          const rect = svgEl('rect', { x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v, maxAbs), opacity: dim ? 0.3 : 1 });
-          rect.addEventListener('mouseenter', () => tooltipRaw(escapeHtml(d.taxon), (nCols > 1 ? escapeHtml(cl) + ' · ' : '') + 'log2FC ' + (v == null ? '—' : v.toFixed(2)), x + cellW / 2, y + rowH / 2, d.taxon));
-          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+          const rect = svgEl('rect', {
+            x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v, maxAbs), opacity: dim ? 0.3 : 1,
+            'data-tt': ri + ':' + ci, 'data-cx': x + cellW / 2, 'data-cy': y + rowH / 2,
+          });
           g.appendChild(rect);
           if (v != null && isFinite(v) && cellW >= 40 && rowH >= 15) {
             const strong = Math.abs(v) / maxAbs > 0.55;
