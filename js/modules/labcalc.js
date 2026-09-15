@@ -360,15 +360,18 @@ export function fmtLabNumber(val, decimals = 4) {
 }
 
 /**
- * Lista por defecto de reactivos para una reacción estándar de PCR de 25 µL.
+ * Lista por defecto de reactivos para una reacción estándar de PCR de 20 µL
+ * (VF por defecto del proyecto). Cebadores a 0.4 µL de stock 10 µM = 0.2 µM
+ * final (mismo objetivo que el modo "Master Mix comercial"); el agua absorbe
+ * la diferencia frente a la receta previa de 25 µL.
  */
 export function getDefaultMasterMixReagents() {
   return [
-    { id: 'h2o', name: t('calc.mmDefaultH2O') || 'H2O PCR-grade', unitVol: 14.8, inMix: true },
+    { id: 'h2o', name: t('calc.mmDefaultH2O') || 'H2O PCR-grade', unitVol: 11.0, inMix: true },
     { id: 'buffer', name: t('calc.mmDefaultBuffer') || 'Tampón PCR (10X)', unitVol: 2.5, inMix: true },
     { id: 'dntps', name: t('calc.mmDefaultDNTPs') || 'dNTPs (10 mM)', unitVol: 0.5, inMix: true },
-    { id: 'fwd', name: t('calc.mmDefaultFwd') || 'Cebador Forward (10 µM)', unitVol: 1.0, inMix: true },
-    { id: 'rev', name: t('calc.mmDefaultRev') || 'Cebador Reverse (10 µM)', unitVol: 1.0, inMix: true },
+    { id: 'fwd', name: t('calc.mmDefaultFwd') || 'Cebador Forward (10 µM)', unitVol: 0.4, inMix: true },
+    { id: 'rev', name: t('calc.mmDefaultRev') || 'Cebador Reverse (10 µM)', unitVol: 0.4, inMix: true },
     { id: 'taq', name: t('calc.mmDefaultTaq') || 'Taq Polimerasa (5 U/µL)', unitVol: 0.2, inMix: true },
     { id: 'template', name: t('calc.mmDefaultTemplate') || 'Molde de ADN', unitVol: 5.0, inMix: false },
   ];
@@ -487,6 +490,117 @@ export function autoBalanceDnaWater(reagents, newDnaVol, templateId = 'template'
   });
 }
 
+/**
+ * Recalcula el volumen de agua (H2O) de una lista de reactivos como el resto
+ * hasta un volumen final objetivo, a partir de TODOS los demás reactivos.
+ *
+ * A diferencia de autoBalanceDnaWater() (que ajusta el agua por el DELTA de
+ * un único campo, el molde, asumiendo que el total ya estaba en su sitio),
+ * esta versión generalizada recalcula el agua desde cero cada vez — sirve
+ * igual si lo que cambió fue el volumen final, la concentración de la
+ * mezcla comercial, los cebadores, el molde o cualquier reactivo extra
+ * (modo "Master Mix comercial").
+ *
+ * Nunca negativa: si el resto de componentes ya supera el volumen objetivo,
+ * el agua se acota a 0 y se señala `overflow: true` (nunca un volumen
+ * negativo silencioso).
+ *
+ * @param {Array} reagents - reactivos, incluido el de agua (su unitVol se sobreescribe)
+ * @param {number|string} targetVolume - volumen final objetivo (VF) en µL
+ * @param {string} [waterId='h2o']
+ * @returns {{ reagents: Array, water: number, overflow: boolean }}
+ */
+export function balanceWaterToVolume(reagents, targetVolume, waterId = 'h2o') {
+  const vf = Math.max(0, parseFloat(targetVolume) || 0);
+  const safeReagents = Array.isArray(reagents) ? reagents : [];
+  const waterIdx = safeReagents.findIndex((r) => r.id === waterId);
+
+  const othersSum = safeReagents.reduce((acc, r, i) => {
+    if (i === waterIdx) return acc;
+    return acc + Math.max(0, parseFloat(r.unitVol) || 0);
+  }, 0);
+
+  const rawWater = vf - othersSum;
+  const overflow = rawWater < 0;
+  const water = Math.max(0, Math.round(rawWater * 10000) / 10000);
+
+  if (waterIdx === -1) {
+    return { reagents: safeReagents.map((r) => ({ ...r })), water, overflow };
+  }
+  return {
+    reagents: safeReagents.map((r, i) => (i === waterIdx ? { ...r, unitVol: water } : { ...r })),
+    water,
+    overflow,
+  };
+}
+
+// Concentración final de cebador sugerida para PCR de amplicones 16S/ITS con
+// mezclas comerciales 2X — ver justificación y fuentes citadas en
+// calc.mmPrimerConcHint (protocolos EMP 16S/ITS + Illumina 16S V3-V4, todos
+// a 0.2 µM final; NEB confirma 200 nM como recomendación general con Taq).
+export const RECOMMENDED_PRIMER_FINAL_UM = 0.2;
+
+/**
+ * Valores por defecto del modo "Master Mix comercial" (Modo A): VF=20 µL,
+ * mezcla comercial 2X, cebadores a concentración final recomendada 0.2 µM
+ * desde un stock 10 µM.
+ */
+export function getDefaultCommercialMix() {
+  return {
+    vf: 20,
+    mixX: 2,
+    primerStock: 10,
+    primerFinal: RECOMMENDED_PRIMER_FINAL_UM,
+    templateVol: 2,
+    extras: [],
+  };
+}
+
+/**
+ * Modo A — Master Mix comercial: deriva la lista de reactivos (mezcla
+ * comercial NX, cebadores Fwd/Rev, molde, extras opcionales y agua) a partir
+ * de parámetros editables, en vez del modelo reactivo-a-reactivo del Modo B.
+ *
+ *   volMix    = VF / X
+ *   volCebador = (concFinal × VF) / concStock   (igual para Fwd y Rev)
+ *   agua      = balanceWaterToVolume(..., VF)   (nunca negativa)
+ *
+ * @param {{vf:number, mixX:number, primerStock:number, primerFinal:number,
+ *          templateVol:number, extras:Array}} commercial
+ * @returns {{ reagents: Array, volMix: number, volPrimer: number,
+ *             water: number, overflow: boolean }}
+ */
+export function computeCommercialMix(commercial) {
+  const c = commercial || {};
+  const vf = Math.max(0, parseFloat(c.vf) || 0);
+  const mixX = Math.max(0, parseFloat(c.mixX) || 0);
+  const primerStock = Math.max(0, parseFloat(c.primerStock) || 0);
+  const primerFinal = Math.max(0, parseFloat(c.primerFinal) || 0);
+  const templateVol = Math.max(0, parseFloat(c.templateVol) || 0);
+  const extras = Array.isArray(c.extras) ? c.extras : [];
+
+  const volMix = mixX > 0 ? Math.round((vf / mixX) * 10000) / 10000 : 0;
+  const volPrimer = primerStock > 0 ? Math.round(((primerFinal * vf) / primerStock) * 10000) / 10000 : 0;
+
+  const withoutWater = [
+    { id: 'mix', name: t('calc.mmComMixRowName', { x: fmtLabNumber(mixX, 2) }) || `Master Mix comercial (${fmtLabNumber(mixX, 2)}X)`, unitVol: volMix, inMix: true },
+    { id: 'primerFwd', name: t('calc.mmDefaultFwd') || 'Cebador Forward', unitVol: volPrimer, inMix: true },
+    { id: 'primerRev', name: t('calc.mmDefaultRev') || 'Cebador Reverse', unitVol: volPrimer, inMix: true },
+    ...extras.map((e) => ({
+      id: e.id,
+      name: e.name,
+      unitVol: Math.max(0, parseFloat(e.unitVol) || 0),
+      inMix: e.inMix !== false,
+    })),
+    { id: 'h2o', name: t('calc.mmDefaultH2O') || 'H2O PCR-grade', unitVol: 0, inMix: true },
+    { id: 'template', name: t('calc.mmDefaultTemplate') || 'Molde de ADN', unitVol: templateVol, inMix: false },
+  ];
+
+  const { reagents, water, overflow } = balanceWaterToVolume(withoutWater, vf, 'h2o');
+
+  return { reagents, volMix, volPrimer, water, overflow };
+}
+
 // ============================================================================
 // 3. ESTADO DEL MÓDULO Y PERSISTENCIA
 // ============================================================================
@@ -519,11 +633,13 @@ function defaultState() {
       lastAuto: 'v1',
     },
     masterMix: {
+      mode: 'commercial', // 'commercial' (Modo A, por defecto) | 'components' (Modo B)
       numReactions: 10,
       excessPct: 10,
       dnaConc: '',
       dnaTargetMass: 30,
       reagents: getDefaultMasterMixReagents(),
+      commercial: getDefaultCommercialMix(),
     },
   };
 }
@@ -541,6 +657,7 @@ function loadState() {
         molarity: { ...def.molarity, ...(raw.molarity || {}) },
         dilution: { ...def.dilution, ...(raw.dilution || {}) },
         masterMix: raw.masterMix && typeof raw.masterMix === 'object' ? {
+          mode: ['commercial', 'components'].includes(raw.masterMix.mode) ? raw.masterMix.mode : def.masterMix.mode,
           numReactions: typeof raw.masterMix.numReactions === 'number' ? raw.masterMix.numReactions : (parseFloat(raw.masterMix.numReactions) || def.masterMix.numReactions),
           excessPct: typeof raw.masterMix.excessPct === 'number' ? raw.masterMix.excessPct : (parseFloat(raw.masterMix.excessPct) || def.masterMix.excessPct),
           dnaConc: typeof raw.masterMix.dnaConc === 'string' || typeof raw.masterMix.dnaConc === 'number' ? String(raw.masterMix.dnaConc) : def.masterMix.dnaConc,
@@ -553,6 +670,21 @@ function loadState() {
                 inMix: r.inMix !== undefined ? Boolean(r.inMix) : true,
               }))
             : def.masterMix.reagents,
+          commercial: raw.masterMix.commercial && typeof raw.masterMix.commercial === 'object' ? {
+            vf: typeof raw.masterMix.commercial.vf === 'number' ? raw.masterMix.commercial.vf : (parseFloat(raw.masterMix.commercial.vf) || def.masterMix.commercial.vf),
+            mixX: typeof raw.masterMix.commercial.mixX === 'number' ? raw.masterMix.commercial.mixX : (parseFloat(raw.masterMix.commercial.mixX) || def.masterMix.commercial.mixX),
+            primerStock: typeof raw.masterMix.commercial.primerStock === 'number' ? raw.masterMix.commercial.primerStock : (parseFloat(raw.masterMix.commercial.primerStock) || def.masterMix.commercial.primerStock),
+            primerFinal: typeof raw.masterMix.commercial.primerFinal === 'number' ? raw.masterMix.commercial.primerFinal : (parseFloat(raw.masterMix.commercial.primerFinal) || def.masterMix.commercial.primerFinal),
+            templateVol: typeof raw.masterMix.commercial.templateVol === 'number' ? raw.masterMix.commercial.templateVol : (parseFloat(raw.masterMix.commercial.templateVol) || def.masterMix.commercial.templateVol),
+            extras: Array.isArray(raw.masterMix.commercial.extras)
+              ? raw.masterMix.commercial.extras.map((r, i) => ({
+                  id: String(r.id || `x_${i}_${Date.now()}`),
+                  name: typeof r.name === 'string' ? r.name : '',
+                  unitVol: typeof r.unitVol === 'number' ? r.unitVol : (parseFloat(r.unitVol) || 0),
+                  inMix: r.inMix !== undefined ? Boolean(r.inMix) : true,
+                }))
+              : def.masterMix.commercial.extras,
+          } : def.masterMix.commercial,
         } : def.masterMix,
       };
     }
@@ -1300,8 +1432,40 @@ export function render(container) {
 
   // --------------------------------------------------------------------------
   // SUB-PESTAÑA 4: CALCULADORA DE MASTER MIX PARA PCR
+  // Dos modos: A) Master Mix comercial (2X/5X/10X, por defecto) — B) por
+  // componentes (receta reactivo a reactivo, el modelo original).
   // --------------------------------------------------------------------------
   function paintMasterMix(parent) {
+    const modeBar = document.createElement('div');
+    modeBar.className = 'ql-segmented';
+    modeBar.style.marginBottom = '18px';
+    [
+      ['commercial', t('calc.mmModeCommercial')],
+      ['components', t('calc.mmModeComponents')],
+    ].forEach(([m, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (s.masterMix.mode === m ? ' is-on' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        if (s.masterMix.mode !== m) {
+          s.masterMix.mode = m;
+          saveState(s);
+          paint();
+        }
+      });
+      modeBar.appendChild(b);
+    });
+    parent.appendChild(modeBar);
+
+    if (s.masterMix.mode === 'components') {
+      paintMasterMixComponents(parent);
+    } else {
+      paintMasterMixCommercial(parent);
+    }
+  }
+
+  function paintMasterMixComponents(parent) {
     const card = document.createElement('section');
     card.className = 'ql-card ql-panel';
 
@@ -1618,15 +1782,13 @@ export function render(container) {
       renderTableRows();
     });
 
-    // Botón Restablecer
+    // Botón Restablecer (solo toca lo propio de este modo, no s.masterMix.commercial)
     resetBtn.addEventListener('click', () => {
-      s.masterMix = {
-        numReactions: 10,
-        excessPct: 10,
-        dnaConc: '',
-        dnaTargetMass: 30,
-        reagents: getDefaultMasterMixReagents(),
-      };
+      s.masterMix.numReactions = 10;
+      s.masterMix.excessPct = 10;
+      s.masterMix.dnaConc = '';
+      s.masterMix.dnaTargetMass = 30;
+      s.masterMix.reagents = getDefaultMasterMixReagents();
       inputRxns.value = s.masterMix.numReactions;
       inputExcess.value = s.masterMix.excessPct;
       inputDnaConc.value = '';
@@ -1638,6 +1800,359 @@ export function render(container) {
 
     // Render inicial
     renderTableRows();
+  }
+
+  // --------------------------------------------------------------------------
+  // SUB-PESTAÑA 4, MODO A: MASTER MIX COMERCIAL (2X/5X/10X)
+  // --------------------------------------------------------------------------
+  function paintMasterMixCommercial(parent) {
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+    const cm = s.masterMix.commercial;
+
+    card.innerHTML = `
+      <div class="ql-calc-header-row">
+        <div>
+          <h2>${t('calc.mmTitle')}</h2>
+          <p class="ql-panel-note">${t('calc.mmComDesc')}</p>
+        </div>
+        <button type="button" id="ql-mmcom-reset" class="ql-btn ql-btn-subtle ql-btn-sm">${t('calc.mmReset')}</button>
+      </div>
+
+      <div class="ql-calc-controls-bar" style="margin-top:18px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-rxns">${t('calc.mmReactions')}</label>
+          <input type="number" id="ql-mmcom-rxns" min="1" step="1" value="${s.masterMix.numReactions}" class="ql-calc-number-input" style="width:130px;" />
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-excess">${t('calc.mmExcess')}</label>
+          <div class="ql-calc-unit-group" style="width:130px;">
+            <input type="number" id="ql-mmcom-excess" min="0" max="100" step="1" value="${s.masterMix.excessPct}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">%</span>
+          </div>
+        </div>
+        <div id="ql-mmcom-effective-badge" class="ql-calc-control-hint"></div>
+      </div>
+
+      <div class="ql-calc-controls-bar" style="margin-top:16px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-vf">${t('calc.mmComVF')}</label>
+          <div class="ql-calc-unit-group" style="width:120px;">
+            <input type="number" id="ql-mmcom-vf" min="0" step="any" value="${cm.vf}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">µL</span>
+          </div>
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-mixx">${t('calc.mmComMixX')}</label>
+          <div class="ql-calc-unit-group" style="width:100px;">
+            <input type="number" id="ql-mmcom-mixx" min="0" step="any" value="${cm.mixX}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">X</span>
+          </div>
+        </div>
+        <div id="ql-mmcom-mix-hint" class="ql-calc-control-hint"></div>
+      </div>
+
+      <div class="ql-calc-controls-bar" style="margin-top:12px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-primer-stock">${t('calc.mmComPrimerStock')}</label>
+          <div class="ql-calc-unit-group" style="width:120px;">
+            <input type="number" id="ql-mmcom-primer-stock" min="0" step="any" value="${cm.primerStock}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">µM</span>
+          </div>
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-primer-final">${t('calc.mmComPrimerFinal')}</label>
+          <div class="ql-calc-unit-group" style="width:120px;">
+            <input type="number" id="ql-mmcom-primer-final" min="0" step="any" value="${cm.primerFinal}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">µM</span>
+          </div>
+          <button type="button" id="ql-mmcom-primer-recommend" class="ql-calc-preset-tag" style="margin-top:6px; align-self:flex-start;">${t('calc.mmComPrimerUseRecommended')}</button>
+        </div>
+        <div id="ql-mmcom-primer-hint" class="ql-calc-control-hint"></div>
+      </div>
+      <div class="ql-metric-explain">${t('calc.mmPrimerConcHint')}</div>
+
+      <div class="ql-calc-controls-bar" style="margin-top:12px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-template-vol">${t('calc.mmComTemplateVolLabel')}</label>
+          <div class="ql-calc-unit-group" style="width:120px;">
+            <input type="number" id="ql-mmcom-template-vol" min="0" step="any" value="${cm.templateVol}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">µL</span>
+          </div>
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-dna-conc">${t('calc.mmDnaConc')}</label>
+          <div class="ql-calc-unit-group" style="width:160px;">
+            <input type="number" id="ql-mmcom-dna-conc" min="0" step="any" value="${s.masterMix.dnaConc || ''}"
+                   placeholder="Ej. 10" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">ng/µL</span>
+          </div>
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mmcom-dna-mass">${t('calc.mmDnaTargetMass')}</label>
+          <div class="ql-calc-unit-group" style="width:160px;">
+            <input type="number" id="ql-mmcom-dna-mass" min="0" step="any" value="${s.masterMix.dnaTargetMass != null ? s.masterMix.dnaTargetMass : 30}"
+                   placeholder="30" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">ng</span>
+          </div>
+        </div>
+        <div id="ql-mmcom-dna-feedback" class="ql-calc-control-hint"></div>
+      </div>
+
+      <div id="ql-mmcom-overflow" style="margin-top:12px;"></div>
+
+      <div class="ql-stats" id="ql-mmcom-stats" style="margin-top:16px;">
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmTotalPerRxn')}</div>
+          <div class="ql-stat-value" id="ql-mmcom-stat-per-rxn">—</div>
+        </div>
+        <div class="ql-stat" style="border-color:var(--accent);">
+          <div class="ql-stat-label" style="color:var(--accent);">${t('calc.mmTotalMasterMix')}</div>
+          <div class="ql-stat-value" id="ql-mmcom-stat-total-mm" style="color:var(--accent);">—</div>
+        </div>
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmPipettePerWell')}</div>
+          <div class="ql-stat-value" id="ql-mmcom-stat-pipette">—</div>
+        </div>
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmTemplatePerWell')}</div>
+          <div class="ql-stat-value" id="ql-mmcom-stat-template">—</div>
+        </div>
+      </div>
+
+      <div class="ql-calc-table-wrap" style="margin-top:20px;">
+        <table class="ql-calc-table" id="ql-mmcom-table">
+          <thead>
+            <tr>
+              <th style="min-width:180px;">${t('calc.mmReagentCol')}</th>
+              <th style="width:140px; text-align:right;">${t('calc.mmUnitVolCol')}</th>
+              <th style="width:130px; text-align:center;">${t('calc.mmInMixCol')}</th>
+              <th style="width:160px; text-align:right;">${t('calc.mmTotalVolCol')}</th>
+              <th style="width:60px; text-align:center;">${t('calc.mmActionsCol')}</th>
+            </tr>
+          </thead>
+          <tbody id="ql-mmcom-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:14px;">
+        <p class="ql-field-help" style="margin-bottom:8px;">${t('calc.mmComExtrasTitle')}</p>
+        <button type="button" id="ql-mmcom-add-btn" class="ql-btn ql-btn-secondary ql-btn-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M12 5v14M5 12h14"/></svg>
+          ${t('calc.mmAddReagent')}
+        </button>
+      </div>
+    `;
+
+    parent.appendChild(card);
+
+    const inputRxns = card.querySelector('#ql-mmcom-rxns');
+    const inputExcess = card.querySelector('#ql-mmcom-excess');
+    const inputVf = card.querySelector('#ql-mmcom-vf');
+    const inputMixX = card.querySelector('#ql-mmcom-mixx');
+    const inputPrimerStock = card.querySelector('#ql-mmcom-primer-stock');
+    const inputPrimerFinal = card.querySelector('#ql-mmcom-primer-final');
+    const primerRecommendBtn = card.querySelector('#ql-mmcom-primer-recommend');
+    const inputTemplateVol = card.querySelector('#ql-mmcom-template-vol');
+    const inputDnaConc = card.querySelector('#ql-mmcom-dna-conc');
+    const inputDnaMass = card.querySelector('#ql-mmcom-dna-mass');
+    const dnaFeedback = card.querySelector('#ql-mmcom-dna-feedback');
+    const mixHint = card.querySelector('#ql-mmcom-mix-hint');
+    const primerHint = card.querySelector('#ql-mmcom-primer-hint');
+    const badgeEffective = card.querySelector('#ql-mmcom-effective-badge');
+    const overflowBox = card.querySelector('#ql-mmcom-overflow');
+    const resetBtn = card.querySelector('#ql-mmcom-reset');
+    const addBtn = card.querySelector('#ql-mmcom-add-btn');
+    const tbody = card.querySelector('#ql-mmcom-tbody');
+
+    const statPerRxn = card.querySelector('#ql-mmcom-stat-per-rxn');
+    const statTotalMM = card.querySelector('#ql-mmcom-stat-total-mm');
+    const statPipette = card.querySelector('#ql-mmcom-stat-pipette');
+    const statTemplate = card.querySelector('#ql-mmcom-stat-template');
+
+    // Ids fijos/derivados: sus filas se muestran de solo lectura (el valor
+    // sale de la fórmula, no se edita celda a celda como en el Modo B).
+    const FIXED_IDS = new Set(['mix', 'primerFwd', 'primerRev', 'h2o', 'template']);
+
+    function recalc() {
+      s.masterMix.numReactions = Math.max(1, parseInt(inputRxns.value, 10) || 1);
+      s.masterMix.excessPct = Math.max(0, parseFloat(inputExcess.value) || 0);
+      cm.vf = Math.max(0, parseFloat(inputVf.value) || 0);
+      cm.mixX = Math.max(0, parseFloat(inputMixX.value) || 0);
+      cm.primerStock = Math.max(0, parseFloat(inputPrimerStock.value) || 0);
+      cm.primerFinal = Math.max(0, parseFloat(inputPrimerFinal.value) || 0);
+      cm.templateVol = Math.max(0, parseFloat(inputTemplateVol.value) || 0);
+
+      const mixRes = computeCommercialMix(cm);
+      const calcRes = calculateMasterMix(mixRes.reagents, s.masterMix.numReactions, s.masterMix.excessPct);
+
+      badgeEffective.innerHTML = t('calc.mmEffectiveBadge', {
+        n: calcRes.numReactions, pct: calcRes.excessPct, total: fmtLabNumber(calcRes.effectiveReactions, 2),
+      });
+      mixHint.innerHTML = t('calc.mmComMixHint', { vol: fmtLabNumber(mixRes.volMix, 3), x: fmtLabNumber(cm.mixX, 2) });
+      primerHint.innerHTML = t('calc.mmComPrimerHint', { vol: fmtLabNumber(mixRes.volPrimer, 3) });
+
+      statPerRxn.textContent = `${fmtLabNumber(calcRes.totalPerRxn, 2)} µL`;
+      statTotalMM.textContent = `${fmtLabNumber(calcRes.totalMasterMix, 2)} µL`;
+      statPipette.textContent = `${fmtLabNumber(calcRes.pipettePerWell, 2)} µL`;
+      statTemplate.textContent = `${fmtLabNumber(calcRes.templatePerWell, 2)} µL`;
+
+      if (mixRes.overflow) {
+        const total = mixRes.reagents.filter((r) => r.id !== 'h2o').reduce((acc, r) => acc + r.unitVol, 0);
+        overflowBox.innerHTML = `<div class="ql-calc-alert ql-calc-alert-error">${t('calc.mmComOverflow', { total: fmtLabNumber(total, 2), vf: fmtLabNumber(cm.vf, 2) })}</div>`;
+      } else {
+        overflowBox.innerHTML = '';
+      }
+
+      tbody.innerHTML = calcRes.reagents.map((r) => {
+        const isFixed = FIXED_IDS.has(r.id);
+        const volCell = isFixed
+          ? `<span class="tabular" style="font-family:var(--font-mono);">${fmtLabNumber(r.unitVol, 3)} µL</span>`
+          : `<div class="ql-calc-unit-group" style="width:100%;"><input type="number" min="0" step="any" class="ql-mmcom-input-vol" data-id="${escapeHtml(r.id)}" value="${r.unitVol}" style="text-align:right;" /><span class="ql-calc-unit-badge">µL</span></div>`;
+        const nameCell = isFixed
+          ? escapeHtml(r.name)
+          : `<input type="text" class="ql-mmcom-input-name" data-id="${escapeHtml(r.id)}" value="${escapeHtml(r.name)}" placeholder="${t('calc.mmReagentCol')}" />`;
+        const inMixCell = isFixed
+          ? (r.inMix ? '✓' : '—')
+          : `<input type="checkbox" class="ql-mmcom-input-inmix" data-id="${escapeHtml(r.id)}" ${r.inMix ? 'checked' : ''} aria-label="${t('calc.mmInMixCol')}" />`;
+        const delCell = isFixed
+          ? ''
+          : `<button type="button" class="ql-btn ql-btn-subtle ql-btn-sm ql-mmcom-btn-del" data-id="${escapeHtml(r.id)}" title="${t('calc.mmDelete')}">&times;</button>`;
+
+        return `
+          <tr data-id="${escapeHtml(r.id)}">
+            <td>${nameCell}</td>
+            <td style="text-align:right;">${volCell}</td>
+            <td style="text-align:center;">${inMixCell}</td>
+            <td style="text-align:right;">
+              ${r.inMix
+                ? `<strong style="font-family:var(--font-mono); color:var(--accent);">${fmtLabNumber(r.totalVol, 2)} µL</strong>`
+                : `<span class="ql-ink-muted" style="font-size:12px;">— (${t('calc.mmTemplatePerWell')})</span>`
+              }
+            </td>
+            <td style="text-align:center;">${delCell}</td>
+          </tr>
+        `;
+      }).join('');
+
+      saveState(s);
+    }
+
+    function handleDnaInputChange() {
+      const concRaw = inputDnaConc.value.trim();
+      const massRaw = inputDnaMass.value.trim();
+      s.masterMix.dnaConc = concRaw;
+      s.masterMix.dnaTargetMass = massRaw === '' ? 30 : (parseFloat(massRaw) || 0);
+
+      const concVal = parseFloat(concRaw);
+      const massVal = parseFloat(massRaw);
+
+      if (Number.isFinite(concVal) && concVal > 0 && Number.isFinite(massVal) && massVal > 0) {
+        const dnaVol = calcDnaTemplateVolume(massVal, concVal);
+        if (dnaVol !== null) {
+          inputTemplateVol.value = dnaVol;
+          dnaFeedback.innerHTML = t('calc.mmDnaTip', {
+            dnaVol: fmtLabNumber(dnaVol, 2),
+            waterVol: '—',
+            totalVol: '—',
+          });
+          recalc();
+          return;
+        }
+      }
+      dnaFeedback.innerHTML = '';
+      recalc();
+    }
+
+    // Controles globales
+    inputRxns.addEventListener('input', recalc);
+    inputExcess.addEventListener('input', recalc);
+    inputVf.addEventListener('input', recalc);
+    inputMixX.addEventListener('input', recalc);
+    inputPrimerStock.addEventListener('input', recalc);
+    inputPrimerFinal.addEventListener('input', recalc);
+    inputTemplateVol.addEventListener('input', recalc);
+    inputDnaConc.addEventListener('input', handleDnaInputChange);
+    inputDnaMass.addEventListener('input', handleDnaInputChange);
+
+    primerRecommendBtn.addEventListener('click', () => {
+      inputPrimerFinal.value = RECOMMENDED_PRIMER_FINAL_UM;
+      recalc();
+    });
+
+    // Delegación de eventos en la tabla, solo afecta a filas de extras
+    // (las filas fijas/derivadas no llevan estas clases, así que no matchean)
+    tbody.addEventListener('input', (e) => {
+      const id = e.target.getAttribute('data-id');
+      if (!id) return;
+      const extra = cm.extras.find((r) => String(r.id) === id);
+      if (!extra) return;
+
+      if (e.target.classList.contains('ql-mmcom-input-name')) {
+        extra.name = e.target.value;
+        saveState(s);
+      } else if (e.target.classList.contains('ql-mmcom-input-vol')) {
+        const val = parseFloat(e.target.value);
+        extra.unitVol = Number.isFinite(val) && val >= 0 ? val : 0;
+        recalc();
+      }
+    });
+
+    tbody.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      if (!id) return;
+      const extra = cm.extras.find((r) => String(r.id) === id);
+      if (!extra) return;
+
+      if (e.target.classList.contains('ql-mmcom-input-inmix')) {
+        extra.inMix = Boolean(e.target.checked);
+        recalc();
+      }
+    });
+
+    tbody.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.ql-mmcom-btn-del');
+      if (!delBtn) return;
+      const id = delBtn.getAttribute('data-id');
+      if (!id) return;
+      cm.extras = cm.extras.filter((r) => String(r.id) !== id);
+      recalc();
+    });
+
+    // Botón Añadir reactivo extra
+    addBtn.addEventListener('click', () => {
+      const newId = 'extra_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      cm.extras.push({
+        id: newId,
+        name: t('calc.mmNewReagentName') || 'Nuevo reactivo',
+        unitVol: 0,
+        inMix: true,
+      });
+      recalc();
+    });
+
+    // Botón Restablecer (solo el propio de este modo, no toca s.masterMix.reagents)
+    resetBtn.addEventListener('click', () => {
+      Object.assign(cm, getDefaultCommercialMix());
+      s.masterMix.numReactions = 10;
+      s.masterMix.excessPct = 10;
+      s.masterMix.dnaConc = '';
+      s.masterMix.dnaTargetMass = 30;
+      inputRxns.value = s.masterMix.numReactions;
+      inputExcess.value = s.masterMix.excessPct;
+      inputVf.value = cm.vf;
+      inputMixX.value = cm.mixX;
+      inputPrimerStock.value = cm.primerStock;
+      inputPrimerFinal.value = cm.primerFinal;
+      inputTemplateVol.value = cm.templateVol;
+      inputDnaConc.value = '';
+      inputDnaMass.value = 30;
+      dnaFeedback.innerHTML = '';
+      recalc();
+    });
+
+    // Render inicial
+    recalc();
   }
 
   // Pintar vista inicial
