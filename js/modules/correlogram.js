@@ -20,8 +20,8 @@ import { matchSampleId } from '../lib/sampleMatch.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
-import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
+import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 
 const NET_SEED = 0x9E3779B9; // semilla fija → layout de fuerzas determinista
 
@@ -436,17 +436,8 @@ export function render(container) {
         const rect = svgEl('rect', {
           x, y, width: cell - 1.5, height: cell - 1.5, rx: 2,
           fill: isDiag ? 'color-mix(in srgb, var(--baseline) 55%, var(--surface))' : corrFill(res.r),
+          ...(isDiag ? {} : { 'data-i': i, 'data-j': j }),
         });
-        if (!isDiag) {
-          rect.addEventListener('mouseenter', () => {
-            showTooltip(chartWrap, x + cell / 2, y + cell / 2,
-              escapeHtml(chosen[i].label) + ' × ' + escapeHtml(chosen[j].label),
-              'r = ' + (isFinite(res.r) ? res.r.toFixed(3) : '—') +
-              ' · p = ' + formatP(res.p) + ' · n = ' + res.n,
-              { svg, W, H, tooltip, rawHtml: true });
-          });
-          rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
-        }
         svg.appendChild(rect);
 
         if (!isDiag) {
@@ -465,6 +456,19 @@ export function render(container) {
         }
       }
     }
+    delegateHover(svg, 'rect[data-i]', {
+      onEnter: (el) => {
+        const i = +el.dataset.i, j = +el.dataset.j;
+        const res = results[i][j];
+        const x = marginL + j * cell, y = marginT + i * cell;
+        showTooltip(chartWrap, x + cell / 2, y + cell / 2,
+          escapeHtml(chosen[i].label) + ' × ' + escapeHtml(chosen[j].label),
+          'r = ' + (isFinite(res.r) ? res.r.toFixed(3) : '—') +
+          ' · p = ' + formatP(res.p) + ' · n = ' + res.n,
+          { svg, W, H, tooltip, rawHtml: true });
+      },
+      onLeave: () => hideTooltip(tooltip),
+    });
 
     // etiquetas de fila (izquierda) y columna (abajo, rotadas)
     const rowLabels = svgEl('g', { 'data-ce': 'rowlabels' });
@@ -599,7 +603,7 @@ export function render(container) {
     const edgeLayer = svgEl('g', {});
     svg.appendChild(edgeLayer);
     const edgeEls = [];
-    edges.forEach((e) => {
+    edges.forEach((e, idx) => {
       const a = P[e.i], b = P[e.j];
       const w = Math.abs(e.r);
       const baseOpacity = (0.22 + w * 0.6).toFixed(2);
@@ -608,14 +612,8 @@ export function render(container) {
         stroke: edgeColor(e.r), 'stroke-width': (1 + w * 4.5).toFixed(2),
         'stroke-opacity': baseOpacity, 'stroke-linecap': 'round',
         'data-ce-series-stroke': e.r >= 0 ? 'pos' : 'neg',
+        'data-ei': idx,
       });
-      ln.addEventListener('mouseenter', () => {
-        ln.setAttribute('stroke-opacity', '1');
-        showTip(tooltip, chartWrap, svg, W, H, (a.x + b.x) / 2, (a.y + b.y) / 2,
-          '<div class="ql-tt-name">' + escapeHtml(chosen[e.i].label) + ' × ' + escapeHtml(chosen[e.j].label) + '</div>' +
-          '<div class="ql-tt-row">r = ' + e.r.toFixed(3) + ' · p = ' + formatP(e.p) + ' · n = ' + e.n + '</div>');
-      });
-      ln.addEventListener('mouseleave', () => { ln.setAttribute('stroke-opacity', baseOpacity); tooltip.classList.remove('is-show'); });
       edgeLayer.appendChild(ln);
       edgeEls.push({ el: ln, e, baseOpacity });
     });
@@ -630,16 +628,7 @@ export function render(container) {
       const c = svgEl('circle', {
         cx: p.x, cy: p.y, r: rad,
         fill: 'var(--accent-soft)', stroke: 'var(--accent)', 'stroke-width': 1.5,
-      });
-      c.addEventListener('mouseenter', () => {
-        edgeEls.forEach(({ el, e }) => { if (e.i === i || e.j === i) el.setAttribute('stroke-opacity', '1'); });
-        showTip(tooltip, chartWrap, svg, W, H, p.x, p.y,
-          '<div class="ql-tt-name">' + escapeHtml(v.label) + '</div>' +
-          '<div class="ql-tt-row">' + t('correlogram.netNodeDegree', { n: degree[i] }) + '</div>');
-      });
-      c.addEventListener('mouseleave', () => {
-        edgeEls.forEach(({ el, baseOpacity }) => el.setAttribute('stroke-opacity', baseOpacity));
-        tooltip.classList.remove('is-show');
+        'data-ni': i,
       });
       nodeLayer.appendChild(c);
 
@@ -649,6 +638,33 @@ export function render(container) {
       const lbl = svgEl('text', { x: p.x + dx, y: p.y + dy, 'text-anchor': anchor, class: 'ql-tick-label' });
       lbl.textContent = v.label.length > 22 ? v.label.slice(0, 21) + '…' : v.label;
       labelLayer.appendChild(lbl);
+    });
+
+    delegateHover(svg, 'line[data-ei], circle[data-ni]', {
+      onEnter: (el) => {
+        if (el.dataset.ei != null) {
+          const { el: ln, e } = edgeEls[+el.dataset.ei];
+          ln.setAttribute('stroke-opacity', '1');
+          showTip(tooltip, chartWrap, svg, W, H, (P[e.i].x + P[e.j].x) / 2, (P[e.i].y + P[e.j].y) / 2,
+            '<div class="ql-tt-name">' + escapeHtml(chosen[e.i].label) + ' × ' + escapeHtml(chosen[e.j].label) + '</div>' +
+            '<div class="ql-tt-row">r = ' + e.r.toFixed(3) + ' · p = ' + formatP(e.p) + ' · n = ' + e.n + '</div>');
+        } else {
+          const i = +el.dataset.ni;
+          edgeEls.forEach(({ el: ln, e }) => { if (e.i === i || e.j === i) ln.setAttribute('stroke-opacity', '1'); });
+          showTip(tooltip, chartWrap, svg, W, H, P[i].x, P[i].y,
+            '<div class="ql-tt-name">' + escapeHtml(chosen[i].label) + '</div>' +
+            '<div class="ql-tt-row">' + t('correlogram.netNodeDegree', { n: degree[i] }) + '</div>');
+        }
+      },
+      onLeave: (el) => {
+        if (el.dataset.ei != null) {
+          const { el: ln, baseOpacity } = edgeEls[+el.dataset.ei];
+          ln.setAttribute('stroke-opacity', baseOpacity);
+        } else {
+          edgeEls.forEach(({ el: ln, baseOpacity }) => ln.setAttribute('stroke-opacity', baseOpacity));
+        }
+        tooltip.classList.remove('is-show');
+      },
     });
 
     // leyenda: signo + grosor por |r|
