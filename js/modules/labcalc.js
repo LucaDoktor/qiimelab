@@ -427,6 +427,66 @@ export function calculateMasterMix(reagents, numReactions, excessPct = 10) {
   };
 }
 
+/**
+ * Calcula el volumen de molde de ADN requerido a partir de la masa objetivo y concentración.
+ * V_adn = Masa (ng) / Concentración (ng/µL)
+ *
+ * @param {number|string} targetMassNg - Masa objetivo en nanogramos
+ * @param {number|string} concNgPerUl - Concentración en ng/µL
+ * @returns {number|null} Volumen en µL o null si los valores son inválidos
+ */
+export function calcDnaTemplateVolume(targetMassNg, concNgPerUl) {
+  const mass = parseFloat(targetMassNg);
+  const conc = parseFloat(concNgPerUl);
+  if (!Number.isFinite(mass) || !Number.isFinite(conc) || conc <= 0 || mass <= 0) {
+    return null;
+  }
+  return Math.round((mass / conc) * 10000) / 10000;
+}
+
+/**
+ * Auto-balancea el volumen de agua (H2O PCR-grade) al modificar el volumen de molde de ADN,
+ * manteniendo el volumen total unitario de la reacción (ej. 25 µL) constante.
+ *
+ * Delta = V_dna_nuevo - V_dna_antiguo
+ * V_agua_nuevo = V_agua_antiguo - Delta
+ *
+ * @param {Array} reagents - Lista de reactivos
+ * @param {number|string} newDnaVol - Nuevo volumen unitario del molde en µL
+ * @param {string} [templateId='template'] - ID del molde de ADN
+ * @param {string} [waterId='h2o'] - ID del agua
+ * @returns {Array} Nueva lista de reactivos con los volúmenes actualizados
+ */
+export function autoBalanceDnaWater(reagents, newDnaVol, templateId = 'template', waterId = 'h2o') {
+  if (!Array.isArray(reagents)) return [];
+  const safeDnaVol = Math.max(0, parseFloat(newDnaVol) || 0);
+
+  const templateIdx = reagents.findIndex((r) => r.id === templateId);
+  const waterIdx = reagents.findIndex((r) => r.id === waterId);
+
+  if (templateIdx === -1 || waterIdx === -1) {
+    return reagents.map((r) => ({ ...r }));
+  }
+
+  const oldDnaVol = Math.max(0, parseFloat(reagents[templateIdx].unitVol) || 0);
+  const oldWaterVol = Math.max(0, parseFloat(reagents[waterIdx].unitVol) || 0);
+
+  const delta = safeDnaVol - oldDnaVol;
+  const rawNewWaterVol = oldWaterVol - delta;
+  const newWaterVol = Math.max(0, Math.round(rawNewWaterVol * 10000) / 10000);
+  const roundedDnaVol = Math.round(safeDnaVol * 10000) / 10000;
+
+  return reagents.map((r, i) => {
+    if (i === templateIdx) {
+      return { ...r, unitVol: roundedDnaVol };
+    }
+    if (i === waterIdx) {
+      return { ...r, unitVol: newWaterVol };
+    }
+    return { ...r };
+  });
+}
+
 // ============================================================================
 // 3. ESTADO DEL MÓDULO Y PERSISTENCIA
 // ============================================================================
@@ -461,6 +521,8 @@ function defaultState() {
     masterMix: {
       numReactions: 10,
       excessPct: 10,
+      dnaConc: '',
+      dnaTargetMass: 30,
       reagents: getDefaultMasterMixReagents(),
     },
   };
@@ -481,6 +543,8 @@ function loadState() {
         masterMix: raw.masterMix && typeof raw.masterMix === 'object' ? {
           numReactions: typeof raw.masterMix.numReactions === 'number' ? raw.masterMix.numReactions : (parseFloat(raw.masterMix.numReactions) || def.masterMix.numReactions),
           excessPct: typeof raw.masterMix.excessPct === 'number' ? raw.masterMix.excessPct : (parseFloat(raw.masterMix.excessPct) || def.masterMix.excessPct),
+          dnaConc: typeof raw.masterMix.dnaConc === 'string' || typeof raw.masterMix.dnaConc === 'number' ? String(raw.masterMix.dnaConc) : def.masterMix.dnaConc,
+          dnaTargetMass: typeof raw.masterMix.dnaTargetMass === 'number' ? raw.masterMix.dnaTargetMass : (parseFloat(raw.masterMix.dnaTargetMass) || def.masterMix.dnaTargetMass),
           reagents: Array.isArray(raw.masterMix.reagents) && raw.masterMix.reagents.length > 0
             ? raw.masterMix.reagents.map((r, i) => ({
                 id: String(r.id || `r_${i}_${Date.now()}`),
@@ -1265,6 +1329,27 @@ export function render(container) {
         <div id="ql-mm-effective-badge" class="ql-calc-control-hint"></div>
       </div>
 
+      <!-- Panel de Concentración de Molde y Auto-Balance de Agua -->
+      <div class="ql-calc-controls-bar" style="margin-top:12px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mm-dna-conc">${t('calc.mmDnaConc')}</label>
+          <div class="ql-calc-unit-group" style="width:160px;">
+            <input type="number" id="ql-mm-dna-conc" min="0" step="any" value="${s.masterMix.dnaConc || ''}"
+                   placeholder="Ej. 10" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">ng/µL</span>
+          </div>
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mm-dna-mass">${t('calc.mmDnaTargetMass')}</label>
+          <div class="ql-calc-unit-group" style="width:160px;">
+            <input type="number" id="ql-mm-dna-mass" min="0" step="any" value="${s.masterMix.dnaTargetMass != null ? s.masterMix.dnaTargetMass : 30}"
+                   placeholder="30" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">ng</span>
+          </div>
+        </div>
+        <div id="ql-mm-dna-feedback" class="ql-calc-control-hint"></div>
+      </div>
+
       <div class="ql-stats" id="ql-mm-stats" style="margin-top:16px;">
         <div class="ql-stat">
           <div class="ql-stat-label">${t('calc.mmTotalPerRxn')}</div>
@@ -1311,6 +1396,9 @@ export function render(container) {
 
     const inputRxns = card.querySelector('#ql-mm-rxns');
     const inputExcess = card.querySelector('#ql-mm-excess');
+    const inputDnaConc = card.querySelector('#ql-mm-dna-conc');
+    const inputDnaMass = card.querySelector('#ql-mm-dna-mass');
+    const dnaFeedback = card.querySelector('#ql-mm-dna-feedback');
     const badgeEffective = card.querySelector('#ql-mm-effective-badge');
     const resetBtn = card.querySelector('#ql-calc-mm-reset');
     const addBtn = card.querySelector('#ql-mm-add-btn');
@@ -1353,6 +1441,50 @@ export function render(container) {
       saveState(s);
     }
 
+    function handleDnaInputChange() {
+      const concRaw = inputDnaConc.value.trim();
+      const massRaw = inputDnaMass.value.trim();
+      s.masterMix.dnaConc = concRaw;
+      s.masterMix.dnaTargetMass = massRaw === '' ? 30 : (parseFloat(massRaw) || 0);
+
+      const concVal = parseFloat(concRaw);
+      const massVal = parseFloat(massRaw);
+
+      if (Number.isFinite(concVal) && concVal > 0 && Number.isFinite(massVal) && massVal > 0) {
+        const dnaVol = calcDnaTemplateVolume(massVal, concVal);
+        if (dnaVol !== null) {
+          s.masterMix.reagents = autoBalanceDnaWater(s.masterMix.reagents, dnaVol, 'template', 'h2o');
+
+          const templateRowInput = tbody.querySelector(`.ql-mm-input-vol[data-id="template"]`);
+          if (templateRowInput) {
+            templateRowInput.value = dnaVol;
+          }
+          const waterRowInput = tbody.querySelector(`.ql-mm-input-vol[data-id="h2o"]`);
+          const waterItem = s.masterMix.reagents.find((r) => r.id === 'h2o');
+          if (waterRowInput && waterItem) {
+            waterRowInput.value = waterItem.unitVol;
+          }
+
+          updateStatsAndCalculations();
+
+          const currentTotal = s.masterMix.reagents.reduce((acc, r) => acc + (parseFloat(r.unitVol) || 0), 0);
+          if (waterItem && waterItem.unitVol === 0 && dnaVol > 19.8) {
+            dnaFeedback.innerHTML = `<span style="color:var(--critical); font-weight:600;">${t('calc.mmDnaOverflow', { dnaVol: fmtLabNumber(dnaVol, 2) })}</span>`;
+          } else {
+            dnaFeedback.innerHTML = t('calc.mmDnaTip', {
+              dnaVol: fmtLabNumber(dnaVol, 2),
+              waterVol: fmtLabNumber(waterItem ? waterItem.unitVol : 0, 2),
+              totalVol: fmtLabNumber(currentTotal, 2),
+            });
+          }
+          saveState(s);
+          return;
+        }
+      }
+      dnaFeedback.innerHTML = '';
+      saveState(s);
+    }
+
     function renderTableRows() {
       const calcRes = calculateMasterMix(s.masterMix.reagents, s.masterMix.numReactions, s.masterMix.excessPct);
       const canDelete = s.masterMix.reagents.length > 1;
@@ -1386,11 +1518,28 @@ export function render(container) {
       `).join('');
 
       updateStatsAndCalculations();
+
+      if (s.masterMix.dnaConc && s.masterMix.dnaTargetMass) {
+        const concVal = parseFloat(s.masterMix.dnaConc);
+        const massVal = parseFloat(s.masterMix.dnaTargetMass);
+        if (concVal > 0 && massVal > 0) {
+          const dnaVol = calcDnaTemplateVolume(massVal, concVal);
+          const waterItem = s.masterMix.reagents.find((r) => r.id === 'h2o');
+          const currentTotal = s.masterMix.reagents.reduce((acc, r) => acc + (parseFloat(r.unitVol) || 0), 0);
+          dnaFeedback.innerHTML = t('calc.mmDnaTip', {
+            dnaVol: fmtLabNumber(dnaVol, 2),
+            waterVol: fmtLabNumber(waterItem ? waterItem.unitVol : 0, 2),
+            totalVol: fmtLabNumber(currentTotal, 2),
+          });
+        }
+      }
     }
 
     // Escuchadores de eventos para controles globales
     inputRxns.addEventListener('input', updateStatsAndCalculations);
     inputExcess.addEventListener('input', updateStatsAndCalculations);
+    inputDnaConc.addEventListener('input', handleDnaInputChange);
+    inputDnaMass.addEventListener('input', handleDnaInputChange);
 
     // Delegación de eventos en el cuerpo de la tabla para rendimiento y sin pérdida de foco
     tbody.addEventListener('input', (e) => {
@@ -1404,7 +1553,29 @@ export function render(container) {
         saveState(s);
       } else if (e.target.classList.contains('ql-mm-input-vol')) {
         const val = parseFloat(e.target.value);
-        reagent.unitVol = Number.isFinite(val) && val >= 0 ? val : 0;
+        const safeVal = Number.isFinite(val) && val >= 0 ? val : 0;
+
+        if (id === 'template') {
+          s.masterMix.reagents = autoBalanceDnaWater(s.masterMix.reagents, safeVal, 'template', 'h2o');
+          const waterRowInput = tbody.querySelector(`.ql-mm-input-vol[data-id="h2o"]`);
+          const waterItem = s.masterMix.reagents.find((r) => r.id === 'h2o');
+          if (waterRowInput && waterItem) {
+            waterRowInput.value = waterItem.unitVol;
+          }
+          if (s.masterMix.dnaTargetMass && safeVal > 0) {
+            const calculatedConc = Math.round((s.masterMix.dnaTargetMass / safeVal) * 1000) / 1000;
+            s.masterMix.dnaConc = String(calculatedConc);
+            inputDnaConc.value = s.masterMix.dnaConc;
+          }
+          const currentTotal = s.masterMix.reagents.reduce((acc, r) => acc + (parseFloat(r.unitVol) || 0), 0);
+          dnaFeedback.innerHTML = t('calc.mmDnaTip', {
+            dnaVol: fmtLabNumber(safeVal, 2),
+            waterVol: fmtLabNumber(waterItem ? waterItem.unitVol : 0, 2),
+            totalVol: fmtLabNumber(currentTotal, 2),
+          });
+        } else {
+          reagent.unitVol = safeVal;
+        }
         updateStatsAndCalculations();
       }
     });
@@ -1452,10 +1623,15 @@ export function render(container) {
       s.masterMix = {
         numReactions: 10,
         excessPct: 10,
+        dnaConc: '',
+        dnaTargetMass: 30,
         reagents: getDefaultMasterMixReagents(),
       };
       inputRxns.value = s.masterMix.numReactions;
       inputExcess.value = s.masterMix.excessPct;
+      inputDnaConc.value = '';
+      inputDnaMass.value = 30;
+      dnaFeedback.innerHTML = '';
       saveState(s);
       renderTableRows();
     });

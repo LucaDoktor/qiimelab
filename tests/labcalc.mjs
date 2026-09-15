@@ -12,6 +12,8 @@ const {
   solveDilution,
   getDefaultMasterMixReagents,
   calculateMasterMix,
+  calcDnaTemplateVolume,
+  autoBalanceDnaWater,
   render,
 } = await import(APP_ROOT + '/js/modules/labcalc.js');
 
@@ -269,7 +271,61 @@ console.log('\n--- 12. Textos e Internacionalización de Master Mix ---');
   check('Traducción de calc.mmTotalMasterMix existe', typeof t('calc.mmTotalMasterMix') === 'string');
   check('Traducción de calc.mmPipettePerWell existe', typeof t('calc.mmPipettePerWell') === 'string');
   check('Traducción de calc.mmTemplatePerWell existe', typeof t('calc.mmTemplatePerWell') === 'string');
+  check('Traducción de calc.mmDnaConc existe', typeof t('calc.mmDnaConc') === 'string');
+  check('Traducción de calc.mmDnaTargetMass existe', typeof t('calc.mmDnaTargetMass') === 'string');
+  check('Traducción de calc.mmDnaSectionTitle existe', typeof t('calc.mmDnaSectionTitle') === 'string');
 }
+
+console.log('\n--- 13. Cálculo de Masa de ADN y Auto-Balance de Agua en Master Mix ---');
+{
+  // A. Cálculo de volumen de molde: V = Masa / Concentración
+  check('30 ng @ 10 ng/µL -> Volumen de ADN = 3.0 µL', approxEqual(calcDnaTemplateVolume(30, 10), 3.0));
+  check('30 ng @ 15 ng/µL -> Volumen de ADN = 2.0 µL', approxEqual(calcDnaTemplateVolume(30, 15), 2.0));
+  check('30 ng @ 60 ng/µL -> Volumen de ADN = 0.5 µL', approxEqual(calcDnaTemplateVolume(30, 60), 0.5));
+  check('50 ng @ 25 ng/µL -> Volumen de ADN = 2.0 µL', approxEqual(calcDnaTemplateVolume(50, 25), 2.0));
+
+  // Entradas no válidas
+  check('Concentración <= 0 retorna null', calcDnaTemplateVolume(30, 0) === null && calcDnaTemplateVolume(30, -5) === null);
+  check('Masa <= 0 retorna null', calcDnaTemplateVolume(0, 10) === null && calcDnaTemplateVolume(-10, 10) === null);
+  check('Valores no numéricos retornan null', calcDnaTemplateVolume('abc', 10) === null);
+
+  // B. Auto-balance de agua manteniendo volumen total constante (25 µL)
+  const baseReagents = getDefaultMasterMixReagents();
+  const baseTotal = baseReagents.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Receta base suma exactamente 25.0 µL', approxEqual(baseTotal, 25.0));
+
+  // Caso 1: ADN pasa de 5.0 µL a 3.0 µL (disminuye 2 µL) -> Agua aumenta de 14.8 a 16.8 µL
+  const balanced3 = autoBalanceDnaWater(baseReagents, 3.0);
+  const dnaItem1 = balanced3.find(r => r.id === 'template');
+  const waterItem1 = balanced3.find(r => r.id === 'h2o');
+  const total1 = balanced3.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Molde actualizado a 3.0 µL', dnaItem1 && approxEqual(dnaItem1.unitVol, 3.0));
+  check('Agua auto-balanceada a 16.8 µL (14.8 + 2.0)', waterItem1 && approxEqual(waterItem1.unitVol, 16.8));
+  check('Volumen total de reacción se mantiene constante en 25.0 µL', approxEqual(total1, 25.0));
+
+  // Caso 2: ADN pasa a 1.0 µL (disminuye 4 µL) -> Agua aumenta de 14.8 a 18.8 µL
+  const balanced1 = autoBalanceDnaWater(baseReagents, 1.0);
+  const waterItem2 = balanced1.find(r => r.id === 'h2o');
+  const total2 = balanced1.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Agua auto-balanceada a 18.8 µL con 1.0 µL de ADN', waterItem2 && approxEqual(waterItem2.unitVol, 18.8));
+  check('Volumen total sigue siendo 25.0 µL con 1.0 µL de ADN', approxEqual(total2, 25.0));
+
+  // Caso 3: ADN pasa a 8.0 µL (aumenta 3 µL) -> Agua disminuye de 14.8 a 11.8 µL
+  const balanced8 = autoBalanceDnaWater(baseReagents, 8.0);
+  const waterItem3 = balanced8.find(r => r.id === 'h2o');
+  const total3 = balanced8.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Agua auto-balanceada a 11.8 µL con 8.0 µL de ADN', waterItem3 && approxEqual(waterItem3.unitVol, 11.8));
+  check('Volumen total sigue siendo 25.0 µL con 8.0 µL de ADN', approxEqual(total3, 25.0));
+
+  // Caso 4: Volumen de ADN excesivo (ej. 25 µL) -> Agua se trunca a 0 de forma segura sin negativos
+  const balancedOverflow = autoBalanceDnaWater(baseReagents, 25.0);
+  const waterItemOver = balancedOverflow.find(r => r.id === 'h2o');
+  check('Agua se acota a 0 µL cuando el volumen de ADN desborda el espacio disponible', waterItemOver && waterItemOver.unitVol === 0);
+
+  // Inmutabilidad
+  check('autoBalanceDnaWater no muta el array original de reactivos', baseReagents.find(r => r.id === 'template').unitVol === 5.0);
+}
+
 
 
 console.log(failed ? '\n❌ ALGUNAS PRUEBAS FALLARON\n' : '\n✅ TODAS LAS PRUEBAS DE LAB CALC PASARON EXITOSAMENTE (100%)\n');
