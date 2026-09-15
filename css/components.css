@@ -2153,6 +2153,56 @@ dialog.ql-chart-editor-dialog::backdrop {
   color: var(--ink-2);
 }
 
+.ql-calc-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  background: var(--surface-2, var(--surface));
+  padding: 14px 18px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+}
+
+.ql-calc-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ql-calc-control-hint {
+  font-size: 13px;
+  color: var(--ink-muted);
+  align-self: center;
+  padding-bottom: 2px;
+}
+
+.ql-calc-table input[type="text"],
+.ql-calc-table input[type="number"] {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  box-sizing: border-box;
+}
+
+.ql-calc-table input[type="text"]:focus,
+.ql-calc-table input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.ql-calc-table input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+
 /* ---------- panel de ajustes de recorte dinámico (Sanger) ---------- */
 .ql-trim-panel {
   margin-top: 14px;

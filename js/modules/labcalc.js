@@ -3,6 +3,7 @@
 // preparación de disoluciones molares (m = C × V × MW) y diluciones (C1V1 = C2V2).
 
 import { t } from '../lib/i18n.js';
+import { escapeHtml } from '../lib/dom.js';
 
 const STORE_KEY = 'smart-175.labcalc';
 
@@ -358,13 +359,81 @@ export function fmtLabNumber(val, decimals = 4) {
   return (Math.round(val * factor) / factor).toString();
 }
 
+/**
+ * Lista por defecto de reactivos para una reacción estándar de PCR de 25 µL.
+ */
+export function getDefaultMasterMixReagents() {
+  return [
+    { id: 'h2o', name: t('calc.mmDefaultH2O') || 'H2O PCR-grade', unitVol: 14.8, inMix: true },
+    { id: 'buffer', name: t('calc.mmDefaultBuffer') || 'Tampón PCR (10X)', unitVol: 2.5, inMix: true },
+    { id: 'dntps', name: t('calc.mmDefaultDNTPs') || 'dNTPs (10 mM)', unitVol: 0.5, inMix: true },
+    { id: 'fwd', name: t('calc.mmDefaultFwd') || 'Cebador Forward (10 µM)', unitVol: 1.0, inMix: true },
+    { id: 'rev', name: t('calc.mmDefaultRev') || 'Cebador Reverse (10 µM)', unitVol: 1.0, inMix: true },
+    { id: 'taq', name: t('calc.mmDefaultTaq') || 'Taq Polimerasa (5 U/µL)', unitVol: 0.2, inMix: true },
+    { id: 'template', name: t('calc.mmDefaultTemplate') || 'Molde de ADN', unitVol: 5.0, inMix: false },
+  ];
+}
+
+/**
+ * Calcula los volúmenes necesarios para un cóctel de PCR (Master Mix),
+ * aplicando el multiplicador por número de reacciones y el factor de excedente/pipeteo.
+ *
+ * Multiplicador = N × (1 + Margen% / 100)
+ * Para reactivos en Master Mix: Vol_total = Vol_unitario × Multiplicador
+ * Para reactivos excluidos (ej. Template): Vol_total = 0 (se añade individualmente)
+ */
+export function calculateMasterMix(reagents, numReactions, excessPct = 10) {
+  const n = Math.max(0, parseFloat(numReactions) || 0);
+  const excess = Math.max(0, parseFloat(excessPct) || 0);
+  const effectiveReactions = n * (1 + excess / 100);
+
+  const safeReagents = Array.isArray(reagents) ? reagents : [];
+  let totalPerRxn = 0;
+  let totalMasterMix = 0;
+  let pipettePerWell = 0;
+  let templatePerWell = 0;
+
+  const enriched = safeReagents.map((r) => {
+    const unitVol = Math.max(0, parseFloat(r.unitVol) || 0);
+    const inMix = Boolean(r.inMix);
+    const totalVol = inMix ? unitVol * effectiveReactions : 0;
+
+    totalPerRxn += unitVol;
+    if (inMix) {
+      pipettePerWell += unitVol;
+      totalMasterMix += totalVol;
+    } else {
+      templatePerWell += unitVol;
+    }
+
+    return {
+      id: r.id,
+      name: r.name,
+      unitVol,
+      inMix,
+      totalVol,
+    };
+  });
+
+  return {
+    numReactions: n,
+    excessPct: excess,
+    effectiveReactions,
+    totalPerRxn,
+    totalMasterMix,
+    pipettePerWell,
+    templatePerWell,
+    reagents: enriched,
+  };
+}
+
 // ============================================================================
 // 3. ESTADO DEL MÓDULO Y PERSISTENCIA
 // ============================================================================
 
 function defaultState() {
   return {
-    tab: 'mw', // 'mw' | 'molarity' | 'dilutions'
+    tab: 'mw', // 'mw' | 'molarity' | 'dilutions' | 'mastermix'
     formula: 'MgSO4·7H2O',
     naType: 'dsDNA',
     naLength: '1000',
@@ -389,6 +458,11 @@ function defaultState() {
       v2Unit: 'mL',
       lastAuto: 'v1',
     },
+    masterMix: {
+      numReactions: 10,
+      excessPct: 10,
+      reagents: getDefaultMasterMixReagents(),
+    },
   };
 }
 
@@ -398,12 +472,24 @@ function loadState() {
     if (raw && typeof raw === 'object') {
       const def = defaultState();
       return {
-        tab: ['mw', 'molarity', 'dilutions'].includes(raw.tab) ? raw.tab : def.tab,
+        tab: ['mw', 'molarity', 'dilutions', 'mastermix'].includes(raw.tab) ? raw.tab : def.tab,
         formula: typeof raw.formula === 'string' ? raw.formula : def.formula,
         naType: ['dsDNA', 'ssDNA', 'ssRNA'].includes(raw.naType) ? raw.naType : def.naType,
         naLength: String(raw.naLength || def.naLength),
         molarity: { ...def.molarity, ...(raw.molarity || {}) },
         dilution: { ...def.dilution, ...(raw.dilution || {}) },
+        masterMix: raw.masterMix && typeof raw.masterMix === 'object' ? {
+          numReactions: typeof raw.masterMix.numReactions === 'number' ? raw.masterMix.numReactions : (parseFloat(raw.masterMix.numReactions) || def.masterMix.numReactions),
+          excessPct: typeof raw.masterMix.excessPct === 'number' ? raw.masterMix.excessPct : (parseFloat(raw.masterMix.excessPct) || def.masterMix.excessPct),
+          reagents: Array.isArray(raw.masterMix.reagents) && raw.masterMix.reagents.length > 0
+            ? raw.masterMix.reagents.map((r, i) => ({
+                id: String(r.id || `r_${i}_${Date.now()}`),
+                name: typeof r.name === 'string' ? r.name : '',
+                unitVol: typeof r.unitVol === 'number' ? r.unitVol : (parseFloat(r.unitVol) || 0),
+                inMix: r.inMix !== undefined ? Boolean(r.inMix) : true,
+              }))
+            : def.masterMix.reagents,
+        } : def.masterMix,
       };
     }
   } catch (e) { /* ignore */ }
@@ -427,6 +513,7 @@ export function render(container) {
     { id: 'mw', labelKey: 'calc.tabMW' },
     { id: 'molarity', labelKey: 'calc.tabMolarity' },
     { id: 'dilutions', labelKey: 'calc.tabDilutions' },
+    { id: 'mastermix', labelKey: 'calc.tabMasterMix' },
   ];
 
   function paint() {
@@ -466,8 +553,10 @@ export function render(container) {
       paintMW(container);
     } else if (s.tab === 'molarity') {
       paintMolarity(container);
-    } else {
+    } else if (s.tab === 'dilutions') {
       paintDilutions(container);
+    } else {
+      paintMasterMix(container);
     }
   }
 
@@ -1143,6 +1232,236 @@ export function render(container) {
     });
 
     recalculateDilution(null);
+  }
+
+  // --------------------------------------------------------------------------
+  // SUB-PESTAÑA 4: CALCULADORA DE MASTER MIX PARA PCR
+  // --------------------------------------------------------------------------
+  function paintMasterMix(parent) {
+    const card = document.createElement('section');
+    card.className = 'ql-card ql-panel';
+
+    card.innerHTML = `
+      <div class="ql-calc-header-row">
+        <div>
+          <h2>${t('calc.mmTitle')}</h2>
+          <p class="ql-panel-note">${t('calc.mmDesc')}</p>
+        </div>
+        <button type="button" id="ql-calc-mm-reset" class="ql-btn ql-btn-subtle ql-btn-sm">${t('calc.mmReset')}</button>
+      </div>
+
+      <div class="ql-calc-controls-bar" style="margin-top:18px;">
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mm-rxns">${t('calc.mmReactions')}</label>
+          <input type="number" id="ql-mm-rxns" min="1" step="1" value="${s.masterMix.numReactions}" class="ql-calc-number-input" style="width:130px;" />
+        </div>
+        <div class="ql-calc-control-group">
+          <label class="ql-calc-label" for="ql-mm-excess">${t('calc.mmExcess')}</label>
+          <div class="ql-calc-unit-group" style="width:130px;">
+            <input type="number" id="ql-mm-excess" min="0" max="100" step="1" value="${s.masterMix.excessPct}" class="ql-calc-number-input" />
+            <span class="ql-calc-unit-badge">%</span>
+          </div>
+        </div>
+        <div id="ql-mm-effective-badge" class="ql-calc-control-hint"></div>
+      </div>
+
+      <div class="ql-stats" id="ql-mm-stats" style="margin-top:16px;">
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmTotalPerRxn')}</div>
+          <div class="ql-stat-value" id="ql-mm-stat-per-rxn">—</div>
+        </div>
+        <div class="ql-stat" style="border-color:var(--accent);">
+          <div class="ql-stat-label" style="color:var(--accent);">${t('calc.mmTotalMasterMix')}</div>
+          <div class="ql-stat-value" id="ql-mm-stat-total-mm" style="color:var(--accent);">—</div>
+        </div>
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmPipettePerWell')}</div>
+          <div class="ql-stat-value" id="ql-mm-stat-pipette">—</div>
+        </div>
+        <div class="ql-stat">
+          <div class="ql-stat-label">${t('calc.mmTemplatePerWell')}</div>
+          <div class="ql-stat-value" id="ql-mm-stat-template">—</div>
+        </div>
+      </div>
+
+      <div class="ql-calc-table-wrap" style="margin-top:20px;">
+        <table class="ql-calc-table" id="ql-mm-table">
+          <thead>
+            <tr>
+              <th style="min-width:180px;">${t('calc.mmReagentCol')}</th>
+              <th style="width:140px; text-align:right;">${t('calc.mmUnitVolCol')}</th>
+              <th style="width:130px; text-align:center;">${t('calc.mmInMixCol')}</th>
+              <th style="width:160px; text-align:right;">${t('calc.mmTotalVolCol')}</th>
+              <th style="width:60px; text-align:center;">${t('calc.mmActionsCol')}</th>
+            </tr>
+          </thead>
+          <tbody id="ql-mm-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:14px; display:flex; justify-content:flex-start;">
+        <button type="button" id="ql-mm-add-btn" class="ql-btn ql-btn-secondary ql-btn-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M12 5v14M5 12h14"/></svg>
+          ${t('calc.mmAddReagent')}
+        </button>
+      </div>
+    `;
+
+    parent.appendChild(card);
+
+    const inputRxns = card.querySelector('#ql-mm-rxns');
+    const inputExcess = card.querySelector('#ql-mm-excess');
+    const badgeEffective = card.querySelector('#ql-mm-effective-badge');
+    const resetBtn = card.querySelector('#ql-calc-mm-reset');
+    const addBtn = card.querySelector('#ql-mm-add-btn');
+    const tbody = card.querySelector('#ql-mm-tbody');
+
+    const statPerRxn = card.querySelector('#ql-mm-stat-per-rxn');
+    const statTotalMM = card.querySelector('#ql-mm-stat-total-mm');
+    const statPipette = card.querySelector('#ql-mm-stat-pipette');
+    const statTemplate = card.querySelector('#ql-mm-stat-template');
+
+    function updateStatsAndCalculations() {
+      const rxnsVal = Math.max(1, parseInt(inputRxns.value, 10) || 1);
+      const excessVal = Math.max(0, parseFloat(inputExcess.value) || 0);
+      s.masterMix.numReactions = rxnsVal;
+      s.masterMix.excessPct = excessVal;
+
+      const calcRes = calculateMasterMix(s.masterMix.reagents, rxnsVal, excessVal);
+
+      // Badge informativa de reacciones efectivas
+      badgeEffective.innerHTML = `Factor pipeteo: <strong>${calcRes.numReactions}</strong> + ${calcRes.excessPct}% = <strong>${fmtLabNumber(calcRes.effectiveReactions, 2)}</strong> rxns`;
+
+      // Tarjetas de estadísticas
+      statPerRxn.textContent = `${fmtLabNumber(calcRes.totalPerRxn, 2)} µL`;
+      statTotalMM.textContent = `${fmtLabNumber(calcRes.totalMasterMix, 2)} µL`;
+      statPipette.textContent = `${fmtLabNumber(calcRes.pipettePerWell, 2)} µL`;
+      statTemplate.textContent = `${fmtLabNumber(calcRes.templatePerWell, 2)} µL`;
+
+      // Actualizar los volúmenes totales en las filas existentes
+      calcRes.reagents.forEach((r) => {
+        const totalCell = tbody.querySelector(`.ql-mm-total-cell[data-id="${r.id}"]`);
+        if (totalCell) {
+          if (r.inMix) {
+            totalCell.innerHTML = `<strong style="font-family:var(--font-mono); color:var(--accent);">${fmtLabNumber(r.totalVol, 2)} µL</strong>`;
+          } else {
+            totalCell.innerHTML = `<span class="ql-ink-muted" style="font-size:12px;">— (${t('calc.mmTemplatePerWell')})</span>`;
+          }
+        }
+      });
+
+      saveState(s);
+    }
+
+    function renderTableRows() {
+      const calcRes = calculateMasterMix(s.masterMix.reagents, s.masterMix.numReactions, s.masterMix.excessPct);
+      const canDelete = s.masterMix.reagents.length > 1;
+
+      tbody.innerHTML = calcRes.reagents.map((r) => `
+        <tr data-id="${escapeHtml(r.id)}">
+          <td>
+            <input type="text" class="ql-mm-input-name" data-id="${escapeHtml(r.id)}" value="${escapeHtml(r.name)}" placeholder="${t('calc.mmReagentCol')}" />
+          </td>
+          <td style="text-align:right;">
+            <div class="ql-calc-unit-group" style="width:100%;">
+              <input type="number" min="0" step="any" class="ql-mm-input-vol" data-id="${escapeHtml(r.id)}" value="${r.unitVol}" style="text-align:right;" />
+              <span class="ql-calc-unit-badge">µL</span>
+            </div>
+          </td>
+          <td style="text-align:center;">
+            <input type="checkbox" class="ql-mm-input-inmix" data-id="${escapeHtml(r.id)}" ${r.inMix ? 'checked' : ''} aria-label="${t('calc.mmInMixCol')}" />
+          </td>
+          <td style="text-align:right;" class="ql-mm-total-cell" data-id="${escapeHtml(r.id)}">
+            ${r.inMix
+              ? `<strong style="font-family:var(--font-mono); color:var(--accent);">${fmtLabNumber(r.totalVol, 2)} µL</strong>`
+              : `<span class="ql-ink-muted" style="font-size:12px;">— (${t('calc.mmTemplatePerWell')})</span>`
+            }
+          </td>
+          <td style="text-align:center;">
+            <button type="button" class="ql-btn ql-btn-subtle ql-btn-sm ql-mm-btn-del" data-id="${escapeHtml(r.id)}" title="${t('calc.mmDelete')}" ${canDelete ? '' : 'disabled'}>
+              &times;
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      updateStatsAndCalculations();
+    }
+
+    // Escuchadores de eventos para controles globales
+    inputRxns.addEventListener('input', updateStatsAndCalculations);
+    inputExcess.addEventListener('input', updateStatsAndCalculations);
+
+    // Delegación de eventos en el cuerpo de la tabla para rendimiento y sin pérdida de foco
+    tbody.addEventListener('input', (e) => {
+      const id = e.target.getAttribute('data-id');
+      if (!id) return;
+      const reagent = s.masterMix.reagents.find((r) => String(r.id) === id);
+      if (!reagent) return;
+
+      if (e.target.classList.contains('ql-mm-input-name')) {
+        reagent.name = e.target.value;
+        saveState(s);
+      } else if (e.target.classList.contains('ql-mm-input-vol')) {
+        const val = parseFloat(e.target.value);
+        reagent.unitVol = Number.isFinite(val) && val >= 0 ? val : 0;
+        updateStatsAndCalculations();
+      }
+    });
+
+    tbody.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      if (!id) return;
+      const reagent = s.masterMix.reagents.find((r) => String(r.id) === id);
+      if (!reagent) return;
+
+      if (e.target.classList.contains('ql-mm-input-inmix')) {
+        reagent.inMix = Boolean(e.target.checked);
+        updateStatsAndCalculations();
+      }
+    });
+
+    tbody.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.ql-mm-btn-del');
+      if (!delBtn || delBtn.disabled) return;
+      const id = delBtn.getAttribute('data-id');
+      if (!id) return;
+
+      if (s.masterMix.reagents.length > 1) {
+        s.masterMix.reagents = s.masterMix.reagents.filter((r) => String(r.id) !== id);
+        saveState(s);
+        renderTableRows();
+      }
+    });
+
+    // Botón Añadir Reactivo
+    addBtn.addEventListener('click', () => {
+      const newId = 'reagent_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      s.masterMix.reagents.push({
+        id: newId,
+        name: t('calc.mmNewReagentName') || 'Nuevo Reactivo',
+        unitVol: 1.0,
+        inMix: true,
+      });
+      saveState(s);
+      renderTableRows();
+    });
+
+    // Botón Restablecer
+    resetBtn.addEventListener('click', () => {
+      s.masterMix = {
+        numReactions: 10,
+        excessPct: 10,
+        reagents: getDefaultMasterMixReagents(),
+      };
+      inputRxns.value = s.masterMix.numReactions;
+      inputExcess.value = s.masterMix.excessPct;
+      saveState(s);
+      renderTableRows();
+    });
+
+    // Render inicial
+    renderTableRows();
   }
 
   // Pintar vista inicial

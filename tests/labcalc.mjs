@@ -10,6 +10,8 @@ const {
   calcNucleicAcidMW,
   solveMolarity,
   solveDilution,
+  getDefaultMasterMixReagents,
+  calculateMasterMix,
   render,
 } = await import(APP_ROOT + '/js/modules/labcalc.js');
 
@@ -198,6 +200,77 @@ console.log('\n--- 10. Integración en el Enrutador y Shell de Smart-175 ---');
 
   check('Módulo labcalc exporta función render(container)', typeof render === 'function');
 }
+
+console.log('\n--- 11. Motor de Master Mix para PCR (Receta, Excedente y Exclusión) ---');
+{
+  const defReagents = getDefaultMasterMixReagents();
+  check('getDefaultMasterMixReagents retorna 7 componentes estándar', Array.isArray(defReagents) && defReagents.length === 7);
+
+  const templateItem = defReagents.find(r => r.id === 'template');
+  check('El molde de ADN (template) viene marcado como excluido (inMix: false)', templateItem && templateItem.inMix === false);
+
+  const h2oItem = defReagents.find(r => r.id === 'h2o');
+  check('H2O PCR-grade viene marcada como incluida (inMix: true)', h2oItem && h2oItem.inMix === true);
+
+  // Caso A: N = 10 reacciones, margen de pipeteo 10% -> multiplicador 11x
+  const res10 = calculateMasterMix(defReagents, 10, 10);
+  check('Multiplicador efectivo para N=10 y 10% margen es 11x', approxEqual(res10.effectiveReactions, 11));
+  check('Volumen total por reacción es 25.0 µL', approxEqual(res10.totalPerRxn, 25.0), `totalPerRxn=${res10.totalPerRxn}`);
+  check('Volumen de Master Mix a pipetear por pocillo es 20.0 µL', approxEqual(res10.pipettePerWell, 20.0), `pipettePerWell=${res10.pipettePerWell}`);
+  check('Volumen de Molde por pocillo es 5.0 µL', approxEqual(res10.templatePerWell, 5.0), `templatePerWell=${res10.templatePerWell}`);
+  check('Volumen total del tubo Master Mix es 220.0 µL (20 µL * 11)', approxEqual(res10.totalMasterMix, 220.0), `totalMasterMix=${res10.totalMasterMix}`);
+
+  // Comprobar volúmenes calculados individuales
+  const h2oRes = res10.reagents.find(r => r.id === 'h2o');
+  check('H2O en Master Mix: 14.8 * 11 = 162.8 µL', h2oRes && approxEqual(h2oRes.totalVol, 162.8), `h2o=${h2oRes?.totalVol}`);
+
+  const bufferRes = res10.reagents.find(r => r.id === 'buffer');
+  check('Tampón 10X en Master Mix: 2.5 * 11 = 27.5 µL', bufferRes && approxEqual(bufferRes.totalVol, 27.5), `buffer=${bufferRes?.totalVol}`);
+
+  const taqRes = res10.reagents.find(r => r.id === 'taq');
+  check('Taq Polymerase en Master Mix: 0.2 * 11 = 2.2 µL', taqRes && approxEqual(taqRes.totalVol, 2.2), `taq=${taqRes?.totalVol}`);
+
+  const templateRes = res10.reagents.find(r => r.id === 'template');
+  check('Molde de ADN en Master Mix: totalVol = 0 (excluido)', templateRes && templateRes.totalVol === 0);
+
+  // Caso B: N = 8 reacciones, margen 0%
+  const res8NoExcess = calculateMasterMix(defReagents, 8, 0);
+  check('Sin margen (0%): multiplicador = 8x y total Master Mix = 160.0 µL', approxEqual(res8NoExcess.effectiveReactions, 8) && approxEqual(res8NoExcess.totalMasterMix, 160.0));
+
+  // Caso C: N = 24 reacciones, margen 5% -> 24 * 1.05 = 25.2x
+  const res24 = calculateMasterMix(defReagents, 24, 5);
+  check('N=24 con 5% exceso: multiplicador = 25.2x y total Master Mix = 504.0 µL', approxEqual(res24.effectiveReactions, 25.2) && approxEqual(res24.totalMasterMix, 504.0));
+
+  // Caso D: Reactivo personalizado (SYBR Green I 1.25 µL)
+  const customReagents = [
+    ...defReagents,
+    { id: 'sybr', name: 'SYBR Green I (10X)', unitVol: 1.25, inMix: true },
+  ];
+  const resCustom = calculateMasterMix(customReagents, 10, 10);
+  check('Añadido SYBR Green (1.25 µL): totalPerRxn = 26.25 µL', approxEqual(resCustom.totalPerRxn, 26.25));
+  check('Añadido SYBR Green (1.25 µL): pipettePerWell = 21.25 µL', approxEqual(resCustom.pipettePerWell, 21.25));
+  check('Añadido SYBR Green (1.25 µL): totalMasterMix = 233.75 µL (21.25 * 11)', approxEqual(resCustom.totalMasterMix, 233.75));
+
+  // Caso E: Robustez ante entradas inválidas o vacías
+  const resEmpty = calculateMasterMix([], 10, 10);
+  check('Lista vacía de reactivos retorna 0 de forma segura', resEmpty.totalMasterMix === 0 && resEmpty.totalPerRxn === 0);
+
+  const resNeg = calculateMasterMix(defReagents, -5, -10);
+  check('Valores negativos en N o margen se normalizan a 0 sin romper', resNeg.effectiveReactions === 0 && resNeg.totalMasterMix === 0);
+}
+
+console.log('\n--- 12. Textos e Internacionalización de Master Mix ---');
+{
+  check('Traducción de calc.tabMasterMix existe', typeof t('calc.tabMasterMix') === 'string' && t('calc.tabMasterMix').length > 0);
+  check('Traducción de calc.mmTitle existe', typeof t('calc.mmTitle') === 'string' && t('calc.mmTitle').length > 0);
+  check('Traducción de calc.mmReactions existe', typeof t('calc.mmReactions') === 'string');
+  check('Traducción de calc.mmExcess existe', typeof t('calc.mmExcess') === 'string');
+  check('Traducción de calc.mmTotalPerRxn existe', typeof t('calc.mmTotalPerRxn') === 'string');
+  check('Traducción de calc.mmTotalMasterMix existe', typeof t('calc.mmTotalMasterMix') === 'string');
+  check('Traducción de calc.mmPipettePerWell existe', typeof t('calc.mmPipettePerWell') === 'string');
+  check('Traducción de calc.mmTemplatePerWell existe', typeof t('calc.mmTemplatePerWell') === 'string');
+}
+
 
 console.log(failed ? '\n❌ ALGUNAS PRUEBAS FALLARON\n' : '\n✅ TODAS LAS PRUEBAS DE LAB CALC PASARON EXITOSAMENTE (100%)\n');
 process.exit(failed ? 1 : 0);
