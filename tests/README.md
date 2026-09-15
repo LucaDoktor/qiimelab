@@ -74,9 +74,17 @@ R instalado.
 
 - **Ingesta / parsers** (`ingest.js`, `csv.js`, `minizip.js`, `ordination.js`,
   `fastq.js`): se ejercitan de forma indirecta al cargar los ejemplos en el
-  barrido, pero no hay tests unitarios de casos límite (`.qza` corrupto,
-  cabeceras raras, `#q2:types`, gzip, BIOM). El nuevo `diagnoseTable()` tampoco
-  tiene test propio.
+  barrido. `tests/ingest.mjs` (nuevo) SÍ cubre la ruta `.qza`/`.qzv` de verdad
+  — construye ZIPs válidos a mano (STORED y DEFLATE) y ejercita
+  `listZipEntries`/`readZipText`/`listQiimeDataFiles`/`gunzip*` y
+  `ingestFile()` end-to-end: taxonomía, matriz de distancias y ordination.txt
+  con nombre interno genérico (usa el nombre EXTERIOR del .qza), varios
+  `level-N.csv` de un `taxa-bar-plots.qzv`, aviso de BIOM binario, `.qza`
+  corrupto (sin EOCD) y una entrada con método de compresión no soportado que
+  no debe tirar abajo el resto del artefacto. Lo que SIGUE sin test unitario:
+  cabeceras raras fuera del caso `.qza`, `#q2:types`, y el resto de rutas de
+  `classifyTable()` (metadata, functionalKO, microbialCounts…) para archivos
+  sueltos `.tsv/.csv`. El `diagnoseTable()` tampoco tiene test propio.
 - **`upgma()` / `leafOrder()`** (clustering del mapa de calor beta): sin
   verificación numérica contra R (`hclust`).
 - **Vista de biomarcadores end-to-end**: `stats/benjaminihochberg.mjs` +

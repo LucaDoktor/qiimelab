@@ -34,6 +34,7 @@ const SUITE = [
   { name: 'venngeometry', file: 'venngeometry.mjs', kind: 'estático' },
   { name: 'labcalc', file: 'labcalc.mjs', kind: 'estático' },
   { name: 'inference', file: 'inference.mjs', kind: 'estático' },
+  { name: 'ingest', file: 'ingest.mjs', kind: 'estático' },
   { name: 'aligner', file: 'aligner.mjs', kind: 'estático' },
   { name: 'alluvial', file: 'alluvial.mjs', kind: 'estático' },
   { name: 'charteditor', file: 'charteditor.mjs', kind: 'estático' },
