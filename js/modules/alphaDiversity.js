@@ -10,7 +10,7 @@ import {
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { svgEl, escapeHtml } from '../lib/dom.js';
-import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
+import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 
 function fmt(v, d) {
   return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';

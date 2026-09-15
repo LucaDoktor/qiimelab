@@ -10,7 +10,7 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { drawVenn, drawUpset, popcount } from '../lib/setDiagram.js';
 import { loadRealCounts, loadExampleCounts, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { escapeHtml } from '../lib/dom.js';
 
 function emptyState(container) {
   const card = document.createElement('div');
