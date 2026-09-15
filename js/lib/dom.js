@@ -31,3 +31,38 @@ export function svgEl(tag, attrs) {
   }
   return el;
 }
+
+/**
+ * Delegación de eventos de hover: un único listener en `container` que
+ * detecta entradas/salidas de los elementos que coinciden con `selector`,
+ * en vez de un listener `mouseenter`/`mouseleave` por elemento. Evita crear
+ * miles de listeners en gráficos con muchos nodos (heatmaps, scatter, etc.).
+ * @param {HTMLElement|SVGElement} container
+ * @param {string} selector
+ * @param {Object} [opts]
+ * @param {(el: Element, e: PointerEvent) => void} [opts.onEnter]
+ * @param {(el: Element, e: PointerEvent) => void} [opts.onLeave]
+ * @param {(el: Element, e: PointerEvent) => void} [opts.onMove] - opcional, para tooltips que siguen al cursor (p. ej. inference.js)
+ */
+export function delegateHover(container, selector, { onEnter, onLeave, onMove } = {}) {
+  let current = null;
+  container.addEventListener('pointerover', (e) => {
+    const el = e.target.closest(selector);
+    if (!el || el === current || !container.contains(el)) return;
+    current = el;
+    onEnter && onEnter(el, e);
+  });
+  container.addEventListener('pointerout', (e) => {
+    const el = e.target.closest(selector);
+    if (!el || el !== current) return;
+    if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+    current = null;
+    onLeave && onLeave(el, e);
+  });
+  if (onMove) {
+    container.addEventListener('pointermove', (e) => {
+      if (!current || !e.target.closest(selector)) return;
+      onMove(current, e);
+    });
+  }
+}

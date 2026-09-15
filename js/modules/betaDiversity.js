@@ -6,8 +6,8 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
-import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
+import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 function line(x1, y1, x2, y2) {
@@ -386,16 +386,22 @@ export function render(container) {
         const rect = svgEl('rect', {
           x: marginL + ci * cellSize, y: marginT + ri * cellSize, width: cellSize - 1, height: cellSize - 1,
           fill: 'color-mix(in srgb, ' + farColor + ' ' + Math.round(frac * 100) + '%, ' + nearColor + ')',
+          'data-ri': ri, 'data-ci': ci,
         });
-        rect.addEventListener('mouseenter', () => {
-          const cx = marginL + ci * cellSize + cellSize / 2, cy = marginT + ri * cellSize + cellSize / 2;
-          showTooltip(chartWrap, cx, cy, escapeHtml(rowId) + ' — ' + escapeHtml(colId),
-            t('beta.ttDistance') + ': ' + v.toFixed(4),
-            { svg, W, H, tooltip, rawHtml: true });
-        });
-        rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
         svg.appendChild(rect);
       });
+    });
+    delegateHover(svg, 'rect[data-ri]', {
+      onEnter: (el) => {
+        const ri = +el.dataset.ri, ci = +el.dataset.ci;
+        const rowId = order[ri], colId = order[ci];
+        const v = data.matrix[idxOf[rowId]][idxOf[colId]];
+        const cx = marginL + ci * cellSize + cellSize / 2, cy = marginT + ri * cellSize + cellSize / 2;
+        showTooltip(chartWrap, cx, cy, escapeHtml(rowId) + ' — ' + escapeHtml(colId),
+          t('beta.ttDistance') + ': ' + v.toFixed(4),
+          { svg, W, H, tooltip, rawHtml: true });
+      },
+      onLeave: () => hideTooltip(tooltip),
     });
 
     const showEvery = n > 30 ? Math.ceil(n / 30) : 1;
@@ -586,15 +592,22 @@ export function render(container) {
       const g = groupOf[sid];
       const c = svgEl('circle', {
         cx, cy, r: 5, fill: colorForGroup(g), 'fill-opacity': 0.85, stroke: 'var(--surface)', 'stroke-width': 1.4,
+        'data-i': i,
         ...(g != null ? { 'data-ce-series-fill': 's' + groups.indexOf(g) } : {}),
       });
-      c.addEventListener('mouseenter', () => {
+      pts.appendChild(c);
+    });
+    delegateHover(svg, 'circle[data-i]', {
+      onEnter: (el) => {
+        const i = +el.dataset.i;
+        const sid = ord.sampleIds[i];
+        const g = groupOf[sid];
+        const cx = sx(ord.coords[i][pcX]), cy = sy(ord.coords[i][pcY]);
         showTooltip(chartWrap, cx, cy, escapeHtml(sid) + (g ? ' · ' + escapeHtml(g) : ''),
           'PCo' + (pcX + 1) + ' ' + ord.coords[i][pcX].toFixed(3) + ' · PCo' + (pcY + 1) + ' ' + ord.coords[i][pcY].toFixed(3),
           { svg, W, H, tooltip, rawHtml: true });
-      });
-      c.addEventListener('mouseleave', () => hideTooltip(tooltip));
-      pts.appendChild(c);
+      },
+      onLeave: () => hideTooltip(tooltip),
     });
 
     const xTitle = svgEl('text', { x: m.l + innerW / 2, y: H - 40, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
