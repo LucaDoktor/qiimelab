@@ -11,6 +11,7 @@ import {
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
   exampleDownloadBlock, exampleFileLinks,
 } from '../lib/exampleData.js';
+import { escapeHtml } from '../lib/dom.js';
 
 function downloadFile(name, text, mime) {
   try {
@@ -535,10 +536,6 @@ export function render(container) {
     }
     lastWarnings = warnings;
     paint();
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   // nombre de slot del estado → clave i18n slots.*

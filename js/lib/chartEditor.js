@@ -29,6 +29,7 @@
 import { PALETTES, paletteColorAt } from './palettes.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 import { openPanel as openModalPanel } from './modal.js';
+import { escapeHtml } from './dom.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const STYLE_ID = 'ce-styles';
@@ -1232,10 +1233,6 @@ export function exportPng(svgEl, filename = 'smart175_figura', scale = 4) {
       reject(err);
     }
   });
-}
-
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // =========================================================================

@@ -4,6 +4,7 @@
 
 import { t } from './i18n.js';
 import { summariseHealth } from './dataHealth.js';
+import { escapeHtml } from './dom.js';
 
 const DOT = {
   good: '#1a9e57', warning: '#c98a11', error: '#d33a3a', empty: 'var(--baseline)',
@@ -11,10 +12,6 @@ const DOT = {
 const CSSVAR = {
   good: 'var(--good)', warning: 'var(--warning)', error: 'var(--critical)', empty: 'var(--ink-muted)',
 };
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 /**
  * Devuelve un <section> con el semáforo.

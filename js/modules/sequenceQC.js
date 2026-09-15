@@ -7,8 +7,8 @@ import { state, subscribe, registerFile, addSequenceQC, removeFile } from '../st
 import { t } from '../lib/i18n.js';
 import { analyzeFastq } from '../lib/fastq.js';
 import { loadRealSequenceQC, exampleDownloadBlock } from '../lib/exampleData.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 const FASTQ_RE = /\.(fastq|fq)(\.gz)?$/i;
 
@@ -48,14 +48,6 @@ function estimateCost(entries, limit) {
   return '';
 }
 
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function safeId(name) { return 'qc_' + String(name).replace(/[^a-z0-9]/gi, '_'); }
 function fmtInt(n) { return (n == null || !isFinite(n)) ? '—' : Math.round(n).toLocaleString('es-ES'); }
 function fmtBytes(b) {

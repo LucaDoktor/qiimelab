@@ -10,17 +10,7 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { drawVenn, drawUpset, popcount } from '../lib/setDiagram.js';
 import { loadRealCounts, loadExampleCounts, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+import { svgEl, escapeHtml } from '../lib/dom.js';
 
 function emptyState(container) {
   const card = document.createElement('div');

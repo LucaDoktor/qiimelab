@@ -20,21 +20,14 @@ import { matchSampleId } from '../lib/sampleMatch.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
 
 const NET_SEED = 0x9E3779B9; // semilla fija → layout de fuerzas determinista
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOP_N_DEFAULT = 7, TOP_N_MIN = 3, TOP_N_MAX = 20;
 const NUM_RE = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function shortTaxon(full) {
   const parts = String(full).split(';').map((p) => p.trim()).filter(Boolean);
   return (parts[parts.length - 1] || String(full)).replace(/^[a-z]__/i, '') || String(full);
@@ -446,18 +439,13 @@ export function render(container) {
         });
         if (!isDiag) {
           rect.addEventListener('mouseenter', () => {
-            const wrapRect = chartWrap.getBoundingClientRect();
-            const svgRect = svg.getBoundingClientRect();
-            const sX = svgRect.width / W, sY = svgRect.height / H;
-            tooltip.style.left = ((svgRect.left - wrapRect.left) + (x + cell / 2) * sX + chartWrap.scrollLeft) + 'px';
-            tooltip.style.top = ((svgRect.top - wrapRect.top) + (y + cell / 2) * sY) + 'px';
-            tooltip.innerHTML =
-              '<div class="ql-tt-name">' + escapeHtml(chosen[i].label) + ' × ' + escapeHtml(chosen[j].label) + '</div>' +
-              '<div class="ql-tt-row">r = ' + (isFinite(res.r) ? res.r.toFixed(3) : '—') +
-              ' · p = ' + formatP(res.p) + ' · n = ' + res.n + '</div>';
-            tooltip.classList.add('is-show');
+            showTooltip(chartWrap, x + cell / 2, y + cell / 2,
+              escapeHtml(chosen[i].label) + ' × ' + escapeHtml(chosen[j].label),
+              'r = ' + (isFinite(res.r) ? res.r.toFixed(3) : '—') +
+              ' · p = ' + formatP(res.p) + ' · n = ' + res.n,
+              { svg, W, H, tooltip, rawHtml: true });
           });
-          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+          rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
         }
         svg.appendChild(rect);
 
@@ -763,11 +751,7 @@ export function render(container) {
 
   // tooltip a partir de coordenadas del viewBox (compartido por nodos y aristas)
   function showTip(tip, wrap, svgNode, W, H, cx, cy, html) {
-    const wr = wrap.getBoundingClientRect(), sr = svgNode.getBoundingClientRect();
-    tip.style.left = ((sr.left - wr.left) + cx * (sr.width / W) + (wrap.scrollLeft || 0)) + 'px';
-    tip.style.top = ((sr.top - wr.top) + cy * (sr.height / H)) + 'px';
-    tip.innerHTML = html;
-    tip.classList.add('is-show');
+    showTooltip(wrap, cx, cy, null, null, { svg: svgNode, W, H, tooltip: tip, html });
   }
 
   paint();

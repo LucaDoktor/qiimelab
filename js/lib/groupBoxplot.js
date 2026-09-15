@@ -4,21 +4,12 @@
 
 import { t } from './i18n.js';
 import { kruskalWallis, quartiles, formatP } from './stats.js';
+import { svgEl, escapeHtml } from './dom.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 // paleta categórica por grupo — la misma en boxplot, curvas de rarefacción, etc.
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 /** Color CSS del grupo nº `i` (cicla si hay más de 7 grupos, como el resto de la app). */
 export function groupColor(i) { return 'var(' + CAT_VARS[i % CAT_VARS.length] + ')'; }
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 /** PRNG determinista de 32 bits (mulberry32) — misma semilla, misma secuencia.
  *  Compartido: jitter del boxplot, posiciones iniciales del layout de fuerzas… */
 export function mulberry32(a) {

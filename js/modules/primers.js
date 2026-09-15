@@ -16,6 +16,7 @@ import { parseFasta, findPrimerSites, findAmplicons, CRITICAL_3PRIME_ZONE } from
 import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/primerCoverage.js';
 import { parseTable } from '../lib/csv.js';
 import { designPrimers, MODES as DESIGN_MODES } from '../lib/primerDesign.js';
+import { escapeHtml } from '../lib/dom.js';
 
 const STORE_KEY = 'smart-175.primers';
 const LEGACY_STORE_KEY = 'qiimelab.primers';
@@ -34,10 +35,6 @@ const TABS = [
   { id: 'coverage', labelKey: 'primers.tabCoverage' },
   { id: 'batch', labelKey: 'primers.tabBatch' },
 ];
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 // enteros grandes con separador de millares (mismo patrón que alphaDiversity.js)
 function fmtN(n) {

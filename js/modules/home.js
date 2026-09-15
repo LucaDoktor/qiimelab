@@ -4,6 +4,7 @@ import { domainMotif } from '../lib/motif.js';
 import { getProfileName } from '../lib/profile.js';
 import { slotFilled, GROUPS } from './shell.js';
 import { healthBannerEl } from '../lib/healthBanner.js';
+import { escapeHtml } from '../lib/dom.js';
 
 // route = fragmento de ruta; qKey = pregunta en lenguaje llano (texto principal);
 // nameKey/descKey = rótulo y descripción técnicos (secundarios); glos = id del
@@ -32,10 +33,6 @@ const MORE_LINKS = [
   { route: 'glosario', navKey: 'nav.glosario' },
   { route: 'validacion', navKey: 'nav.validacion' },
 ];
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 export function render(container) {
   function paint() {

@@ -20,6 +20,8 @@
 //   PLOC2/PLOC1  posición (índice en la traza) de cada base llamada
 //   SPAC1/SPAC3  espaciado medio entre picos (float), como referencia
 
+import { t } from './i18n.js';
+
 const DIR_ENTRY_SIZE = 28;
 
 function tagName(view, off) {
@@ -85,6 +87,9 @@ function decodeFloat(view, entry) {
  * }}
  */
 export function parseAb1(buffer) {
+  if (!buffer || buffer.byteLength < 34) {
+    throw new Error(t('sanger.errBadAb1') || 'El archivo .ab1 está dañado o es demasiado corto para contener una cabecera ABIF válida.');
+  }
   const view = new DataView(buffer);
   if (decodeAscii(view, 0, 4) !== 'ABIF') {
     throw new Error('No es un archivo .ab1 (ABIF) válido: falta la cabecera "ABIF".');

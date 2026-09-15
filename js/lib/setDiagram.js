@@ -5,13 +5,8 @@
 
 import { t } from './i18n.js';
 import { CAT_VARS } from './groupBoxplot.js';
+import { svgEl } from './dom.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
 export function popcount(n) { let c = 0; while (n) { c += n & 1; n >>= 1; } return c; }
 
 /**

@@ -19,12 +19,12 @@ import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { alignWithWorker } from '../lib/aligner.js';
 import { openPanel } from '../lib/modal.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
 
 const STORE_KEY = 'smart-175.sanger';
 const LEGACY_STORE_KEY = 'qiimelab.sanger';
 const PRIMERS_STORE_KEY = 'smart-175.primers';
 const LEGACY_PRIMERS_STORE_KEY = 'qiimelab.primers';
-const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Sin asignación previa de color base A/C/G/T en el resto de la app — se usan
 // los 4 primeros tonos de la paleta categórica, el subconjunto ya validado
@@ -41,14 +41,6 @@ const TABS = [
   { id: 'resultados', labelKey: 'sanger.tabResultados' },
 ];
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
 function fmtPct(x) { return Number.isFinite(x) ? (x * 100).toFixed(1) + '%' : '—'; }
 
 export function cleanFastaOrPlain(text) {

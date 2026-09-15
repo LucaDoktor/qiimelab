@@ -9,18 +9,8 @@ import {
 } from '../lib/alphaMetrics.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
 
 function fmt(v, d) {
   return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
@@ -487,16 +477,14 @@ export function render(container) {
       });
       pl.addEventListener('mouseenter', () => {
         pl.setAttribute('stroke-width', '3'); pl.setAttribute('stroke-opacity', '1');
-        const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
-        tooltip.style.left = ((sr.left - wr.left) + sx(c.N) * (sr.width / W)) + 'px';
-        tooltip.style.top = ((sr.top - wr.top) + sy(c.sObs) * (sr.height / H)) + 'px';
-        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(c.sid) + (c.group ? ' · ' + escapeHtml(c.group) : '') + '</div>' +
-          '<div class="ql-tt-row">' + t('alpha.rareColReads') + ' ' + fmtN(c.N) + ' · ' + t('alpha.rareColSobs') + ' ' + c.sObs + '</div>';
-        tooltip.classList.add('is-show');
+        showTooltip(chartWrap, sx(c.N), sy(c.sObs),
+          escapeHtml(c.sid) + (c.group ? ' · ' + escapeHtml(c.group) : ''),
+          t('alpha.rareColReads') + ' ' + fmtN(c.N) + ' · ' + t('alpha.rareColSobs') + ' ' + c.sObs,
+          { svg, W, H, tooltip, rawHtml: true });
       });
       pl.addEventListener('mouseleave', () => {
         pl.setAttribute('stroke-width', '1.6'); pl.setAttribute('stroke-opacity', '0.8');
-        tooltip.classList.remove('is-show');
+        hideTooltip(tooltip);
       });
       lines.appendChild(pl);
     });

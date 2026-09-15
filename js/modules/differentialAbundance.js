@@ -9,19 +9,12 @@ import { formatP } from '../lib/stats.js';
 import { partitionByMask, drawVenn } from '../lib/setDiagram.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { top: 48, right: 28, bottom: 86, left: 58 };
 const W = 900, H = 560;
 
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function shortenTaxon(name) {
   const parts = String(name).split(' ');
   if (parts.length <= 1) return name;
@@ -469,12 +462,8 @@ export function render(container) {
     }
 
     function positionTooltip(cx, cy) {
-      const wrapRect = chartWrap.getBoundingClientRect();
-      const svgRect = svg.getBoundingClientRect();
       const vb = svg.viewBox.baseVal;
-      const sX = svgRect.width / (vb.width || W), sY = svgRect.height / (vb.height || H);
-      tooltip.style.left = ((svgRect.left - wrapRect.left) + cx * sX + (chartWrap.scrollLeft || 0)) + 'px';
-      tooltip.style.top = ((svgRect.top - wrapRect.top) + cy * sY) + 'px';
+      showTooltipCentral(chartWrap, cx, cy, null, null, { svg, W: vb.width || W, H: vb.height || H, tooltip });
     }
     // anotación KO para tooltips: "amyA · Alpha-amylase · EC 3.2.1.1" o el
     // aviso de "sin anotar". Devuelve '' si la tabla no es de KOs.
@@ -489,17 +478,17 @@ export function render(container) {
     }
 
     function showTooltip(d, cx, cy) {
-      positionTooltip(cx, cy);
+      const vb = svg.viewBox.baseVal;
       const padjText = d.capped ? '< 1e-10' : d.padj.toExponential(2);
-      tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(d.taxon) + '</div>' + koTooltipLine(d.taxon) +
+      const html = '<div class="ql-tt-name">' + escapeHtml(d.taxon) + '</div>' + koTooltipLine(d.taxon) +
         '<div class="ql-tt-row">log2FC ' + d.lfc.toFixed(2) + ' · padj ' + padjText + '</div>';
-      tooltip.classList.add('is-show');
+      showTooltipCentral(chartWrap, cx, cy, null, null, { svg, W: vb.width || W, H: vb.height || H, tooltip, html });
     }
     function tooltipRaw(name, rowHtml, cx, cy, koCode) {
-      positionTooltip(cx, cy);
-      tooltip.innerHTML = '<div class="ql-tt-name">' + name + '</div>' + (koCode ? koTooltipLine(koCode) : '') +
+      const vb = svg.viewBox.baseVal;
+      const html = '<div class="ql-tt-name">' + name + '</div>' + (koCode ? koTooltipLine(koCode) : '') +
         '<div class="ql-tt-row">' + rowHtml + '</div>';
-      tooltip.classList.add('is-show');
+      showTooltipCentral(chartWrap, cx, cy, null, null, { svg, W: vb.width || W, H: vb.height || H, tooltip, html });
     }
 
     // ---- despachador de vistas ----

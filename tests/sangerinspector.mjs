@@ -327,6 +327,28 @@ console.log('\n--- 8. Modal interactivo y destrucción de listeners (ciclo de vi
   }
 }
 
+console.log('\n--- 9. Robustez de ab1Parser (guardas iniciales) ---');
+{
+  let caughtNull = false;
+  try {
+    parseAb1(null);
+  } catch (err) {
+    caughtNull = true;
+    check('lanza error con buffer null', err && typeof err.message === 'string');
+  }
+  check('captura error cuando el buffer es null', caughtNull);
+
+  let caughtShort = false;
+  try {
+    parseAb1(new ArrayBuffer(16));
+  } catch (err) {
+    caughtShort = true;
+    check('lanza error con buffer menor a 34 bytes', err && typeof err.message === 'string');
+  }
+  check('captura error cuando buffer.byteLength < 34', caughtShort);
+}
+
 console.log('\nRESULTADO INSPECTOR SANGER: ' + (failed ? 'FAIL' : 'PASS'));
 process.exit(failed ? 1 : 0);
+
 

@@ -6,8 +6,9 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore } from '../lib/stats.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 export const OTHER_VAR = '--cat-8';
 export const TOP_N_DEFAULT = 15, TOP_N_MIN = 5, TOP_N_MAX = 50;
@@ -21,12 +22,6 @@ export function shortTaxonName(fullTax) {
   const last = parts[parts.length - 1] || fullTax;
   const cleaned = String(last).replace(/^[a-z]__/i, '');
   return cleaned || t('barplots.unclassified') || 'Sin clasificar';
-}
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
 }
 
 const CAT_HEX_FALLBACKS = {
@@ -1627,16 +1622,13 @@ export function render(container) {
         'data-ce-series-fill': 's' + s.enrichedIdx,
       });
       rect.addEventListener('mouseenter', () => {
-        const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
-        tooltip.style.left = ((sr.left - wr.left) + (marginL + w) * (sr.width / W)) + 'px';
-        tooltip.style.top = ((sr.top - wr.top) + (y + rowH / 2) * (sr.height / H)) + 'px';
-        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(s.label) + '</div>' +
-          '<div class="ql-tt-row">' + escapeHtml(t('barplots.bmEnrichedIn', { group: s.enrichedGroup })) +
+        showTooltipCentral(chartWrap, marginL + w, y + rowH / 2, s.label, [
+          t('barplots.bmEnrichedIn', { group: s.enrichedGroup }) +
           ' · δ = ' + s.delta.toFixed(3) + (s.ldaScore == null ? '' : ' · LDA = ' + s.ldaScore.toFixed(3)) +
-          ' · q = ' + formatP(s.q) + '</div>';
-        tooltip.classList.add('is-show');
+          ' · q = ' + formatP(s.q),
+        ], { svg, W, H, tooltip });
       });
-      rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+      rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
       barsG.appendChild(rect);
 
       const lt = svgEl('text', { x: marginL - 8, y: y + rowH / 2 + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
@@ -1678,34 +1670,15 @@ export function render(container) {
   }
 
   function showTooltip(sampleId, taxonLabel, val, cx, cy, wrap, svgEl_, W, H, tooltipEl) {
-    const wrapRect = wrap.getBoundingClientRect();
-    const svgRect = svgEl_.getBoundingClientRect();
-    const scaleX = svgRect.width / W, scaleY = svgRect.height / H;
-    const left = (svgRect.left - wrapRect.left) + cx * scaleX + wrap.scrollLeft;
-    const top = (svgRect.top - wrapRect.top) + cy * scaleY;
-    tooltipEl.style.left = left + 'px';
-    tooltipEl.style.top = top + 'px';
-    tooltipEl.innerHTML = '<div class="ql-tt-name">' + escapeHtml(sampleId) + '</div>' +
-      '<div class="ql-tt-row">' + escapeHtml(taxonLabel) + ' · ' + (val * 100).toFixed(2) + '%</div>';
-    tooltipEl.classList.add('is-show');
+    showTooltipCentral(wrap, cx, cy, sampleId, taxonLabel + ' · ' + (val * 100).toFixed(2) + '%', {
+      svg: svgEl_, W, H, tooltip: tooltipEl,
+    });
   }
 
   function showAlluvialTooltip(taxonLabel, detailHtml, cx, cy, wrap, svgEl_, W, H, tooltipEl) {
-    const wrapRect = wrap.getBoundingClientRect();
-    const svgRect = svgEl_.getBoundingClientRect();
-    const scaleX = svgRect.width / W, scaleY = svgRect.height / H;
-    const left = (svgRect.left - wrapRect.left) + cx * scaleX + wrap.scrollLeft;
-    const top = (svgRect.top - wrapRect.top) + cy * scaleY;
-    tooltipEl.style.left = left + 'px';
-    tooltipEl.style.top = top + 'px';
-    tooltipEl.innerHTML = '<div class="ql-tt-name">' + escapeHtml(taxonLabel) + '</div>' +
-      '<div class="ql-tt-row">' + detailHtml + '</div>';
-    tooltipEl.classList.add('is-show');
-  }
-
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    showTooltipCentral(wrap, cx, cy, taxonLabel, detailHtml, {
+      svg: svgEl_, W, H, tooltip: tooltipEl, rawHtml: true,
+    });
   }
 
   paint();

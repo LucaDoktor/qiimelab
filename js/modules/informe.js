@@ -16,6 +16,7 @@ import { state } from '../state.js';
 import { t, getLang, LANGS } from '../lib/i18n.js';
 import { getProfileName } from '../lib/profile.js';
 import { methodsText } from '../lib/methodsText.js';
+import { escapeHtml } from '../lib/dom.js';
 
 const MAX_TABLE_ROWS = 25;   // tablas largas (abundancia diferencial, QC) se recortan
 
@@ -33,10 +34,6 @@ const REPORT_MODULES = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 // --- monta un módulo fuera de pantalla y extrae figura + tablas + títulos ---
 async function harvestModule(file) {

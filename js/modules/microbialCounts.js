@@ -23,17 +23,8 @@ import { fisherLSD, compactLetterDisplay } from '../lib/stats.js';
 import {
   loadExampleMicrobialCountsPlate, loadExampleMicrobialCountsMPN, exampleDownloadBlock,
 } from '../lib/exampleData.js';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { createTooltip, hideTooltip, showTooltip } from '../lib/tooltip.js';
 function fmt(v, d) {
   return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
 }
@@ -565,9 +556,8 @@ export function render(container) {
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('recuentos.a11yChart', { organism: (s.label || '') + (level ? ' — ' + level : '') }) });
-    const tooltip = document.createElement('div');
-    tooltip.className = 'ql-tooltip';
-    chartWrap.appendChild(svg); chartWrap.appendChild(tooltip);
+    const tooltip = createTooltip(chartWrap);
+    chartWrap.appendChild(svg);
     chartPanel.appendChild(chartWrap);
     grid.appendChild(chartPanel);
 
@@ -718,15 +708,12 @@ export function render(container) {
         'data-ce-series-fill': 's' + gi, 'data-ce-series-stroke': 's' + gi,
       });
       rect.addEventListener('mouseenter', () => {
-        const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
-        tooltip.style.left = ((sr.left - wr.left) + cx * (sr.width / W) + (chartWrap.scrollLeft || 0)) + 'px';
-        tooltip.style.top = ((sr.top - wr.top) + yTop * (sr.height / H)) + 'px';
-        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(g.key) + '</div>' +
-          '<div class="ql-tt-row">' + t('recuentos.ttMean') + ' = ' + fmt(g.meanLog, 3) + ' · n = ' + g.n + '</div>' +
-          '<div class="ql-tt-row">SD = ' + fmt(g.sd, 3) + ' · SE = ' + fmt(g.se, 3) + '</div>';
-        tooltip.classList.add('is-show');
+        showTooltip(chartWrap, cx, yTop, g.key, [
+          t('recuentos.ttMean') + ' = ' + fmt(g.meanLog, 3) + ' · n = ' + g.n,
+          'SD = ' + fmt(g.sd, 3) + ' · SE = ' + fmt(g.se, 3),
+        ], { svg, W, H, tooltip });
       });
-      rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+      rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
       svg.appendChild(rect);
 
       // barra de error (solo si n >= 2 → SD/SE definidos)

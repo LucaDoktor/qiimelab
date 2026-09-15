@@ -24,6 +24,7 @@ import { attachChartEditor } from '../lib/chartEditor.js';
 import { getSlot, subscribe } from '../state.js';
 import { CATEGORICAL } from '../lib/palettes.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
 
 const STORE_KEY = 'smart-175.phylo';
 const LEGACY_STORE_KEY = 'qiimelab.phylo';
@@ -31,19 +32,9 @@ const EXAMPLE_URL = 'datos-ejemplo/phylo/secuencias_ejemplo.fasta';
 const MIN_SEQUENCES = 3;
 const MIN_SEQ_LEN = 20;
 const RECOMMENDED_MAX = 150;
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const PROGRESS_EVERY = 30;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none', colorCol: '' }; }
 function load() {

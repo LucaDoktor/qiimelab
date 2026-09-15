@@ -6,18 +6,10 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
+import { svgEl, escapeHtml } from '../lib/dom.js';
+import { showTooltip, hideTooltip, createTooltip } from '../lib/tooltip.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function line(x1, y1, x2, y2) {
   return svgEl('line', { x1, y1, x2, y2, class: 'ql-baseline-line' });
 }
@@ -391,16 +383,12 @@ export function render(container) {
           fill: 'color-mix(in srgb, ' + farColor + ' ' + Math.round(frac * 100) + '%, ' + nearColor + ')',
         });
         rect.addEventListener('mouseenter', () => {
-          const wrapRect = chartWrap.getBoundingClientRect();
-          const svgRect = svg.getBoundingClientRect();
-          const scaleX = svgRect.width / W, scaleY = svgRect.height / H;
           const cx = marginL + ci * cellSize + cellSize / 2, cy = marginT + ri * cellSize + cellSize / 2;
-          tooltip.style.left = ((svgRect.left - wrapRect.left) + cx * scaleX + chartWrap.scrollLeft) + 'px';
-          tooltip.style.top = ((svgRect.top - wrapRect.top) + cy * scaleY) + 'px';
-          tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(rowId) + ' — ' + escapeHtml(colId) + '</div><div class="ql-tt-row">' + t('beta.ttDistance') + ': ' + v.toFixed(4) + '</div>';
-          tooltip.classList.add('is-show');
+          showTooltip(chartWrap, cx, cy, escapeHtml(rowId) + ' — ' + escapeHtml(colId),
+            t('beta.ttDistance') + ': ' + v.toFixed(4),
+            { svg, W, H, tooltip, rawHtml: true });
         });
-        rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+        rect.addEventListener('mouseleave', () => hideTooltip(tooltip));
         svg.appendChild(rect);
       });
     });
@@ -596,14 +584,11 @@ export function render(container) {
         ...(g != null ? { 'data-ce-series-fill': 's' + groups.indexOf(g) } : {}),
       });
       c.addEventListener('mouseenter', () => {
-        const wr = chartWrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
-        tooltip.style.left = ((sr.left - wr.left) + cx * (sr.width / W)) + 'px';
-        tooltip.style.top = ((sr.top - wr.top) + cy * (sr.height / H)) + 'px';
-        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(sid) + (g ? ' · ' + escapeHtml(g) : '') + '</div>' +
-          '<div class="ql-tt-row">PCo' + (pcX + 1) + ' ' + ord.coords[i][pcX].toFixed(3) + ' · PCo' + (pcY + 1) + ' ' + ord.coords[i][pcY].toFixed(3) + '</div>';
-        tooltip.classList.add('is-show');
+        showTooltip(chartWrap, cx, cy, escapeHtml(sid) + (g ? ' · ' + escapeHtml(g) : ''),
+          'PCo' + (pcX + 1) + ' ' + ord.coords[i][pcX].toFixed(3) + ' · PCo' + (pcY + 1) + ' ' + ord.coords[i][pcY].toFixed(3),
+          { svg, W, H, tooltip, rawHtml: true });
       });
-      c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+      c.addEventListener('mouseleave', () => hideTooltip(tooltip));
       pts.appendChild(c);
     });
 
