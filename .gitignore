@@ -4,3 +4,4 @@
 node_modules/
 dist/
 Claude outputs/
+scripts/.md2-cache/
