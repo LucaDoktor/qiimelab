@@ -22,7 +22,12 @@ const LEAK_A = build([{"s":"Q29udHJvbF90aWVtcG9fMA==","f":""},{"s":"VC1TSShOPylB
 const LEAK_B = build([{"s":"amVzdXM=","f":"i"},{"s":"V2FjaHRlcg==","f":"i"},{"s":"QWdyb1B1cmlUZWNo","f":"i"},{"s":"XGJVQUxcYg==","f":""},{"s":"UkVDW18gXT8yMDI2","f":"i"},{"s":"cHVyW2nDrV1u","f":"i"},{"s":"cHVyaW5lcw==","f":"i"},{"s":"XGJjZXJkb3M/XGI=","f":"i"},{"s":"YmlvYWNpZGlmaWNhY2lbw7NvXW4=","f":"i"},{"s":"X1ZXXGI=","f":""},{"s":"Vlcy","f":""},{"s":"Vldfb3B0","f":""},{"s":"bWluaWNvbmRhMw==","f":""},{"s":"aTktMTQ5MDBL","f":"i"},{"s":"bGliZ29tcA==","f":"i"},{"s":"U0FNUExJTkdfREVQVEg9Mjc2MDA=","f":""},{"s":"Mjc2MDA=","f":""}]);
 
 const TEXT_EXT = new Set(['.js', '.mjs', '.cjs', '.json', '.css', '.html', '.md', '.tsv', '.csv', '.txt', '.R', '.py', '.sh', '.yml', '.yaml', '']);
-const SKIP_DIR = new Set(['.git', 'node_modules', 'dist']);
+// .md2-cache: caché local (gitignored) de datos públicos de MD2 descargados
+// por scripts/build-phenotypes-md2.mjs — nunca se commitea, pero al ser un
+// volcado íntegro de una base de datos de virus/hospedadores puede coincidir
+// por casualidad con algún término del denylist del TFG. Igual que
+// node_modules/dist: artefacto local regenerable, fuera del alcance de este gate.
+const SKIP_DIR = new Set(['.git', 'node_modules', 'dist', '.md2-cache']);
 // binarios grandes / comprimidos que no son texto
 const SKIP_EXT = new Set(['.qza', '.qzv', '.gz', '.zip', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.woff', '.woff2', '.ttf']);
 
