@@ -4,7 +4,8 @@
 
 import { t } from './i18n.js';
 import { kruskalWallis, quartiles, formatP } from './stats.js';
-import { svgEl, escapeHtml } from './dom.js';
+import { svgEl } from './dom.js';
+import { showTooltip, hideTooltip } from './tooltip.js';
 
 // paleta categórica por grupo — la misma en boxplot, curvas de rarefacción, etc.
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -117,15 +118,11 @@ export function drawGroupBoxplot(o) {
         'data-ce-series-fill': seriesId,
       });
       c.addEventListener('mouseenter', () => {
-        const wrapRect = chartWrap.getBoundingClientRect();
-        const svgRect = svg.getBoundingClientRect();
-        const scaleX = svgRect.width / W, scaleY = svgRect.height / H;
-        tooltip.style.left = ((svgRect.left - wrapRect.left) + (cx + jitter) * scaleX) + 'px';
-        tooltip.style.top = ((svgRect.top - wrapRect.top) + yScale(v) * scaleY) + 'px';
-        tooltip.innerHTML = '<div class="ql-tt-name">' + escapeHtml(String(g)) + '</div><div class="ql-tt-row">' + escapeHtml(valueLabel) + ': ' + v.toFixed(decimals) + '</div>';
-        tooltip.classList.add('is-show');
+        showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), {
+          svg, W, H, tooltip,
+        });
       });
-      c.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
+      c.addEventListener('mouseleave', () => hideTooltip(tooltip));
       svg.appendChild(c);
     });
 

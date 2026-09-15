@@ -274,6 +274,7 @@ const DICTS = {
         interpret: 'FASTQ recién salido del secuenciador: todas las lecturas miden lo mismo (p. ej. 301 nt). Si ya has pasado cutadapt/recorte, es normal ver un rango de longitudes.',
         verdictGood: 'Todas las lecturas tienen la misma longitud.',
         verdictWarn: 'Hay varias longitudes de lectura (normal si el archivo ya está recortado).',
+        verdictCrit: 'Error crítico en distribución de longitudes',
         colLen: 'Longitud', colCount: 'Nº de lecturas',
       },
       duplication: {
@@ -1744,6 +1745,7 @@ const DICTS = {
         interpret: 'FASTQ straight off the sequencer: all reads are the same length (e.g. 301 nt). If you have already run cutadapt/trimming, a range of lengths is normal.',
         verdictGood: 'All reads have the same length.',
         verdictWarn: 'There are several read lengths (normal if the file is already trimmed).',
+        verdictCrit: 'Critical error in read length distribution',
         colLen: 'Length', colCount: 'Number of reads',
       },
       duplication: {

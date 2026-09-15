@@ -370,9 +370,14 @@ export function render(container) {
       drawDendrogram(tree, svg, xOf, (h) => dendroBottom - (h / maxHeight) * (dendroBottom - dendroTop));
     }
 
-    const allDistances = [];
-    data.matrix.forEach((row) => row.forEach((v) => allDistances.push(v)));
-    const maxDist = Math.max(...allDistances, 1e-9);
+    let maxDist = 1e-9;
+    for (let r = 0; r < data.matrix.length; r++) {
+      const row = data.matrix[r];
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v > maxDist) maxDist = v;
+      }
+    }
 
     order.forEach((rowId, ri) => {
       order.forEach((colId, ci) => {
