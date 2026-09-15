@@ -17,6 +17,7 @@ import {
   renderOverlapHTML,
   buildOverlapData,
   renderMinimapHTML,
+  drawMinimapCanvas,
   calculateMinimapViewport,
   calculateScrollFromMinimap,
   openOverlapModal,
@@ -136,14 +137,29 @@ console.log('\n--- 6. Minimapa y visualización condensada ---');
   const miniHtml = renderMinimapHTML(data);
   check('genera contenedor con clase ql-minimap-wrap', miniHtml.includes('class="ql-minimap-wrap"'));
   check('genera carril con clase ql-minimap-track', miniHtml.includes('class="ql-minimap-track"'));
-  check('genera barras con clase ql-minimap-bar', miniHtml.includes('class="ql-minimap-bar'));
-  check('incluye barras overlap-match y overlap-mismatch',
-    miniHtml.includes('overlap-match') && miniHtml.includes('overlap-mismatch'));
-  check('incluye barras de flancos fwd-only y rev-only',
-    miniHtml.includes('fwd-only') && miniHtml.includes('rev-only'));
+  check('genera elemento canvas ql-minimap-canvas', miniHtml.includes('<canvas') && miniHtml.includes('ql-minimap-canvas'));
+  check('no inyecta miles de nodos ql-minimap-bar (usa canvas)', !miniHtml.includes('ql-minimap-bar'));
   check('incluye recuadro de viewport ql-minimap-viewport', miniHtml.includes('class="ql-minimap-viewport"'));
-  check('las barras no contienen letras de nucleótidos (vista condensada)',
+  check('el canvas no contiene letras de nucleótidos',
     !miniHtml.includes('>A<') && !miniHtml.includes('>T<') && !miniHtml.includes('>G<') && !miniHtml.includes('>C<'));
+
+  // Verificación de la función de dibujo en Canvas
+  let fillRectCalls = 0;
+  const colorsUsed = [];
+  const mockCtx = {
+    clearRect: () => {},
+    fillRect: (x, y, w, h) => { fillRectCalls++; colorsUsed.push(mockCtx.fillStyle); },
+    fillStyle: '',
+  };
+  const mockCanvas = {
+    width: data.cols.length,
+    height: 14,
+    getContext: (type) => (type === '2d' ? mockCtx : null),
+  };
+  drawMinimapCanvas(mockCanvas, data);
+  check('drawMinimapCanvas dibuja sobre el contexto 2D usando fillRect', fillRectCalls === data.cols.length);
+  check('drawMinimapCanvas aplica colores específicos para match, mismatch y flancos',
+    colorsUsed.includes('#059669') && colorsUsed.includes('#dc2626') && colorsUsed.includes('#0284c7') && colorsUsed.includes('#9333ea'));
 }
 
 console.log('\n--- 7. Lógica matemática de sincronización bidireccional ---');

@@ -1482,6 +1482,12 @@ table.ql-table tbody tr:hover { box-shadow: inset 2px 0 0 var(--accent); }
   background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
+.ql-minimap-canvas {
+  width: 100%;
+  height: 14px;
+  display: block;
+}
+
 .ql-minimap-bar {
   display: inline-block;
   flex: 1 1 0;

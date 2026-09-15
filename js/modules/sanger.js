@@ -420,18 +420,7 @@ export function renderMinimapHTML(overlapDataOrCols, opts = {}) {
     : (overlapDataOrCols && overlapDataOrCols.cols ? overlapDataOrCols : buildOverlapData(overlapDataOrCols, opts));
 
   const cols = data.cols || [];
-  const barHtmls = [];
-  for (let i = 0; i < cols.length; i++) {
-    const c = cols[i];
-    let barClass = 'ql-minimap-bar';
-    if (c.type.includes('overlap-mismatch')) barClass += ' overlap-mismatch';
-    else if (c.type.includes('overlap-match')) barClass += ' overlap-match';
-    else if (c.type.includes('fwd-only')) barClass += ' fwd-only';
-    else if (c.type.includes('rev-only')) barClass += ' rev-only';
-    else barClass += ' ql-ds-gap';
-
-    barHtmls.push(`<div class="${barClass}" title="Pos: ${i + 1}"></div>`);
-  }
+  const colCount = cols.length;
 
   return `<div class="ql-minimap-wrap">
     <div class="ql-minimap-header">
@@ -440,11 +429,51 @@ export function renderMinimapHTML(overlapDataOrCols, opts = {}) {
     </div>
     <div class="ql-minimap-container" role="region" aria-label="Minimapa de solapamiento">
       <div class="ql-minimap-track">
-        ${barHtmls.join('')}
+        <canvas class="ql-minimap-canvas" width="${Math.max(1, colCount)}" height="14" aria-hidden="true"></canvas>
       </div>
       <div class="ql-minimap-viewport" aria-hidden="true"></div>
     </div>
   </div>`;
+}
+
+/**
+ * Dibuja las columnas del minimapa directamente sobre el contexto 2D del canvas.
+ * Evita inyectar miles de nodos DOM y previene layout thrashing.
+ *
+ * @param {HTMLCanvasElement} canvas - Canvas sobre el que dibujar
+ * @param {Object|Array} overlapDataOrCols - Datos de solapamiento o array de columnas
+ * @param {Object} [opts] - Opciones adicionales
+ */
+export function drawMinimapCanvas(canvas, overlapDataOrCols, opts = {}) {
+  if (!canvas) return;
+  const data = Array.isArray(overlapDataOrCols)
+    ? { cols: overlapDataOrCols }
+    : (overlapDataOrCols && overlapDataOrCols.cols ? overlapDataOrCols : buildOverlapData(overlapDataOrCols, opts));
+
+  const cols = data.cols || [];
+  if (!cols.length) return;
+
+  const ctx = canvas.getContext ? canvas.getContext('2d') : null;
+  if (!ctx) return;
+
+  const w = canvas.width || cols.length;
+  const h = canvas.height || 14;
+  ctx.clearRect(0, 0, w, h);
+
+  const colW = w / cols.length;
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
+    let fill = '#94a3b8';
+    if (c.type.includes('overlap-mismatch')) fill = '#dc2626';
+    else if (c.type.includes('overlap-match')) fill = '#059669';
+    else if (c.type.includes('fwd-only')) fill = '#0284c7';
+    else if (c.type.includes('rev-only')) fill = '#9333ea';
+
+    ctx.fillStyle = fill;
+    const x = i * colW;
+    const barW = c.type.includes('overlap-mismatch') ? Math.max(2, colW) : Math.max(1, colW);
+    ctx.fillRect(x, 0, barW, h);
+  }
 }
 
 /**
@@ -567,6 +596,11 @@ export function openOverlapModal(resultItem, opts = {}) {
       const minimapWrap = minimapDiv.firstElementChild;
       wrap.appendChild(minimapWrap);
 
+      const minimapCanvas = minimapWrap.querySelector('.ql-minimap-canvas');
+      if (minimapCanvas) {
+        drawMinimapCanvas(minimapCanvas, overlapData);
+      }
+
       const footer = document.createElement('div');
       footer.className = 'ql-overlap-modal-footer';
       footer.innerHTML = '<span class="ql-field-help" style="margin:0;">' +
@@ -644,6 +678,7 @@ export function openOverlapModal(resultItem, opts = {}) {
       };
       const onResize = () => {
         syncMainToMinimap();
+        if (minimapCanvas) drawMinimapCanvas(minimapCanvas, overlapData);
       };
 
       if (mainContainer) {
@@ -1200,7 +1235,14 @@ export function drawChromatogram(svg, read, trimRange) {
   let maxIntensity = 1;
   if (hasTrace) {
     const traceLen = read.trace.A.length;
-    maxIntensity = Math.max(1, ...['A', 'C', 'G', 'T'].flatMap((b) => [Math.max(...read.trace[b])]));
+    for (const b of ['A', 'C', 'G', 'T']) {
+      const arr = read.trace[b];
+      if (arr) {
+        for (let i = 0; i < arr.length; i++) {
+          if (arr[i] > maxIntensity) maxIntensity = arr[i];
+        }
+      }
+    }
     const yOf = (v) => marginT + traceH - (v / maxIntensity) * traceH;
     const xOfTraceIdx = (ti) => marginL + (ti / Math.max(1, traceLen - 1)) * (W - marginL - marginR);
     const step = Math.max(1, Math.floor(traceLen / (W * 1.5)));
@@ -1555,6 +1597,8 @@ export function render(container) {
   let nextPendingKey = 1;
   let stopActiveDrag = null; // si el usuario navega fuera a mitad de un arrastre, lo suelta el cleanup final
   let trimDebounceTimer = null; // temporizador de debounce para controles de recorte interactivo
+  let editor = null;
+  let chromaTooltip = null;
 
   function sampleList() { return [...samples.values()].sort((a, b) => a.id.localeCompare(b.id)); }
 
@@ -1636,6 +1680,8 @@ export function render(container) {
 
   function paint() {
     if (trimDebounceTimer) { clearTimeout(trimDebounceTimer); trimDebounceTimer = null; }
+    if (editor) { editor.destroy(); editor = null; }
+    if (chromaTooltip) { chromaTooltip.destroy(); chromaTooltip = null; }
     container.innerHTML = '';
     save(s);
 
@@ -1929,7 +1975,7 @@ export function render(container) {
     card.appendChild(legend);
 
     const chart = drawChromatogram(svg, read, trimRange);
-    const chromaTooltip = attachChromatogramTooltip({
+    chromaTooltip = attachChromatogramTooltip({
       svg,
       chartWrap,
       read,
@@ -2222,7 +2268,8 @@ export function render(container) {
     stack.appendChild(card);
     container.appendChild(stack);
 
-    attachChartEditor({
+    if (editor) { editor.destroy(); editor = null; }
+    editor = attachChartEditor({
       key: 'sanger-chromatogram', svg, mount: card, lang: getLang(),
       filename: t('sanger.title') + '-' + sample.id + '-' + s.selectedDirection,
       elements: [], paletteType: 'categorical', paletteMax: 4,
@@ -2548,5 +2595,7 @@ export function render(container) {
   return () => {
     if (stopActiveDrag) stopActiveDrag();
     if (trimDebounceTimer) clearTimeout(trimDebounceTimer);
+    if (editor) { editor.destroy(); editor = null; }
+    if (chromaTooltip) { chromaTooltip.destroy(); chromaTooltip = null; }
   };
 }

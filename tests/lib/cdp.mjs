@@ -9,7 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findChrome } from './env.mjs';
+import { findChrome, skip } from './env.mjs';
 
 let portSeq = 9700 + Math.floor(Math.random() * 200);
 
@@ -51,15 +51,21 @@ async function launchChrome(chromeBin) {
 
 export async function connect({ dark = false, url = 'http://127.0.0.1:8931', label = 'cdp' } = {}) {
   const chromeBin = findChrome();
-  if (!chromeBin) throw new Error('NO_CHROME');
+  if (!chromeBin) skip('no se encontró Chrome/Chromium');
 
-  const { chrome, profileDir, wsUrl } = await launchChrome(chromeBin);
+  let launched, ws;
+  try {
+    launched = await launchChrome(chromeBin);
+    ws = new WebSocket(launched.wsUrl);
+    await new Promise((res, rej) => {
+      ws.addEventListener('open', res, { once: true });
+      ws.addEventListener('error', () => rej(new Error('WS_FAIL')), { once: true });
+    });
+  } catch (err) {
+    skip(`Chrome no pudo arrancar en este entorno (${err?.message || err})`);
+  }
 
-  const ws = new WebSocket(wsUrl);
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true });
-    ws.addEventListener('error', () => rej(new Error('WS_FAIL')), { once: true });
-  });
+  const { chrome, profileDir, wsUrl } = launched;
 
   let mid = 0;
   const rpc = (method, params = {}, sessionId) => new Promise((res, rej) => {

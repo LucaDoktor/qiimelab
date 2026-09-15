@@ -1086,10 +1086,13 @@ export function render(container) {
           const rect = svgEl('rect', {
             x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
             fill: fillCol,
+            'data-sample': sampleId,
+            'data-tax': s.label,
+            'data-val': val,
+            'data-cx': cx,
+            'data-cy': yTop,
             ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
           });
-          rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, cx, yTop, chartWrap, svg, W, H, tooltip));
-          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
           svg.appendChild(rect);
           cumulative += val;
         });
@@ -1168,10 +1171,13 @@ export function render(container) {
           const rect = svgEl('rect', {
             x: xL, y: cy - barH / 2, width: Math.max(w, 0), height: barH,
             fill: fillCol,
+            'data-sample': sampleId,
+            'data-tax': s.label,
+            'data-val': val,
+            'data-cx': xR,
+            'data-cy': cy,
             ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
           });
-          rect.addEventListener('mouseenter', () => showTooltip(sampleId, s.label, val, xR, cy, chartWrap, svg, W, H, tooltip));
-          rect.addEventListener('mouseleave', () => tooltip.classList.remove('is-show'));
           svg.appendChild(rect);
           cumulative += val;
         });
@@ -1223,6 +1229,25 @@ export function render(container) {
     }
     legG.setAttribute('transform', 'translate(' + legTranslateX + ',' + legTranslateY + ')');
     svg.appendChild(legG);
+
+    svg.addEventListener('pointerover', (e) => {
+      const target = e.target;
+      if (!target || !target.getAttribute) return;
+      const sample = target.getAttribute('data-sample');
+      const tax = target.getAttribute('data-tax');
+      if (!sample || !tax) return;
+      const val = parseFloat(target.getAttribute('data-val')) || 0;
+      const cx = parseFloat(target.getAttribute('data-cx')) || 0;
+      const cy = parseFloat(target.getAttribute('data-cy')) || 0;
+      showTooltip(sample, tax, val, cx, cy, chartWrap, svg, W, H, tooltip);
+    });
+    svg.addEventListener('pointerout', (e) => {
+      const target = e.target;
+      if (!target || !target.getAttribute || !target.getAttribute('data-sample')) return;
+      const rel = e.relatedTarget;
+      if (rel && rel.getAttribute && rel.getAttribute('data-sample')) return;
+      tooltip.classList.remove('is-show');
+    });
 
     if (editor) editor.destroy();
     editor = attachChartEditor({
@@ -1537,6 +1562,7 @@ export function render(container) {
       const tx = svgEl('text', { x: 200, y: 44, 'text-anchor': 'middle', class: 'ql-axis-label', fill: 'var(--ink-muted)' });
       tx.textContent = t('barplots.bmNone');
       svg.appendChild(tx);
+      if (editor) { editor.destroy(); editor = null; }
       editor = attachChartEditor({ key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(), elements: [], onReset: () => paint() });
       return;
     }
@@ -1636,6 +1662,7 @@ export function render(container) {
     legG.setAttribute('transform', 'translate(' + marginL + ',' + legY + ')');
     svg.appendChild(legG);
 
+    if (editor) { editor.destroy(); editor = null; }
     editor = attachChartEditor({
       key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(),
       elements: [
