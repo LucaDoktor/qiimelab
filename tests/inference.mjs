@@ -273,6 +273,14 @@ check('i18n inference.dbMetabolism existe', i18n.t('inference.dbMetabolism') ===
 check('i18n inference.dbPhenotypes existe', i18n.t('inference.dbPhenotypes') === 'Fenotipo y Morfología (BacDive/metaTraits)');
 check('i18n inference.dbCustom existe', i18n.t('inference.dbCustom') === 'Cargar JSON Personalizado');
 
+// 7. Ejecución de mapTaxonomyToFunction con DEFAULT_PHENOTYPES
+const phenoMatrix = inference.mapTaxonomyToFunction(mockTaxaData, phenotypes.DEFAULT_PHENOTYPES, {
+  includeUnassigned: true,
+  asPercentage: true
+});
+check('mapTaxonomyToFunction procesa DEFAULT_PHENOTYPES', phenoMatrix && phenoMatrix.rows.length === 2);
+check('phenoMatrix detecta rasgos activos', phenoMatrix.functions.length > 5);
+check('phenoMatrix Muestra 1 detecta biofilm_forming', typeof phenoMatrix.rows[0].biofilm_forming === 'number' && phenoMatrix.rows[0].biofilm_forming > 0);
 // 8. Base de datos fenotípica y ecológica (BacDive / metaTraits)
 // (pruebas existentes arriba)
 
