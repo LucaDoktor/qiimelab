@@ -14,11 +14,15 @@ const {
   calculateMasterMix,
   calcDnaTemplateVolume,
   autoBalanceDnaWater,
+  balanceWaterToVolume,
+  getDefaultCommercialMix,
+  computeCommercialMix,
+  RECOMMENDED_PRIMER_FINAL_UM,
   render,
 } = await import(APP_ROOT + '/js/modules/labcalc.js');
 
 const { ROUTES } = await import(APP_ROOT + '/js/modules/shell.js');
-const { t } = await import(APP_ROOT + '/js/lib/i18n.js');
+const { t, setLang } = await import(APP_ROOT + '/js/lib/i18n.js');
 
 let failed = false;
 const check = (name, ok, extra = '') => {
@@ -215,19 +219,25 @@ console.log('\n--- 11. Motor de Master Mix para PCR (Receta, Excedente y Exclusi
   check('H2O PCR-grade viene marcada como incluida (inMix: true)', h2oItem && h2oItem.inMix === true);
 
   // Caso A: N = 10 reacciones, margen de pipeteo 10% -> multiplicador 11x
+  // Receta por defecto ahora suma 20.0 µL (VF por defecto del proyecto), no
+  // 25.0: cebadores a 0.4 µL (0.2 µM final de un stock 10 µM) y el agua
+  // absorbe la diferencia frente a la receta previa de 25 µL.
   const res10 = calculateMasterMix(defReagents, 10, 10);
   check('Multiplicador efectivo para N=10 y 10% margen es 11x', approxEqual(res10.effectiveReactions, 11));
-  check('Volumen total por reacción es 25.0 µL', approxEqual(res10.totalPerRxn, 25.0), `totalPerRxn=${res10.totalPerRxn}`);
-  check('Volumen de Master Mix a pipetear por pocillo es 20.0 µL', approxEqual(res10.pipettePerWell, 20.0), `pipettePerWell=${res10.pipettePerWell}`);
+  check('Volumen total por reacción es 20.0 µL', approxEqual(res10.totalPerRxn, 20.0), `totalPerRxn=${res10.totalPerRxn}`);
+  check('Volumen de Master Mix a pipetear por pocillo es 15.0 µL', approxEqual(res10.pipettePerWell, 15.0), `pipettePerWell=${res10.pipettePerWell}`);
   check('Volumen de Molde por pocillo es 5.0 µL', approxEqual(res10.templatePerWell, 5.0), `templatePerWell=${res10.templatePerWell}`);
-  check('Volumen total del tubo Master Mix es 220.0 µL (20 µL * 11)', approxEqual(res10.totalMasterMix, 220.0), `totalMasterMix=${res10.totalMasterMix}`);
+  check('Volumen total del tubo Master Mix es 165.0 µL (15 µL * 11)', approxEqual(res10.totalMasterMix, 165.0), `totalMasterMix=${res10.totalMasterMix}`);
 
   // Comprobar volúmenes calculados individuales
   const h2oRes = res10.reagents.find(r => r.id === 'h2o');
-  check('H2O en Master Mix: 14.8 * 11 = 162.8 µL', h2oRes && approxEqual(h2oRes.totalVol, 162.8), `h2o=${h2oRes?.totalVol}`);
+  check('H2O en Master Mix: 11.0 * 11 = 121.0 µL', h2oRes && approxEqual(h2oRes.totalVol, 121.0), `h2o=${h2oRes?.totalVol}`);
 
   const bufferRes = res10.reagents.find(r => r.id === 'buffer');
   check('Tampón 10X en Master Mix: 2.5 * 11 = 27.5 µL', bufferRes && approxEqual(bufferRes.totalVol, 27.5), `buffer=${bufferRes?.totalVol}`);
+
+  const fwdRes = res10.reagents.find(r => r.id === 'fwd');
+  check('Cebador Forward por defecto es 0.4 µL (0.2 µM final @ stock 10 µM, VF=20)', fwdRes && approxEqual(fwdRes.unitVol, 0.4), `fwd=${fwdRes?.unitVol}`);
 
   const taqRes = res10.reagents.find(r => r.id === 'taq');
   check('Taq Polymerase en Master Mix: 0.2 * 11 = 2.2 µL', taqRes && approxEqual(taqRes.totalVol, 2.2), `taq=${taqRes?.totalVol}`);
@@ -237,11 +247,11 @@ console.log('\n--- 11. Motor de Master Mix para PCR (Receta, Excedente y Exclusi
 
   // Caso B: N = 8 reacciones, margen 0%
   const res8NoExcess = calculateMasterMix(defReagents, 8, 0);
-  check('Sin margen (0%): multiplicador = 8x y total Master Mix = 160.0 µL', approxEqual(res8NoExcess.effectiveReactions, 8) && approxEqual(res8NoExcess.totalMasterMix, 160.0));
+  check('Sin margen (0%): multiplicador = 8x y total Master Mix = 120.0 µL', approxEqual(res8NoExcess.effectiveReactions, 8) && approxEqual(res8NoExcess.totalMasterMix, 120.0));
 
   // Caso C: N = 24 reacciones, margen 5% -> 24 * 1.05 = 25.2x
   const res24 = calculateMasterMix(defReagents, 24, 5);
-  check('N=24 con 5% exceso: multiplicador = 25.2x y total Master Mix = 504.0 µL', approxEqual(res24.effectiveReactions, 25.2) && approxEqual(res24.totalMasterMix, 504.0));
+  check('N=24 con 5% exceso: multiplicador = 25.2x y total Master Mix = 378.0 µL', approxEqual(res24.effectiveReactions, 25.2) && approxEqual(res24.totalMasterMix, 378.0));
 
   // Caso D: Reactivo personalizado (SYBR Green I 1.25 µL)
   const customReagents = [
@@ -249,9 +259,9 @@ console.log('\n--- 11. Motor de Master Mix para PCR (Receta, Excedente y Exclusi
     { id: 'sybr', name: 'SYBR Green I (10X)', unitVol: 1.25, inMix: true },
   ];
   const resCustom = calculateMasterMix(customReagents, 10, 10);
-  check('Añadido SYBR Green (1.25 µL): totalPerRxn = 26.25 µL', approxEqual(resCustom.totalPerRxn, 26.25));
-  check('Añadido SYBR Green (1.25 µL): pipettePerWell = 21.25 µL', approxEqual(resCustom.pipettePerWell, 21.25));
-  check('Añadido SYBR Green (1.25 µL): totalMasterMix = 233.75 µL (21.25 * 11)', approxEqual(resCustom.totalMasterMix, 233.75));
+  check('Añadido SYBR Green (1.25 µL): totalPerRxn = 21.25 µL', approxEqual(resCustom.totalPerRxn, 21.25));
+  check('Añadido SYBR Green (1.25 µL): pipettePerWell = 16.25 µL', approxEqual(resCustom.pipettePerWell, 16.25));
+  check('Añadido SYBR Green (1.25 µL): totalMasterMix = 178.75 µL (16.25 * 11)', approxEqual(resCustom.totalMasterMix, 178.75));
 
   // Caso E: Robustez ante entradas inválidas o vacías
   const resEmpty = calculateMasterMix([], 10, 10);
@@ -274,6 +284,24 @@ console.log('\n--- 12. Textos e Internacionalización de Master Mix ---');
   check('Traducción de calc.mmDnaConc existe', typeof t('calc.mmDnaConc') === 'string');
   check('Traducción de calc.mmDnaTargetMass existe', typeof t('calc.mmDnaTargetMass') === 'string');
   check('Traducción de calc.mmDnaSectionTitle existe', typeof t('calc.mmDnaSectionTitle') === 'string');
+
+  // Modo A (Master Mix comercial) vs Modo B (por componentes)
+  check('Traducción de calc.mmModeCommercial existe', typeof t('calc.mmModeCommercial') === 'string' && t('calc.mmModeCommercial').length > 0);
+  check('Traducción de calc.mmModeComponents existe', typeof t('calc.mmModeComponents') === 'string' && t('calc.mmModeComponents').length > 0);
+  check('Traducción de calc.mmComVF existe', typeof t('calc.mmComVF') === 'string');
+  check('Traducción de calc.mmComMixX existe', typeof t('calc.mmComMixX') === 'string');
+  check('Traducción de calc.mmComPrimerStock existe', typeof t('calc.mmComPrimerStock') === 'string');
+  check('Traducción de calc.mmComPrimerFinal existe', typeof t('calc.mmComPrimerFinal') === 'string');
+  check('Traducción de calc.mmComPrimerUseRecommended existe', typeof t('calc.mmComPrimerUseRecommended') === 'string');
+  check('Traducción de calc.mmPrimerConcHint existe y cita 0.2 µM', typeof t('calc.mmPrimerConcHint') === 'string' && t('calc.mmPrimerConcHint').includes('0.2'));
+  check('Traducción de calc.mmComOverflow existe', typeof t('calc.mmComOverflow') === 'string');
+
+  // Paridad ES/EN de las claves nuevas (CLAUDE.md: mantener paridad es/en)
+  setLang('en');
+  check('Traducción EN de calc.mmModeCommercial existe y difiere de ES', t('calc.mmModeCommercial') === 'Commercial Master Mix');
+  check('Traducción EN de calc.mmComPrimerFinal existe', typeof t('calc.mmComPrimerFinal') === 'string' && t('calc.mmComPrimerFinal').length > 0);
+  check('Traducción EN de calc.mmPrimerConcHint cita 0.2 µM', t('calc.mmPrimerConcHint').includes('0.2'));
+  setLang('es');
 }
 
 console.log('\n--- 13. Cálculo de Masa de ADN y Auto-Balance de Agua en Master Mix ---');
@@ -289,33 +317,34 @@ console.log('\n--- 13. Cálculo de Masa de ADN y Auto-Balance de Agua en Master 
   check('Masa <= 0 retorna null', calcDnaTemplateVolume(0, 10) === null && calcDnaTemplateVolume(-10, 10) === null);
   check('Valores no numéricos retornan null', calcDnaTemplateVolume('abc', 10) === null);
 
-  // B. Auto-balance de agua manteniendo volumen total constante (25 µL)
+  // B. Auto-balance de agua manteniendo volumen total constante (20 µL, VF
+  // por defecto del proyecto desde este prompt — antes eran 25 µL)
   const baseReagents = getDefaultMasterMixReagents();
   const baseTotal = baseReagents.reduce((acc, r) => acc + r.unitVol, 0);
-  check('Receta base suma exactamente 25.0 µL', approxEqual(baseTotal, 25.0));
+  check('Receta base suma exactamente 20.0 µL', approxEqual(baseTotal, 20.0));
 
-  // Caso 1: ADN pasa de 5.0 µL a 3.0 µL (disminuye 2 µL) -> Agua aumenta de 14.8 a 16.8 µL
+  // Caso 1: ADN pasa de 5.0 µL a 3.0 µL (disminuye 2 µL) -> Agua aumenta de 11.0 a 13.0 µL
   const balanced3 = autoBalanceDnaWater(baseReagents, 3.0);
   const dnaItem1 = balanced3.find(r => r.id === 'template');
   const waterItem1 = balanced3.find(r => r.id === 'h2o');
   const total1 = balanced3.reduce((acc, r) => acc + r.unitVol, 0);
   check('Molde actualizado a 3.0 µL', dnaItem1 && approxEqual(dnaItem1.unitVol, 3.0));
-  check('Agua auto-balanceada a 16.8 µL (14.8 + 2.0)', waterItem1 && approxEqual(waterItem1.unitVol, 16.8));
-  check('Volumen total de reacción se mantiene constante en 25.0 µL', approxEqual(total1, 25.0));
+  check('Agua auto-balanceada a 13.0 µL (11.0 + 2.0)', waterItem1 && approxEqual(waterItem1.unitVol, 13.0));
+  check('Volumen total de reacción se mantiene constante en 20.0 µL', approxEqual(total1, 20.0));
 
-  // Caso 2: ADN pasa a 1.0 µL (disminuye 4 µL) -> Agua aumenta de 14.8 a 18.8 µL
+  // Caso 2: ADN pasa a 1.0 µL (disminuye 4 µL) -> Agua aumenta de 11.0 a 15.0 µL
   const balanced1 = autoBalanceDnaWater(baseReagents, 1.0);
   const waterItem2 = balanced1.find(r => r.id === 'h2o');
   const total2 = balanced1.reduce((acc, r) => acc + r.unitVol, 0);
-  check('Agua auto-balanceada a 18.8 µL con 1.0 µL de ADN', waterItem2 && approxEqual(waterItem2.unitVol, 18.8));
-  check('Volumen total sigue siendo 25.0 µL con 1.0 µL de ADN', approxEqual(total2, 25.0));
+  check('Agua auto-balanceada a 15.0 µL con 1.0 µL de ADN', waterItem2 && approxEqual(waterItem2.unitVol, 15.0));
+  check('Volumen total sigue siendo 20.0 µL con 1.0 µL de ADN', approxEqual(total2, 20.0));
 
-  // Caso 3: ADN pasa a 8.0 µL (aumenta 3 µL) -> Agua disminuye de 14.8 a 11.8 µL
+  // Caso 3: ADN pasa a 8.0 µL (aumenta 3 µL) -> Agua disminuye de 11.0 a 8.0 µL
   const balanced8 = autoBalanceDnaWater(baseReagents, 8.0);
   const waterItem3 = balanced8.find(r => r.id === 'h2o');
   const total3 = balanced8.reduce((acc, r) => acc + r.unitVol, 0);
-  check('Agua auto-balanceada a 11.8 µL con 8.0 µL de ADN', waterItem3 && approxEqual(waterItem3.unitVol, 11.8));
-  check('Volumen total sigue siendo 25.0 µL con 8.0 µL de ADN', approxEqual(total3, 25.0));
+  check('Agua auto-balanceada a 8.0 µL con 8.0 µL de ADN', waterItem3 && approxEqual(waterItem3.unitVol, 8.0));
+  check('Volumen total sigue siendo 20.0 µL con 8.0 µL de ADN', approxEqual(total3, 20.0));
 
   // Caso 4: Volumen de ADN excesivo (ej. 25 µL) -> Agua se trunca a 0 de forma segura sin negativos
   const balancedOverflow = autoBalanceDnaWater(baseReagents, 25.0);
@@ -324,6 +353,79 @@ console.log('\n--- 13. Cálculo de Masa de ADN y Auto-Balance de Agua en Master 
 
   // Inmutabilidad
   check('autoBalanceDnaWater no muta el array original de reactivos', baseReagents.find(r => r.id === 'template').unitVol === 5.0);
+}
+
+console.log('\n--- 14. Master Mix — Modo A: Master Mix comercial (2X/5X/10X) ---');
+{
+  // A. balanceWaterToVolume: agua = resto hasta el volumen objetivo
+  const rNoWater = balanceWaterToVolume(
+    [{ id: 'a', unitVol: 4 }, { id: 'h2o', unitVol: 0 }, { id: 'b', unitVol: 6 }],
+    20,
+  );
+  check('balanceWaterToVolume: agua = 20 - (4+6) = 10.0 µL', approxEqual(rNoWater.reagents.find(r => r.id === 'h2o').unitVol, 10.0));
+  check('balanceWaterToVolume: sin desborde -> overflow=false', rNoWater.overflow === false);
+  check('balanceWaterToVolume: no muta el array original', [{ id: 'a', unitVol: 4 }, { id: 'h2o', unitVol: 0 }, { id: 'b', unitVol: 6 }][1].unitVol === 0);
+
+  const rOverflow = balanceWaterToVolume(
+    [{ id: 'a', unitVol: 14 }, { id: 'h2o', unitVol: 0 }, { id: 'b', unitVol: 9 }],
+    20,
+  );
+  check('balanceWaterToVolume: componentes (23) > VF (20) -> agua = 0, nunca negativa', rOverflow.reagents.find(r => r.id === 'h2o').unitVol === 0);
+  check('balanceWaterToVolume: señala overflow=true cuando los componentes superan VF', rOverflow.overflow === true);
+
+  // B. getDefaultCommercialMix: valores por defecto reales del prompt
+  const defCommercial = getDefaultCommercialMix();
+  check('Por defecto VF = 20 µL', approxEqual(defCommercial.vf, 20));
+  check('Por defecto mezcla = 2X', approxEqual(defCommercial.mixX, 2));
+  check('Por defecto cebador final = 0.2 µM (RECOMMENDED_PRIMER_FINAL_UM)', approxEqual(defCommercial.primerFinal, RECOMMENDED_PRIMER_FINAL_UM) && approxEqual(RECOMMENDED_PRIMER_FINAL_UM, 0.2));
+
+  // C. computeCommercialMix: fórmulas volMix = VF/X y volCebador = (concFinal·VF)/concStock
+  const mixDef = computeCommercialMix(defCommercial);
+  check('volMix = VF/X = 20/2 = 10.0 µL', approxEqual(mixDef.volMix, 10.0), `volMix=${mixDef.volMix}`);
+  check('volCebador = (0.2 × 20) / 10 = 0.4 µL', approxEqual(mixDef.volPrimer, 0.4), `volPrimer=${mixDef.volPrimer}`);
+  check('Sin desborde por defecto', mixDef.overflow === false);
+
+  const sumDef = mixDef.reagents.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Conservación del volumen final: suma de componentes == VF (20 µL)', approxEqual(sumDef, defCommercial.vf, 1e-2), `suma=${sumDef}`);
+
+  const mixRow = mixDef.reagents.find(r => r.id === 'mix');
+  const fwdRow = mixDef.reagents.find(r => r.id === 'primerFwd');
+  const revRow = mixDef.reagents.find(r => r.id === 'primerRev');
+  check('Fila de la mezcla comercial marcada inMix=true', mixRow && mixRow.inMix === true);
+  check('Cebadores Fwd y Rev con el mismo volumen calculado', fwdRow && revRow && approxEqual(fwdRow.unitVol, revRow.unitVol));
+
+  // D. Otra concentración de mezcla (5X) y de cebador -> misma fórmula
+  const mix5x = computeCommercialMix({ vf: 20, mixX: 5, primerStock: 10, primerFinal: 0.5, templateVol: 2, extras: [] });
+  check('volMix = 20/5 = 4.0 µL con mezcla 5X', approxEqual(mix5x.volMix, 4.0));
+  check('volCebador = (0.5 × 20) / 10 = 1.0 µL con 0.5 µM final', approxEqual(mix5x.volPrimer, 1.0));
+
+  // E. VF distinto de 20 (todo editable, no solo el valor por defecto)
+  const mix25 = computeCommercialMix({ vf: 25, mixX: 2, primerStock: 10, primerFinal: 0.2, templateVol: 2, extras: [] });
+  check('VF editable: volMix = 25/2 = 12.5 µL', approxEqual(mix25.volMix, 12.5));
+  const sum25 = mix25.reagents.reduce((acc, r) => acc + r.unitVol, 0);
+  check('VF editable: la suma sigue igualando VF (25 µL)', approxEqual(sum25, 25, 1e-2));
+
+  // F. Reactivo extra opcional (BSA) se incluye en la conservación del volumen
+  const mixExtra = computeCommercialMix({
+    vf: 20, mixX: 2, primerStock: 10, primerFinal: 0.2, templateVol: 2,
+    extras: [{ id: 'bsa', name: 'BSA', unitVol: 1.0, inMix: true }],
+  });
+  const bsaRow = mixExtra.reagents.find(r => r.id === 'bsa');
+  check('Reactivo extra (BSA) presente en la lista derivada', bsaRow && approxEqual(bsaRow.unitVol, 1.0));
+  const sumExtra = mixExtra.reagents.reduce((acc, r) => acc + r.unitVol, 0);
+  check('Con extra: la suma sigue igualando VF (20 µL) — el agua absorbe el hueco', approxEqual(sumExtra, 20, 1e-2));
+  check('Con el extra, el agua es menor que sin él', mixExtra.water < mixDef.water);
+
+  // G. Desborde real: mezcla + cebadores + molde ya superan VF
+  const mixOverflow = computeCommercialMix({ vf: 10, mixX: 2, primerStock: 10, primerFinal: 0.2, templateVol: 8, extras: [] });
+  // volMix=5.0, volPrimer=0.2 cada uno (0.4 total), template=8 -> 13.4 > VF=10
+  check('Desborde real: agua = 0 (nunca negativa)', mixOverflow.reagents.find(r => r.id === 'h2o').unitVol === 0);
+  check('Desborde real: overflow=true', mixOverflow.overflow === true);
+
+  // H. calculateMasterMix (multiplicador N×margen) también aplica al Modo A
+  const mixCalc = calculateMasterMix(mixDef.reagents, 12, 10);
+  check('Modo A también usa calculateMasterMix: N=12 + 10% = 13.2x', approxEqual(mixCalc.effectiveReactions, 13.2));
+  check('Modo A: totalPerRxn == VF (20 µL)', approxEqual(mixCalc.totalPerRxn, 20.0));
 }
 
 
