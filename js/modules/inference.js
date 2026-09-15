@@ -6,12 +6,12 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { DEFAULT_FAPROTAX, FAPROTAX_METADATA, FUNCTION_NAMES } from '../lib/faprotax.js';
 import { DEFAULT_PHENOTYPES, PHENOTYPES_METADATA, PHENOTYPE_NAMES } from '../lib/phenotypes.js';
-import { groupTaxaByAbundance, CAT_VARS, OTHER_VAR, OTHER_COLOR } from './taxaBarplot.js';
+import { groupTaxaByAbundance, OTHER_COLOR } from './taxaBarplot.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout, buildAlluvialLinkPath } from '../lib/alluvial.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 
 const CAT_FALLBACKS = [
   '#2a78d6', '#d97706', '#10b981', '#ef4444',
@@ -1011,16 +1011,6 @@ export function render(container) {
           'data-val': val.toFixed(2),
         });
 
-        rect.addEventListener('mouseenter', (ev) => {
-          tooltipEl.style.display = 'block';
-          tooltipEl.innerHTML =
-            '<strong>' + escapeHtml(sId) + '</strong><br/>' +
-            escapeHtml(formatFunctionName(fKey, getLang())) + ': <b>' + val.toFixed(2) + '%</b>';
-          positionTooltip(ev);
-        });
-        rect.addEventListener('mousemove', positionTooltip);
-        rect.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
-
         barsG.appendChild(rect);
       });
 
@@ -1038,6 +1028,17 @@ export function render(container) {
     });
 
     svg.appendChild(barsG);
+    delegateHover(svg, 'rect[data-sample]', {
+      onEnter: (el, ev) => {
+        tooltipEl.style.display = 'block';
+        tooltipEl.innerHTML =
+          '<strong>' + escapeHtml(el.dataset.sample) + '</strong><br/>' +
+          escapeHtml(formatFunctionName(el.dataset.function, getLang())) + ': <b>' + el.dataset.val + '%</b>';
+        positionTooltip(ev);
+      },
+      onMove: (el, ev) => positionTooltip(ev),
+      onLeave: () => { tooltipEl.style.display = 'none'; },
+    });
 
     // Leyenda lateral interactiva
     const legendG = svgEl('g', { class: 'ql-legend', 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
@@ -1050,7 +1051,7 @@ export function render(container) {
     series.forEach((sObj, i) => {
       if (i > 22) return; // Limitar tamaño de leyenda
       const y = 20 + i * 18;
-      const gItem = svgEl('g', { style: 'cursor:pointer;' });
+      const gItem = svgEl('g', { style: 'cursor:pointer;', 'data-legend-key': sObj.key });
 
       const swatch = svgEl('rect', {
         x: 0, y: y - 10,
@@ -1069,21 +1070,22 @@ export function render(container) {
       label.textContent = fName.length > 22 ? fName.slice(0, 20) + '…' : fName;
       gItem.appendChild(label);
 
-      gItem.addEventListener('mouseenter', () => {
-        barsG.querySelectorAll('rect').forEach((r) => {
-          if (r.getAttribute('data-function') !== sObj.key) {
-            r.style.opacity = '0.2';
-          }
-        });
-      });
-      gItem.addEventListener('mouseleave', () => {
-        barsG.querySelectorAll('rect').forEach((r) => { r.style.opacity = '1'; });
-      });
-
       legendG.appendChild(gItem);
     });
 
     svg.appendChild(legendG);
+    delegateHover(svg, 'g[data-legend-key]', {
+      onEnter: (el) => {
+        barsG.querySelectorAll('rect').forEach((r) => {
+          if (r.getAttribute('data-function') !== el.dataset.legendKey) {
+            r.style.opacity = '0.2';
+          }
+        });
+      },
+      onLeave: () => {
+        barsG.querySelectorAll('rect').forEach((r) => { r.style.opacity = '1'; });
+      },
+    });
     card.appendChild(svg);
 
     // Conectar editor de gráficos
@@ -1160,26 +1162,30 @@ export function render(container) {
         'fill-opacity': '0.45',
         stroke: 'none',
         'data-taxon': lk.taxonKey,
-      });
-
-      path.addEventListener('mouseenter', (ev) => {
-        path.setAttribute('fill-opacity', '0.85');
-        tooltipEl.style.display = 'block';
-        tooltipEl.innerHTML =
-          '<strong>' + escapeHtml(formatFunctionName(lk.taxonKey, getLang())) + '</strong><br/>' +
-          escapeHtml(lk.sourceGroup) + ' → ' + escapeHtml(lk.targetGroup) + '<br/>' +
-          'Flujo medio: <b>' + (lk.value * 100).toFixed(2) + '%</b>';
-        positionTooltip(ev);
-      });
-      path.addEventListener('mousemove', positionTooltip);
-      path.addEventListener('mouseleave', () => {
-        path.setAttribute('fill-opacity', '0.45');
-        tooltipEl.style.display = 'none';
+        'data-source': lk.sourceGroup,
+        'data-target': lk.targetGroup,
+        'data-pct': (lk.value * 100).toFixed(2),
       });
 
       linksG.appendChild(path);
     });
     svg.appendChild(linksG);
+    delegateHover(svg, 'path[data-taxon]', {
+      onEnter: (el, ev) => {
+        el.setAttribute('fill-opacity', '0.85');
+        tooltipEl.style.display = 'block';
+        tooltipEl.innerHTML =
+          '<strong>' + escapeHtml(formatFunctionName(el.dataset.taxon, getLang())) + '</strong><br/>' +
+          escapeHtml(el.dataset.source) + ' → ' + escapeHtml(el.dataset.target) + '<br/>' +
+          'Flujo medio: <b>' + el.dataset.pct + '%</b>';
+        positionTooltip(ev);
+      },
+      onMove: (el, ev) => positionTooltip(ev),
+      onLeave: (el) => {
+        el.setAttribute('fill-opacity', '0.45');
+        tooltipEl.style.display = 'none';
+      },
+    });
 
     // Nodos (bloques de cada grupo)
     const nodesG = svgEl('g', { class: 'ql-alluvial-nodes' });
