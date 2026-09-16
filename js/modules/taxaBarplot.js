@@ -7,9 +7,15 @@ import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
 import { ancomBC } from '../lib/ancomBC.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
+import { normalizeHeader } from '../lib/csv.js';
+import { paletteColorAt } from '../lib/palettes.js';
+import {
+  createSunburstRoot, insertTaxon, buildLineageIndex, lineageToPath,
+  computeSunburstLayout, arcPath, polarPoint, findNodeByPath, treeMaxDepth,
+} from '../lib/sunburst.js';
 
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 export const OTHER_VAR = '--cat-8';
@@ -280,7 +286,9 @@ export function render(container) {
   let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
   let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
   let plotStyle = 'stacked';   // 'stacked' | 'bubbles' — solo aplica dentro de view === 'barplot'
-  let view = 'barplot';        // 'barplot' | 'alluvial' | 'biomarkers'
+  let view = 'barplot';        // 'barplot' | 'alluvial' | 'sunburst' | 'biomarkers'
+  let sbFocusPath = [];        // ruta (nombres) del nodo centrado en el sunburst — [] = raíz (sin zoom)
+  let sbMaxRings = 4;          // anillos visibles a la vez desde el foco (rendimiento con datasets grandes)
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
   let bmMethod = 'kw';         // 'kw' (Kruskal-Wallis, de siempre) | 'ancombc' (composicional) — decide de dónde sale el p/q de significancia
   let bmScore = 'cliffs';      // 'cliffs' | 'lda' | 'ancom' — qué score manda en el gráfico y el orden por defecto
@@ -318,7 +326,7 @@ export function render(container) {
     // pestañas: Barplot (Barras clásicas) | Flujos (Aluvial) | Biomarcadores
     const tabs = document.createElement('div');
     tabs.className = 'ql-tabs';
-    [['barplot', t('barplots.tabBarplot')], ['alluvial', t('barplots.tabAlluvial')], ['biomarkers', t('barplots.tabBiomarkers')]].forEach(([v, label]) => {
+    [['barplot', t('barplots.tabBarplot')], ['alluvial', t('barplots.tabAlluvial')], ['sunburst', t('barplots.tabSunburst')], ['biomarkers', t('barplots.tabBiomarkers')]].forEach(([v, label]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ql-tab' + (view === v ? ' is-active' : '');
@@ -339,6 +347,7 @@ export function render(container) {
       if (!groupCol && groupOptions.length > 0) groupCol = groupOptions[0];
     }
 
+    if (view === 'sunburst') { renderSunburstView(table, levels); return; }
     if (view === 'biomarkers') { renderBiomarkers(table, levels, groupOptions); return; }
 
     const grid = document.createElement('div');
@@ -1417,6 +1426,336 @@ export function render(container) {
     }
 
     renderChartAndTable();
+  }
+
+  // =========================================================================
+  //  VISTA SUNBURST — jerarquía taxonómica en anillos concéntricos, estilo
+  //  Krona (Ondov, Bergman & Phillippy, BMC Bioinformatics 2011). Geometría
+  //  y árbol en js/lib/sunburst.js (sin dependencias); aquí solo se dibuja
+  //  (svgEl), se colorea (por filo, heredado por los descendientes) y se
+  //  conecta el zoom/breadcrumb/tooltip.
+  //
+  //  Misma fuente de datos que el resto del panel (`table`, la tabla del
+  //  nivel taxonómico elegido) — sin pipeline paralelo. Dos formatos posibles
+  //  de columna según lo que se haya cargado (ver ingest.js):
+  //   - "nativo" QIIME2: la cabecera YA es el linaje completo con ';'
+  //     (p. ej. exampleData.js genera así el ejemplo sintético) -> se parte
+  //     directamente.
+  //   - "ancho, nombres cortos" (TOP14 + Others, el formato del dataset real
+  //     de ejemplo): la cabecera es solo el género -> se cruza por nombre
+  //     con state.taxonomy (Feature ID + Taxon), si está cargado. Sin
+  //     ninguna de las dos cosas, el taxón se queda en un único anillo plano
+  //     — mejor eso que no mostrar nada.
+  // =========================================================================
+  const SB_SIZE = 620;
+  const SB_HOLE_R = 42;
+
+  function sbRankName(depth) {
+    const names = [
+      t('barplots.rankPhylum'), t('barplots.rankClass'), t('barplots.rankOrder'),
+      t('barplots.rankFamily'), t('barplots.rankGenus'), t('barplots.rankSpecies'),
+    ];
+    return names[depth - 1] || t('barplots.sunburstRankGeneric', { n: depth });
+  }
+
+  function sbIsOther(node) {
+    return !!(node.isOther || (node.meta && node.meta.isOther));
+  }
+
+  // nombre corto -> ruta completa (sin dominio), a partir de la taxonomía
+  // cargada aparte (si la hay) — ver cabecera de la sección.
+  function buildTaxonomyLineageIndex() {
+    if (!state.taxonomy) return new Map();
+    const taxonCol = state.taxonomy.headers.find((h) => {
+      const n = normalizeHeader(h);
+      return n === 'taxon' || n === 'taxonomy';
+    });
+    if (!taxonCol) return new Map();
+    return buildLineageIndex(state.taxonomy.rows, taxonCol);
+  }
+
+  // color base por filo (profundidad 1 desde la RAÍZ VERDADERA, no desde el
+  // foco del zoom — así el color de un taxón no cambia al hacer zoom),
+  // heredado por todos sus descendientes; "Otros" siempre gris fijo.
+  function assignPhylumColors(root) {
+    const topKids = root.children.slice().sort((a, b) => b.value - a.value);
+    topKids.forEach((child, i) => {
+      const color = sbIsOther(child) ? OTHER_COLOR : paletteColorAt('categorical', i);
+      (function propagate(node) {
+        node.phylumColor = color;
+        node.children.forEach(propagate);
+      })(child);
+    });
+  }
+
+  function drawSunburstBreadcrumb(el, path) {
+    el.innerHTML = '';
+    const rootBtn = document.createElement('button');
+    rootBtn.type = 'button';
+    rootBtn.className = 'ql-sb-crumb';
+    rootBtn.textContent = t('barplots.sunburstRoot');
+    if (!path.length) rootBtn.disabled = true;
+    else rootBtn.addEventListener('click', () => { sbFocusPath = []; paint(); });
+    el.appendChild(rootBtn);
+    let acc = [];
+    path.forEach((name, i) => {
+      acc = acc.concat([name]);
+      const target = acc.slice();
+      const sep = svgSepSpan();
+      el.appendChild(sep);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ql-sb-crumb';
+      btn.textContent = name;
+      if (i === path.length - 1) btn.disabled = true;
+      else btn.addEventListener('click', () => { sbFocusPath = target; paint(); });
+      el.appendChild(btn);
+    });
+  }
+  function svgSepSpan() {
+    const sep = document.createElement('span');
+    sep.className = 'ql-sb-sep';
+    sep.setAttribute('aria-hidden', 'true');
+    sep.textContent = '›';
+    return sep;
+  }
+
+  function drawSunburst(svg, chartPanel, chartWrap, tooltip, root, focusNode) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.setAttribute('viewBox', '0 0 ' + SB_SIZE + ' ' + SB_SIZE);
+    const cx = SB_SIZE / 2, cy = SB_SIZE / 2;
+    const maxR = SB_SIZE / 2 - 56; // margen para etiquetas exteriores
+    const ringW = Math.max(18, (maxR - SB_HOLE_R) / sbMaxRings);
+
+    const arcs = computeSunburstLayout(focusNode, { maxDepth: sbMaxRings, maxChildren: 24, otherLabel: t('barplots.others') });
+
+    const g = svgEl('g', {});
+    svg.appendChild(g);
+
+    // agujero central: "volver un nivel" cuando hay zoom; decorativo en la raíz
+    const zoomed = sbFocusPath.length > 0;
+    const hole = svgEl('circle', {
+      cx, cy, r: SB_HOLE_R, class: 'ql-sb-hole',
+      ...(zoomed ? { 'data-sb-back': '1' } : {}),
+    });
+    if (zoomed) hole.style.cursor = 'pointer';
+    g.appendChild(hole);
+    const holeLabel = svgEl('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', class: 'ql-tick-label' });
+    holeLabel.textContent = zoomed ? '‹ ' + t('barplots.sunburstBack') : t('barplots.sunburstRootShort');
+    if (zoomed) { holeLabel.style.cursor = 'pointer'; holeLabel.setAttribute('data-sb-back', '1'); }
+    g.appendChild(holeLabel);
+
+    const arcsG = svgEl('g', {});
+    g.appendChild(arcsG);
+    const labelsG = svgEl('g', {});
+    g.appendChild(labelsG);
+
+    arcs.forEach((a, i) => {
+      const r0 = SB_HOLE_R + (a.depth - 1) * ringW;
+      const r1 = r0 + ringW - 1.5;
+      const isOther = sbIsOther(a.node);
+      const mixPct = Math.max(35, 100 - (a.depth - 1) * 16);
+      const fill = isOther ? OTHER_COLOR : 'color-mix(in srgb, ' + (a.node.phylumColor || OTHER_COLOR) + ' ' + mixPct + '%, var(--surface))';
+      const clickable = a.node.children && a.node.children.length > 0;
+      const seg = svgEl('path', {
+        d: arcPath(cx, cy, r0, r1, a.a0, a.a1),
+        fill, stroke: 'var(--surface)', 'stroke-width': 1,
+        'data-tt': i, 'data-sb-idx': i,
+      });
+      if (clickable) seg.style.cursor = 'pointer';
+      arcsG.appendChild(seg);
+
+      // etiqueta recta solo si el arco es lo bastante ancho (evita amontonar texto)
+      const span = a.a1 - a.a0;
+      if (span > 0.16 && ringW > 14) {
+        const midA = (a.a0 + a.a1) / 2;
+        const midR = (r0 + r1) / 2;
+        const p = polarPoint(cx, cy, midR, midA);
+        const angleDeg = (midA * 180) / Math.PI;
+        const flip = angleDeg > 90 && angleDeg < 270;
+        // mismo criterio que el mapa de calor de differentialAbundance.js:
+        // texto claro sobre relleno fuerte/saturado, oscuro sobre relleno claro
+        const lblFill = isOther ? 'var(--ink)' : (mixPct > 55 ? 'var(--surface)' : 'var(--ink)');
+        const lbl = svgEl('text', {
+          x: p.x, y: p.y, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+          class: 'ql-sb-label', fill: lblFill,
+          transform: 'rotate(' + (angleDeg - 90 + (flip ? 180 : 0)) + ' ' + p.x + ' ' + p.y + ')',
+        });
+        const maxChars = Math.max(3, Math.floor((span * midR) / 7));
+        const name = a.node.name;
+        lbl.textContent = name.length > maxChars ? name.slice(0, Math.max(1, maxChars - 1)) + '…' : name;
+        labelsG.appendChild(lbl);
+      }
+    });
+
+    // tooltip: un único listener delegado en el svg, no uno por arco (con
+    // datasets grandes serían cientos de segmentos — mismo patrón que
+    // differentialAbundance.js/dom.js delegateHover).
+    delegateHover(svg, '[data-tt]', {
+      onEnter: (el) => {
+        const a = arcs[+el.dataset.sbIdx];
+        const n = a.node;
+        const pctTotal = root.value > 0 ? (n.value / root.value) * 100 : 0;
+        const pctParent = a.parentValue > 0 ? (n.value / a.parentValue) * 100 : 0;
+        const parentName = n.path.length > 1 ? n.path[n.path.length - 2]
+          : (sbFocusPath.length ? sbFocusPath[sbFocusPath.length - 1] : t('barplots.sunburstRoot'));
+        const rank = sbIsOther(n) ? t('barplots.others') : sbRankName(n.depth);
+        const midA = (a.a0 + a.a1) / 2;
+        const midR = SB_HOLE_R + (a.depth - 0.5) * ringW;
+        const p = polarPoint(cx, cy, midR, midA);
+        showTooltipCentral(chartWrap, p.x, p.y, n.name, [
+          rank,
+          t('barplots.sunburstTooltipOfTotal', { pct: pctTotal.toFixed(2) }),
+          t('barplots.sunburstTooltipOfParent', { pct: pctParent.toFixed(2), parent: parentName }),
+        ], { svg, W: SB_SIZE, H: SB_SIZE, tooltip });
+      },
+      onLeave: () => hideTooltip(tooltip),
+    });
+
+    // click: zoom en un segmento con hijos, o "volver" desde el agujero
+    // central — un único listener (se sustituye entero en cada paint()
+    // junto con el resto del DOM, no se acumula).
+    svg.addEventListener('click', (e) => {
+      if (e.target.closest('[data-sb-back]')) {
+        sbFocusPath = sbFocusPath.slice(0, -1);
+        paint();
+        return;
+      }
+      const el = e.target.closest('[data-sb-idx]');
+      if (!el) return;
+      const a = arcs[+el.dataset.sbIdx];
+      if (!a.node.children || !a.node.children.length) return;
+      sbFocusPath = a.node.path;
+      paint();
+    });
+
+    if (editor) { editor.destroy(); editor = null; }
+    const titleName = sbFocusPath.length ? sbFocusPath[sbFocusPath.length - 1] : t('barplots.sunburstRoot');
+    editor = attachChartEditor({
+      key: 'taxaSunburst', svg, mount: chartPanel,
+      filename: t('barplots.sunburstTitle') + (sbFocusPath.length ? '-' + sbFocusPath.join('-') : ''),
+      lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('barplots.sunburstTitle') + ' — ' + titleName, x: cx, y: 24, anchor: 'middle', cls: 'ce-title' } },
+      ],
+      onReset: () => paint(),
+    });
+  }
+
+  function renderSunburstView(table, levels) {
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    const chartPanel = document.createElement('section');
+    chartPanel.className = 'ql-card ql-panel';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('barplots.sunburstNote') + '</p>';
+
+    const breadcrumb = document.createElement('nav');
+    breadcrumb.className = 'ql-sb-breadcrumb';
+    breadcrumb.setAttribute('aria-label', t('barplots.sunburstBreadcrumbAria'));
+    chartPanel.appendChild(breadcrumb);
+
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'ql-chartwrap';
+    const svg = svgEl('svg', { class: 'ql-svg', viewBox: '0 0 ' + SB_SIZE + ' ' + SB_SIZE, role: 'img', 'aria-label': t('a11y.chartSunburst') });
+    const tooltip = document.createElement('div');
+    tooltip.className = 'ql-tooltip';
+    chartWrap.appendChild(svg);
+    chartWrap.appendChild(tooltip);
+    chartPanel.appendChild(chartWrap);
+    grid.appendChild(chartPanel);
+
+    const controls = document.createElement('aside');
+    controls.className = 'ql-card ql-panel';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+
+    // nivel taxonómico (compartido con el barplot/biomarcadores) — solo si
+    // hay más de un nivel cargado (p. ej. filo Y género como archivos
+    // separados); con uno solo, el sunburst ya construye la jerarquía
+    // completa desde ese único nivel.
+    if (levels.length > 1) {
+      const lf = document.createElement('div');
+      lf.className = 'ql-field';
+      lf.innerHTML = '<label>' + t('barplots.levelLabel') + '</label>';
+      const sel = document.createElement('select');
+      levels.forEach((lv) => {
+        const o = document.createElement('option');
+        o.value = lv;
+        o.textContent = t('barplots.level', { n: lv }) + (Number(lv) === 6 ? t('barplots.levelGenus') : Number(lv) === 2 ? t('barplots.levelPhylum') : '');
+        if (String(level) === lv) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => { level = sel.value; sbFocusPath = []; paint(); });
+      lf.appendChild(sel);
+      controls.appendChild(lf);
+    }
+
+    const ringsField = document.createElement('div');
+    ringsField.className = 'ql-field';
+    ringsField.innerHTML = '<label for="sbRings">' + t('barplots.sunburstRingsLabel') + '</label>' +
+      '<input type="number" id="sbRings" min="1" max="6" step="1" value="' + sbMaxRings + '" />' +
+      '<p class="ql-field-help">' + t('barplots.sunburstRingsHelp') + '</p>';
+    controls.appendChild(ringsField);
+    ringsField.querySelector('#sbRings').addEventListener('change', (e) => {
+      const v = Math.max(1, Math.min(6, parseInt(e.target.value, 10) || 4));
+      if (v !== sbMaxRings) { sbMaxRings = v; paint(); }
+    });
+
+    grid.appendChild(controls);
+    container.appendChild(grid);
+
+    // ---- construir el árbol a partir de la MISMA tabla que el resto del panel ----
+    const taxonHeaders = table.headers.filter((h, i) => i !== 0 && !OTHER_COL_RE.test(String(h).trim()));
+    const otherHeaders = table.headers.filter((h, i) => i !== 0 && OTHER_COL_RE.test(String(h).trim()));
+    const rowSum = (row) => taxonHeaders.concat(otherHeaders).reduce((a, h) => a + (parseFloat(row[h]) || 0), 0);
+    const nRows = table.rows.length || 1;
+    const means = {};
+    taxonHeaders.forEach((h) => { means[h] = 0; });
+    let otherMean = 0;
+    table.rows.forEach((row) => {
+      const total = rowSum(row) || 1;
+      taxonHeaders.forEach((h) => { means[h] += (parseFloat(row[h]) || 0) / total / nRows; });
+      otherHeaders.forEach((h) => { otherMean += (parseFloat(row[h]) || 0) / total / nRows; });
+    });
+
+    const lineageIndex = buildTaxonomyLineageIndex();
+    const unclassified = [t('barplots.unclassified')];
+    function resolvePath(h) {
+      if (String(h).includes(';')) {
+        const p = lineageToPath(h);
+        return p.length ? p : null;
+      }
+      const shortName = shortTaxonName(h);
+      const viaIndex = shortName && lineageIndex.get(shortName);
+      if (viaIndex) return viaIndex;
+      return shortName ? [shortName] : null;
+    }
+
+    const root = createSunburstRoot();
+    taxonHeaders.forEach((h) => {
+      insertTaxon(root, resolvePath(h) || unclassified, means[h], { header: h });
+    });
+    if (otherMean > 0) {
+      insertTaxon(root, [t('barplots.others')], otherMean, { isOther: true });
+    }
+    assignPhylumColors(root);
+
+    if (!(root.value > 0)) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.sunburstEmpty') + '</p>');
+      return;
+    }
+    if (treeMaxDepth(root) <= 1) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.sunburstFlatNote') + '</p>');
+    }
+
+    // el foco de un zoom anterior puede no existir ya (cambio de nivel/grupo
+    // desde el selector de arriba) — si no resuelve, se vuelve a la raíz sin
+    // avisar (mismo criterio que ya usa el resto del módulo al recargar tabla)
+    let focusNode = sbFocusPath.length ? findNodeByPath(root, sbFocusPath) : root;
+    if (!focusNode) { sbFocusPath = []; focusNode = root; }
+
+    drawSunburstBreadcrumb(breadcrumb, sbFocusPath);
+    drawSunburst(svg, chartPanel, chartWrap, tooltip, root, focusNode);
   }
 
   // =========================================================================

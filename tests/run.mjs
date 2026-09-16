@@ -38,6 +38,7 @@ const SUITE = [
   { name: 'ingest', file: 'ingest.mjs', kind: 'estático' },
   { name: 'aligner', file: 'aligner.mjs', kind: 'estático' },
   { name: 'alluvial', file: 'alluvial.mjs', kind: 'estático' },
+  { name: 'sunburst', file: 'sunburst.mjs', kind: 'estático' },
   { name: 'charteditor', file: 'charteditor.mjs', kind: 'estático' },
   { name: 'chromatooltip', file: 'chromatooltip.mjs', kind: 'estático' },
   { name: 'sangerinspector', file: 'sangerinspector.mjs', kind: 'estático' },
