@@ -2,7 +2,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP, rarefactionCurve } from '../lib/stats.js';
 import { rarefactionBatchAsync } from '../lib/heavyStats.js';
-import { drawGroupBoxplot, groupColor } from '../lib/groupBoxplot.js';
+import { drawGroupBoxplot, drawGroupStripPlot, groupColor } from '../lib/groupBoxplot.js';
 import { matchSampleId, makeGroupResolver } from '../lib/sampleMatch.js';
 import {
   collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS, countVectors,
@@ -11,6 +11,7 @@ import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } 
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { svgEl, escapeHtml } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
 
 function fmt(v, d) {
   return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
@@ -26,6 +27,7 @@ export function render(container) {
   let metric = null;
   let groupCol = null;
   let view = 'boxplot'; // 'boxplot' | 'rarefaction'
+  let plotStyle = 'box'; // 'box' | 'jitter' — solo dentro de view === 'boxplot'
   let editor = null;
   // Las curvas de rarefacción de muchas muestras corren en un Web Worker
   // (js/lib/heavyStats.js); cacheamos el resultado para que ni el repaint tras
@@ -93,7 +95,8 @@ export function render(container) {
 
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
-    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('alpha.chartNote') + '</p>';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
+      t(plotStyle === 'jitter' ? 'alpha.jitterNote' : 'alpha.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBoxplotAlpha') });
@@ -148,6 +151,17 @@ export function render(container) {
       f.appendChild(sel);
       controls.appendChild(f);
     }
+
+    controls.appendChild(chartTypeField({
+      labelKey: 'alpha.plotStyleLabel',
+      options: [
+        { value: 'box', labelKey: 'alpha.plotStyleBox' },
+        { value: 'jitter', labelKey: 'alpha.plotStyleJitter' },
+      ],
+      active: plotStyle,
+      onChange: (v) => { plotStyle = v; paint(); },
+      helpKey: 'alpha.plotStyleHelp',
+    }));
 
     // aviso si se mezclan métricas de archivo (posible nivel ASV) con calculadas
     if (allMetrics.some((m) => m.computed) && allMetrics.some((m) => !m.computed)) {
@@ -206,7 +220,8 @@ export function render(container) {
     }
 
     const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
-    const { kw, ceElements, paletteSeries } = drawGroupBoxplot({
+    const drawFn = plotStyle === 'jitter' ? drawGroupStripPlot : drawGroupBoxplot;
+    const { kw, ceElements, paletteSeries } = drawFn({
       svg, chartWrap, tooltip, groupNames, groupData,
       title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
       valueDecimals: decimals,
@@ -226,7 +241,7 @@ export function render(container) {
         : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
 
     editor = attachChartEditor({
-      key: 'alphaDiversity', svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
+      key: plotStyle === 'jitter' ? 'alphaDiversity-jitter' : 'alphaDiversity', svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
       onReset: () => paint(),

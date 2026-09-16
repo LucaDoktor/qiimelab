@@ -188,3 +188,152 @@ export function drawGroupBoxplot(o) {
 
   return { kw, W, H, ceElements, paletteSeries };
 }
+
+/**
+ * Alternativa a `drawGroupBoxplot`: solo los puntos individuales (con
+ * dispersión horizontal) y una marca de mediana por grupo — sin caja ni
+ * bigotes. Con pocas réplicas por grupo (habitual en ensayos de laboratorio)
+ * una caja de cuartiles puede sugerir una forma de distribución que 3-4
+ * puntos no sostienen; esta vista deja ver los valores reales sin ese
+ * resumen. Mismo test de Kruskal-Wallis, mismo corchete de significación,
+ * misma firma de entrada/salida que `drawGroupBoxplot` — un módulo puede
+ * alternar entre las dos sin tocar nada más que la llamada.
+ *
+ * @param {object} o  mismos parámetros que `drawGroupBoxplot`
+ * @returns {{ kw: (object|null), W: number, H: number, ceElements: Array, paletteSeries: Array }}
+ */
+export function drawGroupStripPlot(o) {
+  const {
+    svg, chartWrap, tooltip, groupNames, groupData,
+    title, xTitle, yTitle, valueLabel,
+  } = o;
+  const decimals = o.valueDecimals != null ? o.valueDecimals : 3;
+  const bracketKey = o.bracketKey || 'alpha.kwBracket';
+
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const kw = groupNames.length >= 2
+    ? kruskalWallis(groupNames.map((g) => groupData[g]))
+    : null;
+  const kwSig = kw && isFinite(kw.p) && kw.p < 0.05;
+
+  const legCols = groupNames.length > 5 ? 2 : 1;
+  const legRows = Math.ceil(groupNames.length / legCols);
+  const marginL = 52, marginR = 20, marginT = kwSig ? 68 : 44;
+  const marginB = 58 + legRows * 15;
+  const innerH = 360;
+  const slotW = 140;
+  const W = Math.max(marginL + marginR + slotW * groupNames.length, 420);
+  const H = marginT + innerH + marginB;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+  const perSample = [];
+  groupNames.forEach((g) => groupData[g].forEach((v) => perSample.push(v)));
+  const vMin = Math.min(...perSample), vMax = Math.max(...perSample);
+  const pad = (vMax - vMin) * 0.15 || 1;
+  const yMin = vMin - pad, yMax = vMax + pad;
+  const yScale = (v) => marginT + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const v = yMin + (i / ticks) * (yMax - yMin);
+    const y = yScale(v);
+    svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+    const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+    tk.textContent = v.toFixed(2);
+    svg.appendChild(tk);
+  }
+  svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerH, class: 'ql-baseline-line' }));
+
+  const rnd = mulberry32(42);
+  groupNames.forEach((g, gi) => {
+    const cx = marginL + slotW * gi + slotW / 2;
+    const vals = groupData[g].slice().sort((a, b) => a - b);
+    const median = vals.length % 2
+      ? vals[(vals.length - 1) / 2]
+      : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2;
+    const colorVar = CAT_VARS[gi % CAT_VARS.length];
+    const jitterW = 60;
+
+    const seriesId = 's' + gi;
+    // marca de mediana — un trazo, no una caja: no implica cuartiles
+    svg.appendChild(svgEl('line', {
+      x1: cx - 18, x2: cx + 18, y1: yScale(median), y2: yScale(median),
+      stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5, 'data-ce-series-stroke': seriesId,
+    }));
+
+    vals.forEach((v) => {
+      const jitter = (rnd() - 0.5) * jitterW;
+      const c = svgEl('circle', {
+        cx: cx + jitter, cy: yScale(v), r: 4, fill: 'var(' + colorVar + ')', opacity: 0.8, stroke: 'var(--surface)', 'stroke-width': 1,
+        'data-ce-series-fill': seriesId,
+      });
+      c.addEventListener('mouseenter', () => {
+        showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), {
+          svg, W, H, tooltip,
+        });
+      });
+      c.addEventListener('mouseleave', () => hideTooltip(tooltip));
+      svg.appendChild(c);
+    });
+
+    const labelT = svgEl('text', { x: cx, y: marginT + innerH + 24, class: 'ql-tick-label', 'text-anchor': 'middle' });
+    labelT.textContent = String(g);
+    svg.appendChild(labelT);
+  });
+
+  if (kwSig && groupNames.length >= 2) {
+    const stars = kw.p < 0.001 ? '∗∗∗' : kw.p < 0.01 ? '∗∗' : '∗';
+    const bx1 = marginL + slotW / 2;
+    const bx2 = marginL + slotW * (groupNames.length - 1) + slotW / 2;
+    const by = marginT - 16;
+    const gSig = svgEl('g', { 'data-ce': 'sig' });
+    gSig.appendChild(svgEl('path', {
+      d: 'M' + bx1 + ' ' + (by + 6) + ' V' + by + ' H' + bx2 + ' V' + (by + 6),
+      fill: 'none', class: 'ql-baseline-line',
+    }));
+    const sigT = svgEl('text', { x: (bx1 + bx2) / 2, y: by - 5, class: 'ql-axis-label', 'text-anchor': 'middle' });
+    sigT.textContent = t(bracketKey, { stars, p: formatP(kw.p) });
+    gSig.appendChild(sigT);
+    svg.appendChild(gSig);
+  }
+
+  const yT = svgEl('text', {
+    x: 14, y: marginT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+    transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
+  });
+  yT.textContent = yTitle;
+  svg.appendChild(yT);
+
+  const xLabelBase = marginT + innerH + 44;
+  const xT = svgEl('text', { x: marginL + (W - marginL - marginR) / 2, y: xLabelBase, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+  xT.textContent = xTitle || '';
+  svg.appendChild(xT);
+
+  const legG = svgEl('g', { 'data-ce': 'legend' });
+  const colW = Math.min(260, (W - marginL - marginR) / legCols);
+  groupNames.forEach((g, i) => {
+    const col = Math.floor(i / legRows), rw = i % legRows;
+    const xx = col * colW, yy = rw * 15;
+    legG.appendChild(svgEl('rect', {
+      x: xx, y: yy - 8, width: 10, height: 10, rx: 2, fill: 'var(' + CAT_VARS[i % CAT_VARS.length] + ')',
+      'data-ce-series-fill': 's' + i,
+    }));
+    const lt = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+    lt.textContent = String(g) + ' (n=' + groupData[g].length + ')';
+    legG.appendChild(lt);
+  });
+  legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 16) + ')');
+  svg.appendChild(legG);
+
+  const ceElements = [
+    { id: 'title', create: { text: title, x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+    { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+    { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+    { id: 'sig', selector: '[data-ce="sig"]', kind: 'group' },
+    { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+  ];
+  const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
+
+  return { kw, W, H, ceElements, paletteSeries };
+}

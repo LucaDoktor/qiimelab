@@ -14,7 +14,8 @@ import {
   addMicrobialCountSeries, updateMicrobialCountSeries, removeMicrobialCountSeries,
 } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { groupColor } from '../lib/groupBoxplot.js';
+import { groupColor, drawGroupStripPlot } from '../lib/groupBoxplot.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { ingestFile } from '../lib/ingest.js';
 import { parseTable } from '../lib/csv.js';
@@ -39,6 +40,7 @@ function columnLooksNumeric(rows, header) {
 export function render(container) {
   let activeId = null;
   let errBar = 'sd';               // 'sd' | 'se'
+  let plotStyle = 'bars';          // 'bars' | 'jitter'
   let sort = { key: 'group', dir: 'asc' };
   let editors = []; // uno por bloque — con "agrupar por" puede haber varios a la vez
   const addVarState = new Map(); // seriesId -> { open, mode:'manual'|'file', name, joinCol, editingCol, msg }
@@ -552,7 +554,7 @@ export function render(container) {
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
     chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
-      t('recuentos.chartNote', { bar: errBar === 'sd' ? t('recuentos.sd') : t('recuentos.se') }) + '</p>';
+      (plotStyle === 'jitter' ? t('recuentos.jitterNote') : t('recuentos.chartNote', { bar: errBar === 'sd' ? t('recuentos.sd') : t('recuentos.se') })) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('recuentos.a11yChart', { organism: (s.label || '') + (level ? ' — ' + level : '') }) });
@@ -565,23 +567,36 @@ export function render(container) {
     controls.className = 'ql-card ql-panel';
     controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
-    // toggle ±SD / ±SE
-    const ebField = document.createElement('div');
-    ebField.className = 'ql-field';
-    ebField.innerHTML = '<label>' + t('recuentos.errBarLabel') + '</label>';
-    const seg = document.createElement('div');
-    seg.className = 'ql-segmented';
-    [['sd', t('recuentos.sdFull')], ['se', t('recuentos.seFull')]].forEach(([v, lbl]) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'ql-seg-btn' + (errBar === v ? ' is-on' : '');
-      b.textContent = lbl;
-      b.addEventListener('click', () => { if (errBar !== v) { errBar = v; paint(); } });
-      seg.appendChild(b);
-    });
-    ebField.appendChild(seg);
-    ebField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.errBarHelp') + '</p>');
-    controls.appendChild(ebField);
+    controls.appendChild(chartTypeField({
+      labelKey: 'recuentos.plotStyleLabel',
+      options: [
+        { value: 'bars', labelKey: 'recuentos.plotStyleBars' },
+        { value: 'jitter', labelKey: 'recuentos.plotStyleJitter' },
+      ],
+      active: plotStyle,
+      onChange: (v) => { plotStyle = v; paint(); },
+      helpKey: 'recuentos.plotStyleHelp',
+    }));
+
+    // toggle ±SD / ±SE (solo tiene sentido con barras — el jitter muestra cada réplica)
+    if (plotStyle === 'bars') {
+      const ebField = document.createElement('div');
+      ebField.className = 'ql-field';
+      ebField.innerHTML = '<label>' + t('recuentos.errBarLabel') + '</label>';
+      const seg = document.createElement('div');
+      seg.className = 'ql-segmented';
+      [['sd', t('recuentos.sdFull')], ['se', t('recuentos.seFull')]].forEach(([v, lbl]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ql-seg-btn' + (errBar === v ? ' is-on' : '');
+        b.textContent = lbl;
+        b.addEventListener('click', () => { if (errBar !== v) { errBar = v; paint(); } });
+        seg.appendChild(b);
+      });
+      ebField.appendChild(seg);
+      ebField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.errBarHelp') + '</p>');
+      controls.appendChild(ebField);
+    }
 
     // resumen
     const statsBox = document.createElement('div');
@@ -649,8 +664,36 @@ export function render(container) {
       return;
     }
 
-    drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, level);
+    if (plotStyle === 'jitter') {
+      drawJitter(svg, chartWrap, tooltip, chartPanel, s, summary, usable, level);
+    } else {
+      drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, level);
+    }
     renderTable(tableCard, summary, usable, letters);
+  }
+
+  // ---- puntos por réplica + mediana por grupo (alternativa a las barras ±SD/SE) ----
+  function drawJitter(svg, chartWrap, tooltip, chartPanel, s, summary, groups, level) {
+    const groupNames = groups.map((g) => g.key);
+    const groupData = {};
+    groups.forEach((g) => { groupData[g.key] = g.values; });
+    const yTitle = t('recuentos.yAxis', { unit: s.mapping.alreadyLog ? (summary.valueName || t('recuentos.value')) : ('log₁₀ ' + (summary.valueName || t('recuentos.value'))) });
+    const blockTitle = (s.label || t('recuentos.title')) + (level ? ' — ' + level : '');
+
+    const { ceElements, paletteSeries } = drawGroupStripPlot({
+      svg, chartWrap, tooltip, groupNames, groupData,
+      title: blockTitle, xTitle: summary.groupColNames.join(' × ') || t('recuentos.group'),
+      yTitle, valueLabel: yTitle, valueDecimals: 3,
+    });
+
+    const blockKey = 'microbialCounts-jitter' + (level ? '-' + level : '');
+    editors.push(attachChartEditor({
+      key: blockKey, svg, mount: chartPanel,
+      filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : '') + '-jitter', lang: getLang(),
+      elements: ceElements,
+      paletteSeries, paletteType: 'categorical',
+      onReset: () => paint(),
+    }));
   }
 
   // ---- barras verticales + barra de error ----
