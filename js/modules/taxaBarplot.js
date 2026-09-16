@@ -8,6 +8,7 @@ import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefs
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
 import { svgEl, escapeHtml } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
 
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 export const OTHER_VAR = '--cat-8';
@@ -277,6 +278,7 @@ export function render(container) {
   let minAbundance = MIN_ABUND_DEFAULT;
   let minPrev = 0;             // prevalencia mínima (% de muestras con el taxón presente)
   let orientation = 'vertical'; // 'vertical' | 'horizontal' (barras apiladas)
+  let plotStyle = 'stacked';   // 'stacked' | 'bubbles' — solo aplica dentro de view === 'barplot'
   let view = 'barplot';        // 'barplot' | 'alluvial' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
   let bmScore = 'cliffs';      // 'cliffs' | 'lda' — qué score manda en el gráfico y el orden por defecto
@@ -349,7 +351,8 @@ export function render(container) {
     const noteP = document.createElement('p');
     noteP.className = 'ql-panel-note';
     noteP.style.margin = '0';
-    noteP.textContent = (view === 'alluvial' ? t('barplots.alluvialNote') : t('barplots.chartNote'));
+    noteP.textContent = (view === 'alluvial' ? t('barplots.alluvialNote') :
+      (view === 'barplot' && plotStyle === 'bubbles') ? t('barplots.bubbleNote') : t('barplots.chartNote'));
     chartHeader.appendChild(noteP);
 
     const settingsBtn = document.createElement('button');
@@ -454,22 +457,35 @@ export function render(container) {
     controls.appendChild(prevField);
 
     if (view === 'barplot') {
-      const orientField = document.createElement('div');
-      orientField.className = 'ql-field';
-      orientField.innerHTML = '<label>' + t('barplots.orientLabel') + '</label>';
-      const orientSeg = document.createElement('div');
-      orientSeg.className = 'ql-segmented';
-      [['vertical', t('barplots.orientVertical')], ['horizontal', t('barplots.orientHorizontal')]].forEach(([v, lbl]) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'ql-seg-btn' + (orientation === v ? ' is-on' : '');
-        b.textContent = lbl;
-        b.addEventListener('click', () => { if (orientation !== v) { orientation = v; paint(); } });
-        orientSeg.appendChild(b);
-      });
-      orientField.appendChild(orientSeg);
-      orientField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.orientHelp') + '</p>');
-      controls.appendChild(orientField);
+      controls.appendChild(chartTypeField({
+        labelKey: 'barplots.plotStyleLabel',
+        options: [
+          { value: 'stacked', labelKey: 'barplots.plotStyleStacked' },
+          { value: 'bubbles', labelKey: 'barplots.plotStyleBubbles' },
+        ],
+        active: plotStyle,
+        onChange: (v) => { plotStyle = v; paint(); },
+        helpKey: 'barplots.plotStyleHelp',
+      }));
+
+      if (plotStyle === 'stacked') {
+        const orientField = document.createElement('div');
+        orientField.className = 'ql-field';
+        orientField.innerHTML = '<label>' + t('barplots.orientLabel') + '</label>';
+        const orientSeg = document.createElement('div');
+        orientSeg.className = 'ql-segmented';
+        [['vertical', t('barplots.orientVertical')], ['horizontal', t('barplots.orientHorizontal')]].forEach(([v, lbl]) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'ql-seg-btn' + (orientation === v ? ' is-on' : '');
+          b.textContent = lbl;
+          b.addEventListener('click', () => { if (orientation !== v) { orientation = v; paint(); } });
+          orientSeg.appendChild(b);
+        });
+        orientField.appendChild(orientSeg);
+        orientField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.orientHelp') + '</p>');
+        controls.appendChild(orientField);
+      }
     }
 
     if (groupOptions.length > 0) {
@@ -1033,7 +1049,112 @@ export function render(container) {
     const gap = 2; // separador entre segmentos apilados
     let W, H, xLabelBase, legTranslateX, legTranslateY;
 
-    if (!horizontal) {
+    if (plotStyle === 'bubbles') {
+      // fila por taxón (series), columna por muestra — tamaño del punto = abundancia relativa
+      const maxLabelChars = series.reduce((m, s) => Math.max(m, String(s.label).length), 0);
+      const rowLabelW = Math.min(220, maxLabelChars * 6.3);
+      const marginL = 14 + rowLabelW + 10, marginR = 16, marginT = 46;
+      const showEvery = sampleOrder.length > 24 ? Math.ceil(sampleOrder.length / 24) : 1;
+      const maxSampleChars = sampleOrder.reduce((m, s, si) => (si % showEvery === 0 ? Math.max(m, String(s).length) : m), 0);
+      const labelDrop = 14 + Math.min(104, Math.round(maxSampleChars * 6.4 * 0.82));
+      const xTitleGap = labelDrop + 14;
+      const marginB = xTitleGap + 20 + legRows * 15 + (colorsRepeat ? 20 : 4);
+      const colW = Math.max(20, Math.min(46, 900 / Math.max(sampleOrder.length, 1)));
+      const rowH = Math.max(20, Math.min(38, 420 / Math.max(series.length, 1)));
+      const innerW = colW * sampleOrder.length;
+      const innerH = rowH * series.length;
+      W = Math.max(marginL + innerW + marginR, 420);
+      H = marginT + innerH + marginB;
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      svg.style.width = W + 'px';
+      svg.style.maxWidth = 'none';
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      // filas guía por taxón + su etiqueta a la izquierda
+      series.forEach((s, si) => {
+        const cy = marginT + si * rowH + rowH / 2;
+        svg.appendChild(svgEl('line', { x1: marginL, x2: marginL + innerW, y1: cy, y2: cy, class: 'ql-gridline' }));
+        const lbl = svgEl('text', { x: marginL - 8, y: cy + 4, class: 'ql-tick-label', 'text-anchor': 'end' });
+        lbl.textContent = s.label;
+        svg.appendChild(lbl);
+      });
+      svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT, y2: marginT + innerH, class: 'ql-baseline-line' }));
+
+      // radio máximo: que quepa en su celda sin tocar a los vecinos
+      const maxR = Math.min(colW, rowH) * 0.42;
+      let maxVal = 0;
+      sampleOrder.forEach((sampleId) => {
+        const row = rowsBySample[sampleId];
+        if (!row) return;
+        const total = rowSum(row) || 1;
+        series.forEach((s) => {
+          const val = (s.key === '__other__' ? otherRaw(row) : (parseFloat(row[s.key]) || 0)) / total;
+          if (val > maxVal) maxVal = val;
+        });
+      });
+      if (maxVal <= 0) maxVal = 1;
+
+      sampleOrder.forEach((sampleId, si) => {
+        const row = rowsBySample[sampleId];
+        if (!row) return;
+        const cx = marginL + si * colW + colW / 2;
+        const total = rowSum(row) || 1;
+        series.forEach((s, gi) => {
+          const val = (s.key === '__other__' ? otherRaw(row) : (parseFloat(row[s.key]) || 0)) / total;
+          if (val <= 0) return;
+          const cy = marginT + gi * rowH + rowH / 2;
+          const r = Math.max(2, maxR * Math.sqrt(val / maxVal));
+          const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
+          const circle = svgEl('circle', {
+            cx, cy, r, fill: fillCol, 'fill-opacity': 0.78, stroke: 'var(--surface)', 'stroke-width': 1,
+            'data-sample': sampleId,
+            'data-tax': s.label,
+            'data-val': val,
+            'data-cx': cx,
+            'data-cy': cy,
+            ...(s.key === '__other__' ? {} : { 'data-ce-series-fill': 's' + CAT_VARS.indexOf(s.colorVar) }),
+          });
+          svg.appendChild(circle);
+        });
+      });
+
+      // etiquetas eje X (rotadas), igual que en vertical
+      sampleOrder.forEach((sampleId, si) => {
+        if (si % showEvery !== 0) return;
+        const cx = marginL + si * colW + colW / 2;
+        const tx = svgEl('text', {
+          x: cx, y: marginT + innerH + 16, class: 'ql-tick-label', 'text-anchor': 'end',
+          transform: 'rotate(-55 ' + cx + ' ' + (marginT + innerH + 16) + ')',
+        });
+        tx.textContent = sampleId;
+        svg.appendChild(tx);
+      });
+
+      xLabelBase = marginT + innerH + xTitleGap;
+      const xTitle = svgEl('text', { x: marginL + innerW / 2, y: xLabelBase, class: 'ql-axis-label ql-chart-x-title', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
+      svg.appendChild(xTitle);
+
+      // leyenda de tamaños: 3 círculos de referencia (estática, no editable).
+      // Va pegada al margen izquierdo (no al derecho): con muchas muestras el
+      // gráfico hace scroll horizontal y el borde derecho no está visible al
+      // entrar a la vista, a diferencia de la leyenda de color de abajo.
+      const refVals = [maxVal, maxVal * 0.35, maxVal * 0.1].filter((v, i, arr) => v > 0 && arr.indexOf(v) === i);
+      const sizeLeg = svgEl('g');
+      let refX = 0;
+      refVals.forEach((v) => {
+        const r = Math.max(2, maxR * Math.sqrt(v / maxVal));
+        sizeLeg.appendChild(svgEl('circle', { cx: refX + maxR, cy: maxR, r, fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 1.2 }));
+        const lbl = svgEl('text', { x: refX + maxR, y: maxR * 2 + 13, class: 'ql-tick-label', 'text-anchor': 'middle' });
+        lbl.textContent = (v * 100).toFixed(v * 100 < 1 ? 1 : 0) + '%';
+        sizeLeg.appendChild(lbl);
+        refX += maxR * 2 + 18;
+      });
+      sizeLeg.setAttribute('transform', 'translate(' + marginL + ',6)');
+      svg.appendChild(sizeLeg);
+
+      legTranslateX = marginL; legTranslateY = xLabelBase + 18;
+    } else if (!horizontal) {
       const marginL = 56, marginR = 12, marginT = 42;
       // Las etiquetas de muestra van rotadas -55°: cuánto bajan depende de su
       // longitud. Reservamos hueco real para que el título del eje X no se
@@ -1246,7 +1367,8 @@ export function render(container) {
 
     if (editor) editor.destroy();
     editor = attachChartEditor({
-      key: horizontal ? 'taxaBarplot-horizontal' : 'taxaBarplot', svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
+      key: plotStyle === 'bubbles' ? 'taxaBarplot-bubbles' : (horizontal ? 'taxaBarplot-horizontal' : 'taxaBarplot'),
+      svg, mount: chartPanel, filename: t('barplots.title'), lang: getLang(),
       elements: [
         { id: 'title', create: { text: t('barplots.chartFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title ql-chart-main-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
