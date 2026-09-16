@@ -56,6 +56,7 @@ const SUITE = [
   { name: 'stats/permanova', file: 'stats/permanova.mjs', kind: 'R' },
   { name: 'stats/fisherlsd', file: 'stats/fisherlsd.mjs', kind: 'R' },
   { name: 'stats/lefselda', file: 'stats/lefselda.mjs', kind: 'R' },
+  { name: 'stats/ancombc', file: 'stats/ancombc.mjs', kind: 'R' },
   { name: 'stats/neighborjoining', file: 'stats/neighborjoining.mjs', kind: 'R' },
   { name: 'stats/phylodistance', file: 'stats/phylodistance.mjs', kind: 'R' },
   { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },

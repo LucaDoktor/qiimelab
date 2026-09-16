@@ -4,7 +4,8 @@ import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } 
 import { attachChartEditor, openChartEditor } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
-import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore } from '../lib/stats.js';
+import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
+import { ancomBC } from '../lib/ancomBC.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
 import { svgEl, escapeHtml } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
@@ -281,7 +282,8 @@ export function render(container) {
   let plotStyle = 'stacked';   // 'stacked' | 'bubbles' — solo aplica dentro de view === 'barplot'
   let view = 'barplot';        // 'barplot' | 'alluvial' | 'biomarkers'
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
-  let bmScore = 'cliffs';      // 'cliffs' | 'lda' — qué score manda en el gráfico y el orden por defecto
+  let bmMethod = 'kw';         // 'kw' (Kruskal-Wallis, de siempre) | 'ancombc' (composicional) — decide de dónde sale el p/q de significancia
+  let bmScore = 'cliffs';      // 'cliffs' | 'lda' | 'ancom' — qué score manda en el gráfico y el orden por defecto
   let bmSort = { key: 'delta', dir: 'desc' };
   let editor = null;
   let alluvialNodeWidth = 20;
@@ -1418,10 +1420,14 @@ export function render(container) {
   }
 
   // =========================================================================
-  //  VISTA BIOMARCADORES — inspirada en LEfSe, SIN LDA
-  //  Kruskal-Wallis por taxón → BH (FDR) → grupo enriquecido (mediana más
-  //  alta) → delta de Cliff one-vs-rest como tamaño de efecto (barra).
-  //  Toda la estadística está ya verificada en stats.js.
+  //  VISTA BIOMARCADORES — inspirada en LEfSe, variante propia
+  //  Significancia por taxón, a elegir (bmMethod): Kruskal-Wallis (de
+  //  siempre, sobre abundancia relativa) o ANCOM-BC (composicional, sobre
+  //  conteos crudos — js/lib/ancomBC.js) → BH (FDR), igual en ambos casos →
+  //  grupo enriquecido one-vs-rest → tamaño de efecto a elegir para la
+  //  barra (bmScore): delta de Cliff, LDA bootstrapeado al estilo LEfSe, o
+  //  — solo con ANCOM-BC — su propio log2FC corregido de sesgo.
+  //  Toda la estadística está ya verificada en stats.js / ancomBC.js.
   // =========================================================================
   function renderBiomarkers(table, levels, groupOptions) {
     // aviso honesto: esto NO es LEfSe
@@ -1484,6 +1490,28 @@ export function render(container) {
       controls.appendChild(gf);
     }
 
+    // método de significancia: Kruskal-Wallis (de toda la vida, sobre la
+    // abundancia relativa) o ANCOM-BC (composicional — corrige el sesgo de
+    // muestreo por muestra antes de comparar, ver js/lib/ancomBC.js). Cambia
+    // de dónde sale el p/q de la tabla; δ de Cliff y LDA se calculan igual
+    // pase lo que pase aquí (son scores de efecto, no de significancia).
+    const methodField = document.createElement('div');
+    methodField.className = 'ql-field';
+    methodField.innerHTML = '<label>' + t('barplots.bmMethodLabel') + '</label>';
+    const methodSeg = document.createElement('div');
+    methodSeg.className = 'ql-segmented';
+    [['kw', t('barplots.bmMethodKw')], ['ancombc', t('barplots.bmMethodAncombc')]].forEach(([v, lbl]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ql-seg-btn' + (bmMethod === v ? ' is-on' : '');
+      b.textContent = lbl;
+      b.addEventListener('click', () => { if (bmMethod !== v) { bmMethod = v; if (bmScore === 'ancom' && v !== 'ancombc') { bmScore = 'cliffs'; bmSort = { key: 'delta', dir: 'desc' }; } paint(); } });
+      methodSeg.appendChild(b);
+    });
+    methodField.appendChild(methodSeg);
+    methodField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + (bmMethod === 'ancombc' ? t('barplots.bmMethodAncombcHelp') : t('barplots.bmMethodKwHelp')) + '</p>');
+    controls.appendChild(methodField);
+
     // umbral q
     const qf = document.createElement('div');
     qf.className = 'ql-field';
@@ -1499,31 +1527,36 @@ export function render(container) {
     qR.addEventListener('change', () => applyQ(qR.value));
     qN.addEventListener('change', () => applyQ(qN.value));
 
-    // score del gráfico: δ de Cliff (no asume normalidad) o LDA bootstrapeado
-    // (el nombre que la gente espera de "LEfSe") — las dos quedan siempre
-    // visibles en la tabla; este selector solo decide cuál manda en la
+    // score del gráfico: δ de Cliff (no asume normalidad), LDA bootstrapeado
+    // (el nombre que la gente espera de "LEfSe"), y — solo con ANCOM-BC — su
+    // propio log2FC corregido de sesgo. Los tres quedan siempre visibles en
+    // la tabla cuando aplican; este selector solo decide cuál manda en la
     // longitud de las barras y el orden por defecto.
     const scoreField = document.createElement('div');
     scoreField.className = 'ql-field';
     scoreField.innerHTML = '<label>' + t('barplots.bmScoreLabel') + '</label>';
     const scoreSeg = document.createElement('div');
     scoreSeg.className = 'ql-segmented';
-    [['cliffs', t('barplots.bmScoreCliffs')], ['lda', t('barplots.bmScoreLda')]].forEach(([v, lbl]) => {
+    const scoreOptions = [['cliffs', t('barplots.bmScoreCliffs')], ['lda', t('barplots.bmScoreLda')]];
+    if (bmMethod === 'ancombc') scoreOptions.push(['ancom', t('barplots.bmScoreAncom')]);
+    const scoreSortKey = { lda: 'ldaScore', ancom: 'ancomLog2FC', cliffs: 'delta' };
+    scoreOptions.forEach(([v, lbl]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ql-seg-btn' + (bmScore === v ? ' is-on' : '');
       b.textContent = lbl;
-      b.addEventListener('click', () => { if (bmScore !== v) { bmScore = v; bmSort = { key: v === 'lda' ? 'ldaScore' : 'delta', dir: 'desc' }; paint(); } });
+      b.addEventListener('click', () => { if (bmScore !== v) { bmScore = v; bmSort = { key: scoreSortKey[v], dir: 'desc' }; paint(); } });
       scoreSeg.appendChild(b);
     });
     scoreField.appendChild(scoreSeg);
-    scoreField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + (bmScore === 'lda' ? t('barplots.bmScoreLdaHelp') : t('barplots.bmScoreCliffsHelp')) + '</p>');
+    const scoreHelpKey = bmScore === 'lda' ? 'barplots.bmScoreLdaHelp' : bmScore === 'ancom' ? 'barplots.bmScoreAncomHelp' : 'barplots.bmScoreCliffsHelp';
+    scoreField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t(scoreHelpKey) + '</p>');
     controls.appendChild(scoreField);
 
     const method = document.createElement('p');
     method.className = 'ql-field-help';
     method.style.marginTop = '14px';
-    method.textContent = t('barplots.bmMethod');
+    method.textContent = t(bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcDesc' : 'barplots.bmMethod');
     controls.appendChild(method);
 
     grid.appendChild(controls);
@@ -1568,28 +1601,60 @@ export function render(container) {
       return;
     }
 
-    // --- Kruskal-Wallis por taxón (solo los presentes en TODOS los grupos) ---
-    const tested = [];
-    taxonHeaders.forEach((h) => {
-      const perGroup = groups.map((g) => relByTaxon[h][g] || []);
-      if (perGroup.some((arr) => arr.length === 0)) return;
-      const kw = kruskalWallis(perGroup);
-      if (!isFinite(kw.p)) return;
-      tested.push({ taxon: h, label: shortTaxonName(h), p: kw.p, perGroup });
-    });
+    // --- significancia por taxón: Kruskal-Wallis (de siempre, sobre la
+    // abundancia relativa) o ANCOM-BC (composicional, sobre los conteos
+    // crudos — ver js/lib/ancomBC.js). ---
+    let tested = [];
+    if (bmMethod === 'ancombc') {
+      // ANCOM-BC necesita los conteos CRUDOS (no el % de relByTaxon) para
+      // poder estimar el sesgo de muestra; no exige presencia en todos los
+      // grupos (el pseudo-conteo se encarga de los ceros estructurales).
+      const sampleRows = table.rows.filter((row) => resolveGroup(String(row[sampleKey]).trim()));
+      const sampleGroupsArr = sampleRows.map((row) => resolveGroup(String(row[sampleKey]).trim()));
+      const countMatrix = taxonHeaders.map((h) => sampleRows.map((row) => parseFloat(row[h]) || 0));
+      const ancomRes = ancomBC(countMatrix, sampleGroupsArr, {}, studentTwoTailedP);
+      taxonHeaders.forEach((h, i) => {
+        const r = ancomRes[i];
+        if (!r || !isFinite(r.p)) return;
+        tested.push({
+          taxon: h, label: shortTaxonName(h), p: r.p,
+          perGroup: groups.map((g) => relByTaxon[h][g] || []),
+          ancomGroupIdx: r.groupIdx, ancomLog2FC: r.log2FC, ancomSE: r.se, ancomW: r.W,
+        });
+      });
+    } else {
+      // Kruskal-Wallis por taxón (solo los presentes en TODOS los grupos)
+      taxonHeaders.forEach((h) => {
+        const perGroup = groups.map((g) => relByTaxon[h][g] || []);
+        if (perGroup.some((arr) => arr.length === 0)) return;
+        const kw = kruskalWallis(perGroup);
+        if (!isFinite(kw.p)) return;
+        tested.push({ taxon: h, label: shortTaxonName(h), p: kw.p, perGroup });
+      });
+    }
 
-    // --- BH sobre TODOS los p testados ---
+    // --- BH sobre TODOS los p testados (misma corrección, sea cual sea el método) ---
     const q = benjaminiHochberg(tested.map((x) => x.p));
     tested.forEach((x, i) => { x.q = q[i]; });
 
-    // --- significativos: grupo enriquecido (mediana más alta) + dos scores
-    // de tamaño de efecto, calculados los dos siempre (no uno u otro):
-    // delta de Cliff (one-vs-rest, no asume normalidad) y el LDA univariante
-    // bootstrapeado al estilo LEfSe (one-vs-rest, mismo split). ---
+    // --- significativos: grupo enriquecido + tres scores de tamaño de
+    // efecto, calculados siempre que aplique (no uno u otro): delta de
+    // Cliff (one-vs-rest, no asume normalidad), el LDA univariante
+    // bootstrapeado al estilo LEfSe (one-vs-rest, mismo split), y — solo
+    // con ANCOM-BC — su propio log2FC corregido de sesgo (ya viene de esa
+    // misma partición: ancomGroupIdx). Con Kruskal-Wallis, el grupo
+    // enriquecido es el de mediana más alta (one-vs-rest); con ANCOM-BC es
+    // el que su propio modelo ya identificó como tal, para que toda la fila
+    // (grupo, δ, LDA, log2FC, q) hable del mismo contraste. ---
     const sig = tested.filter((x) => x.q < qThresh).map((x) => {
-      const medians = x.perGroup.map((arr) => quartiles(arr.slice().sort((a, b) => a - b)).median);
-      let bi = 0;
-      for (let i = 1; i < medians.length; i++) if (medians[i] > medians[bi]) bi = i;
+      let bi;
+      if (x.ancomGroupIdx != null) {
+        bi = x.ancomGroupIdx;
+      } else {
+        const medians = x.perGroup.map((arr) => quartiles(arr.slice().sort((a, b) => a - b)).median);
+        bi = 0;
+        for (let i = 1; i < medians.length; i++) if (medians[i] > medians[bi]) bi = i;
+      }
       const inGroup = x.perGroup[bi];
       const rest = x.perGroup.filter((_, i) => i !== bi).flat();
       const lda = lefseLdaScore(inGroup, rest);
@@ -1599,7 +1664,7 @@ export function render(container) {
         ldaScore: lda.error ? null : lda.score,
       };
     });
-    const scoreOf = (x) => (bmScore === 'lda' ? x.ldaScore : x.delta);
+    const scoreOf = (x) => (bmScore === 'lda' ? x.ldaScore : bmScore === 'ancom' ? x.ancomLog2FC : x.delta);
     sig.sort((a, b) => Math.abs(scoreOf(b) ?? -Infinity) - Math.abs(scoreOf(a) ?? -Infinity));
     const ldaMissing = sig.filter((x) => x.ldaScore == null).length;
 
@@ -1612,7 +1677,8 @@ export function render(container) {
     }
 
     // --- gráfico: barras horizontales tipo LEfSe ---
-    const sigForChart = bmScore === 'lda' ? sig.filter((x) => x.ldaScore != null) : sig;
+    const sigForChart = bmScore === 'lda' ? sig.filter((x) => x.ldaScore != null)
+      : bmScore === 'ancom' ? sig.filter((x) => x.ancomLog2FC != null) : sig;
     drawBiomarkerBars(svg, chartPanel, chartWrap, tooltip, sigForChart, groups, bmScore);
 
     // --- tabla ordenable ---
@@ -1625,8 +1691,9 @@ export function render(container) {
       ['enrichedGroup', t('barplots.bmColGroup')],
       ['delta', t('barplots.bmColDelta')],
       ['ldaScore', t('barplots.bmColLda')],
-      ['q', t('barplots.bmColQ')],
     ];
+    if (bmMethod === 'ancombc') cols.push(['ancomLog2FC', t('barplots.bmColAncomLfc')]);
+    cols.push(['q', t('barplots.bmColQ')]);
     let thead = '<thead><tr>';
     cols.forEach(([key, lbl]) => {
       const on = bmSort.key === key;
@@ -1637,10 +1704,10 @@ export function render(container) {
     tbl.innerHTML = thead + '</tr></thead>';
     const tb = document.createElement('tbody');
     if (sig.length === 0) {
-      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="' + cols.length + '" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
     } else {
       const dir = bmSort.dir === 'asc' ? 1 : -1;
-      const absSortKeys = new Set(['delta', 'ldaScore']);
+      const absSortKeys = new Set(['delta', 'ldaScore', 'ancomLog2FC']);
       const rows = sig.slice().sort((a, b) => {
         const av = a[bmSort.key], bv = b[bmSort.key];
         if (absSortKeys.has(bmSort.key)) return ((Math.abs(av) || -Infinity) - (Math.abs(bv) || -Infinity)) * dir;
@@ -1654,6 +1721,7 @@ export function render(container) {
           '<td><span class="ql-bm-swatch" style="background:' + groupColor(r.enrichedIdx) + '"></span>' + escapeHtml(r.enrichedGroup) + '</td>' +
           '<td class="ql-num tabular">' + r.delta.toFixed(3) + '</td>' +
           '<td class="ql-num tabular">' + (r.ldaScore == null ? '—' : r.ldaScore.toFixed(3)) + '</td>' +
+          (bmMethod === 'ancombc' ? '<td class="ql-num tabular">' + r.ancomLog2FC.toFixed(3) + '</td>' : '') +
           '<td class="ql-num tabular">' + formatP(r.q) + '</td>';
         tb.appendChild(tr);
       });
@@ -1665,8 +1733,8 @@ export function render(container) {
       btn.addEventListener('click', () => {
         const key = btn.getAttribute('data-sort');
         if (bmSort.key === key) bmSort = { key, dir: bmSort.dir === 'asc' ? 'desc' : 'asc' };
-        // por defecto: nombres y q ascendente; scores de efecto (δ, LDA) descendente
-        else bmSort = { key, dir: (key === 'delta' || key === 'ldaScore') ? 'desc' : 'asc' };
+        // por defecto: nombres y q ascendente; scores de efecto (δ, LDA, ANCOM-BC) descendente
+        else bmSort = { key, dir: (key === 'delta' || key === 'ldaScore' || key === 'ancomLog2FC') ? 'desc' : 'asc' };
         paint();
       });
     });
@@ -1711,7 +1779,7 @@ export function render(container) {
     svg.style.width = '';
     svg.style.maxWidth = '';
 
-    const scoreOf = (s) => (bmScore === 'lda' ? s.ldaScore : s.delta);
+    const scoreOf = (s) => (bmScore === 'lda' ? s.ldaScore : bmScore === 'ancom' ? s.ancomLog2FC : s.delta);
     const maxAbs = Math.max(...sig.map((s) => Math.abs(scoreOf(s))), 0.2);
     const x = (d) => marginL + (Math.abs(d) / maxAbs) * innerW;
 
@@ -1728,7 +1796,7 @@ export function render(container) {
     svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT - 6, y2: barsBottom, class: 'ql-baseline-line' }));
 
     const axT = svgEl('text', { x: marginL + innerW / 2, y: axisY, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
-    axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : t('barplots.bmAxisDelta');
+    axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : bmScore === 'ancom' ? t('barplots.bmAxisAncom') : t('barplots.bmAxisDelta');
     svg.appendChild(axT);
 
     const barsG = svgEl('g', { 'data-ce': 'bars' });
@@ -1747,6 +1815,7 @@ export function render(container) {
         showTooltipCentral(chartWrap, marginL + w, y + rowH / 2, s.label, [
           t('barplots.bmEnrichedIn', { group: s.enrichedGroup }) +
           ' · δ = ' + s.delta.toFixed(3) + (s.ldaScore == null ? '' : ' · LDA = ' + s.ldaScore.toFixed(3)) +
+          (s.ancomLog2FC == null ? '' : ' · log2FC = ' + s.ancomLog2FC.toFixed(3)) +
           ' · q = ' + formatP(s.q),
         ], { svg, W, H, tooltip });
       });
