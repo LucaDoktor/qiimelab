@@ -11,6 +11,8 @@ import { computeGroupTaxaMatrix, computeAlluvialLayout, buildAlluvialLinkPath } 
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
+import { groupColor } from '../lib/groupBoxplot.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 
 const CAT_FALLBACKS = [
@@ -612,27 +614,19 @@ export function render(container) {
     const mainPanel = document.createElement('div');
     mainPanel.className = 'ql-main';
 
-    // Barra de herramientas de vistas (Sub-pestañas: Barras / Aluvial / Tabla)
-    const viewTabs = document.createElement('div');
-    viewTabs.className = 'ql-segmented';
-    viewTabs.style.marginBottom = '16px';
-    [
-      ['barplot', t('inference.tabBarplot') || 'Gráfico de Barras Apiladas'],
-      ['alluvial', t('inference.tabAlluvial') || 'Diagrama Aluvial'],
-      ['table', t('inference.tabTable') || 'Matriz de Funciones'],
-    ].forEach(([v, label]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ql-seg-btn' + (viewMode === v ? ' is-on' : '');
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        if (viewMode !== v) {
-          viewMode = v;
-          paint();
-        }
-      });
-      viewTabs.appendChild(btn);
+    // Barra de herramientas de vistas (Barras / Aluvial / Lollipop / Tabla)
+    const viewTabs = chartTypeField({
+      labelKey: 'inference.viewLabel',
+      options: [
+        { value: 'barplot', labelKey: 'inference.tabBarplot' },
+        { value: 'alluvial', labelKey: 'inference.tabAlluvial' },
+        { value: 'lollipop', labelKey: 'inference.tabLollipop' },
+        { value: 'table', labelKey: 'inference.tabTable' },
+      ],
+      active: viewMode,
+      onChange: (v) => { viewMode = v; paint(); },
     });
+    viewTabs.style.marginBottom = '16px';
     mainPanel.appendChild(viewTabs);
 
     const chartCard = document.createElement('div');
@@ -851,6 +845,13 @@ export function render(container) {
       renderAlluvialDiagram(chartCard, inferredMatrix, {
         topN,
         minAbundance,
+        groupCol: selectedGroupCol,
+      });
+    } else if (viewMode === 'lollipop') {
+      renderLollipop(chartCard, inferredMatrix, {
+        topN,
+        minAbundance,
+        minPrev,
         groupCol: selectedGroupCol,
       });
     } else if (viewMode === 'table') {
@@ -1101,6 +1102,164 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ]
+    });
+  }
+
+  // Lollipop: un punto por función (media de abundancia relativa), ordenadas
+  // de mayor a menor. Con columna de agrupación seleccionada, cada función
+  // muestra un punto POR GRUPO (media de ese grupo) unidos por una línea de
+  // rango — comparar rutas/funciones dominantes entre grupos, como pide el
+  // prompt. Sin agrupar, es un lollipop clásico (tallo desde 0).
+  function renderLollipop(card, matrix, opts) {
+    card.innerHTML = '';
+    const isPhenotypes = selectedDbType === 'phenotypes';
+    const grouped = groupTaxaByAbundance(matrix, opts.minAbundance, opts.topN, {
+      minPrev: opts.minPrev,
+      isPercentage: true,
+      sampleKey: matrix.sampleKey,
+    });
+    const { series, rows } = grouped;
+
+    const resolveGroup = (opts.groupCol && state.metadata) ? makeGroupResolver(state.metadata, opts.groupCol) : null;
+    const groupNames = resolveGroup
+      ? Array.from(new Set(rows.map((r) => resolveGroup(r[matrix.sampleKey])).filter(Boolean))).sort()
+      : null;
+
+    const values = series.map((sObj) => {
+      const all = rows.map((r) => parseFloat(r[sObj.key]) || 0);
+      const overall = all.length ? all.reduce((a, b) => a + b, 0) / all.length : 0;
+      let byGroup = null;
+      if (groupNames) {
+        byGroup = {};
+        groupNames.forEach((g) => {
+          const vals = rows.filter((r) => resolveGroup(r[matrix.sampleKey]) === g).map((r) => parseFloat(r[sObj.key]) || 0);
+          byGroup[g] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        });
+      }
+      return { sObj, overall, byGroup };
+    }).sort((a, b) => b.overall - a.overall);
+
+    const n = values.length;
+    const margin = { top: 40, right: groupNames ? 170 : 40, bottom: 50, left: 210 };
+    const rowH = Math.max(20, Math.min(34, 460 / Math.max(n, 1)));
+    const innerH = rowH * n;
+    const innerW = 420;
+    const W = margin.left + innerW + margin.right;
+    const H = margin.top + innerH + margin.bottom;
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      class: 'ql-svg',
+      role: 'img',
+      'aria-label': t('inference.lollipopAria') || 'Lollipop de funciones dominantes',
+      style: 'max-width:100%;height:auto;display:block;',
+    });
+
+    const maxVal = Math.max(1e-9, ...values.map((v) => Math.max(v.overall, ...(v.byGroup ? Object.values(v.byGroup) : [0]))));
+    const xScale = (v) => margin.left + (v / maxVal) * innerW;
+
+    const axesG = svgEl('g');
+    axesG.appendChild(svgEl('line', { x1: margin.left, x2: margin.left, y1: margin.top, y2: margin.top + innerH, stroke: 'var(--border-strong)', 'stroke-width': '1.2' }));
+    [0, 0.25, 0.5, 0.75, 1].forEach((f) => {
+      const x = margin.left + f * innerW;
+      if (f > 0) axesG.appendChild(svgEl('line', { x1: x, x2: x, y1: margin.top, y2: margin.top + innerH, stroke: 'var(--border-subtle)', 'stroke-dasharray': '3 3' }));
+      const lbl = svgEl('text', { x, y: margin.top + innerH + 16, 'text-anchor': 'middle', 'font-size': '10.5px', fill: 'var(--ink-2)' });
+      lbl.textContent = (maxVal * f).toFixed(maxVal * f < 1 ? 2 : 1) + '%';
+      axesG.appendChild(lbl);
+    });
+
+    const mainTitle = svgEl('text', {
+      x: margin.left + innerW / 2, y: 22, class: 'ce-title ql-chart-main-title', 'text-anchor': 'middle',
+      'font-size': '14px', 'font-weight': '600', fill: 'var(--ink-1)', 'data-ce': 'title',
+    });
+    mainTitle.textContent = isPhenotypes
+      ? (t('inference.titlePhenotypes') || 'Inferencia Fenotípica y Morfológica')
+      : (t('inference.title') || 'Inferencia Funcional Taxonómica');
+    svg.appendChild(mainTitle);
+
+    const xTitle = svgEl('text', {
+      x: margin.left + innerW / 2, y: H - 10, 'text-anchor': 'middle', 'font-size': '12px', 'font-weight': '600',
+      fill: 'var(--ink-1)', class: 'ql-axis-label ql-chart-x-title', 'data-ce': 'xtitle',
+    });
+    xTitle.textContent = t('inference.lollipopAxis') || 'Abundancia relativa media (%)';
+    axesG.appendChild(xTitle);
+    svg.appendChild(axesG);
+
+    const rowsG = svgEl('g');
+    values.forEach((v, i) => {
+      const cy = margin.top + i * rowH + rowH / 2;
+      const fName = formatFunctionName(v.sObj.key, getLang());
+      const lbl = svgEl('text', { x: margin.left - 10, y: cy + 4, 'text-anchor': 'end', 'font-size': '11px', fill: 'var(--ink-2)' });
+      lbl.textContent = fName.length > 32 ? fName.slice(0, 30) + '…' : fName;
+      rowsG.appendChild(lbl);
+
+      if (v.byGroup) {
+        const gxs = groupNames.map((g) => xScale(v.byGroup[g]));
+        if (groupNames.length > 1) {
+          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, stroke: 'var(--baseline)', 'stroke-width': 1.2 }));
+        }
+        groupNames.forEach((g, gi) => {
+          const cx = xScale(v.byGroup[g]);
+          rowsG.appendChild(svgEl('circle', {
+            cx, cy, r: 4.5, fill: groupColor(gi), stroke: 'var(--surface)', 'stroke-width': 1,
+            'data-fn': v.sObj.key, 'data-group': g, 'data-val': v.byGroup[g].toFixed(2),
+          }));
+        });
+      } else {
+        const cx = xScale(v.overall);
+        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, stroke: 'var(--baseline)', 'stroke-width': 1.5 }));
+        rowsG.appendChild(svgEl('circle', {
+          cx, cy, r: 5, fill: v.sObj.isOther ? OTHER_COLOR : getSeriesColor(i, v.sObj.isOther), stroke: 'var(--surface)', 'stroke-width': 1,
+          'data-fn': v.sObj.key, 'data-val': v.overall.toFixed(2),
+        }));
+      }
+    });
+    svg.appendChild(rowsG);
+
+    delegateHover(svg, 'circle[data-fn]', {
+      onEnter: (el, ev) => {
+        const fName = formatFunctionName(el.dataset.fn, getLang());
+        tooltipEl.style.display = 'block';
+        tooltipEl.innerHTML = '<strong>' + escapeHtml(fName) + '</strong>' +
+          (el.dataset.group ? '<br/>' + escapeHtml(el.dataset.group) : '') +
+          '<br/>' + el.dataset.val + '%';
+        positionTooltip(ev);
+      },
+      onMove: (el, ev) => positionTooltip(ev),
+      onLeave: () => { tooltipEl.style.display = 'none'; },
+    });
+
+    if (groupNames) {
+      const legendG = svgEl('g', { 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
+      groupNames.forEach((g, gi) => {
+        const y = 14 + gi * 18;
+        legendG.appendChild(svgEl('circle', { cx: 5, cy: y - 4, r: 5, fill: groupColor(gi) }));
+        const lt = svgEl('text', { x: 16, y, 'font-size': '11px', fill: 'var(--ink-2)' });
+        lt.textContent = g.length > 20 ? g.slice(0, 18) + '…' : g;
+        legendG.appendChild(lt);
+      });
+      svg.appendChild(legendG);
+    }
+
+    card.appendChild(svg);
+
+    const note = document.createElement('p');
+    note.className = 'ql-field-help';
+    note.style.margin = '8px 0 0';
+    note.textContent = groupNames ? (t('inference.lollipopGroupNote') || '') : (t('inference.lollipopNoGroupNote') || '');
+    card.appendChild(note);
+
+    editor = attachChartEditor({
+      key: 'inference-lollipop',
+      svg,
+      mount: card,
+      filename: isPhenotypes ? 'inferencia_fenotipica_lollipop' : 'inferencia_funcional_lollipop',
+      lang: getLang(),
+      elements: [
+        { id: 'title', selector: '[data-ce="title"]' },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        ...(groupNames ? [{ id: 'legend', selector: '[data-ce="legend"]', kind: 'group' }] : []),
+      ],
     });
   }
 
