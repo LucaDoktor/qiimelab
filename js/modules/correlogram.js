@@ -17,6 +17,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
 import { matchSampleId } from '../lib/sampleMatch.js';
+import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
@@ -33,7 +34,6 @@ function shortTaxon(full) {
   const parts = String(full).split(';').map((p) => p.trim()).filter(Boolean);
   return (parts[parts.length - 1] || String(full)).replace(/^[a-z]__/i, '') || String(full);
 }
-const OTHER_RE = /^(others?|otros?|resto)$/i;
 
 // muestra → valor, tolerante a sufijos en los IDs (A-1 ↔ A-1-16S-…)
 function resolve(vmap, sid) {
@@ -87,56 +87,6 @@ function collectVariables(topN) {
   }
 
   return vars;
-}
-
-// Abundancia relativa (%) por muestra de cada taxón, con el mismo criterio de
-// ranking que el barplot (media de la abundancia relativa por muestra).
-function taxaRelativeAbundance() {
-  // preferimos taxaBarplot (ya es por muestra); si no, taxaCounts (taxón × muestra)
-  if (state.taxaBarplot) {
-    const levels = Object.keys(state.taxaBarplot.levels).sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(b));
-    const table = state.taxaBarplot.levels[levels[levels.length - 1]];
-    const sampleKey = table.headers[0];
-    const taxonCols = table.headers.filter((h, i) => i !== 0 && !OTHER_RE.test(String(h).trim()));
-    const otherCols = table.headers.filter((h, i) => i !== 0 && OTHER_RE.test(String(h).trim()));
-    const bySample = {};
-    taxonCols.forEach((tx) => { bySample[tx] = new Map(); });
-    const meanAcc = {};
-    taxonCols.forEach((tx) => { meanAcc[tx] = 0; });
-    table.rows.forEach((r) => {
-      const sid = String(r[sampleKey]).trim();
-      const rowSum = taxonCols.concat(otherCols).reduce((a, h) => a + (parseFloat(r[h]) || 0), 0);
-      if (rowSum <= 0) return;
-      taxonCols.forEach((tx) => {
-        const rel = (parseFloat(r[tx]) || 0) / rowSum * 100;
-        bySample[tx].set(sid, rel);
-        meanAcc[tx] += rel / table.rows.length;
-      });
-    });
-    return { bySample, ranked: taxonCols.slice().sort((a, b) => meanAcc[b] - meanAcc[a]) };
-  }
-
-  if (state.taxaCounts) {
-    const tc = state.taxaCounts;
-    const taxonKey = tc.taxonKey || tc.headers[0];
-    const sampleCols = tc.headers.filter((h) => h !== taxonKey);
-    const totals = {};
-    sampleCols.forEach((s) => { totals[s] = tc.rows.reduce((a, r) => a + (parseFloat(r[s]) || 0), 0); });
-    const bySample = {}; const meanAcc = {};
-    tc.rows.forEach((r) => {
-      const taxon = String(r[taxonKey]).trim();
-      bySample[taxon] = new Map(); meanAcc[taxon] = 0;
-      sampleCols.forEach((s) => {
-        if (!(totals[s] > 0)) return;
-        const rel = (parseFloat(r[s]) || 0) / totals[s] * 100;
-        bySample[taxon].set(s, rel);
-        meanAcc[taxon] += rel / sampleCols.length;
-      });
-    });
-    return { bySample, ranked: Object.keys(meanAcc).sort((a, b) => meanAcc[b] - meanAcc[a]) };
-  }
-
-  return null;
 }
 
 // degradado continuo (color-mix por celda, no una serie discreta): la

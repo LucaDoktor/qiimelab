@@ -11,6 +11,11 @@ import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
+import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
+import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
+import { shortTaxonName } from './taxaBarplot.js';
+import { makeGroupResolver } from '../lib/sampleMatch.js';
 
 const MARGIN = { top: 48, right: 28, bottom: 86, left: 58 };
 const W = 900, H = 560;
@@ -19,6 +24,20 @@ function shortenTaxon(name) {
   const parts = String(name).split(' ');
   if (parts.length <= 1) return name;
   return parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
+}
+
+// El taxón de la tabla de resultados (DESeq2/ANCOM-BC) y el de la tabla de
+// abundancia (taxaBarplot/taxaCounts) rara vez se escriben igual — una puede
+// traer el linaje completo ("d__Bacteria;...;g__Lactobacillus") y la otra
+// solo el nombre corto. Se compara por nombre corto normalizado; sin
+// coincidencia devuelve null (no se inventa un emparejamiento dudoso).
+function matchTaxonToAbundance(diffTaxon, relAbund) {
+  if (!relAbund) return null;
+  if (relAbund.bySample[diffTaxon]) return diffTaxon; // misma convención, ya coincide
+  const norm = (s) => shortTaxonName(s).toLowerCase().trim();
+  const target = norm(diffTaxon);
+  if (!target) return null;
+  return Object.keys(relAbund.bySample).find((full) => norm(full) === target) || null;
 }
 function niceStep(range, targetTicks) {
   if (range <= 0) return 1;
@@ -109,7 +128,9 @@ export function render(container) {
   let mapping = null;
   let mappedFileId = null; // para re-mapear si se carga otra tabla distinta
   let showRScript = false;
-  let chartType = 'volcano'; // 'volcano' | 'lollipop' | 'heatmap'
+  let chartType = 'volcano'; // 'volcano' | 'lollipop' | 'heatmap' | 'boxplot'
+  let boxplotTaxon = null;     // taxón elegido en la vista de cajas y bigotes
+  let boxplotGroupCol = null;  // columna de metadatos para agrupar esa vista
   let mainView = 'individual'; // 'individual' | 'compare'
   let cmpPadj = 0.05;          // umbral padj de "significativo en N de M"
   let cmpSort = { key: 'count', dir: 'desc' };
@@ -259,11 +280,34 @@ export function render(container) {
 
     const { data, skipped, taxonKey, lfcKey, padjKey, lfcCols } = computeDerived();
 
+    // "Cajas y bigotes" cruza el taxón significativo con una tabla de
+    // abundancia por muestra APARTE (taxaBarplot/taxaCounts) — no siempre
+    // está cargada, y no aplica a diferencial funcional (KOs). Si falta
+    // cualquiera de las dos cosas, la opción ni se ofrece (no se rompe nada,
+    // simplemente no aparece un tipo de gráfico que no podría dibujar nada).
+    const relAbund = (!isKO && state.metadata) ? taxaRelativeAbundance() : null;
+    const canBoxplot = !!relAbund;
+    if (chartType === 'boxplot' && !canBoxplot) chartType = 'volcano';
+    // taxones que hoy cumplen los umbrales (arriba/abajo) Y tienen una columna
+    // de abundancia emparejada por nombre — únicos candidatos al boxplot.
+    const sigMatched = canBoxplot
+      ? data.filter((d) => d.status !== 'ns').map((d) => ({ ...d, matchedKey: matchTaxonToAbundance(d.taxon, relAbund) }))
+        .filter((d) => d.matchedKey).sort((a, b) => a.padj - b.padj)
+      : [];
+    if (chartType === 'boxplot' && (!boxplotTaxon || !sigMatched.some((d) => d.taxon === boxplotTaxon))) {
+      boxplotTaxon = sigMatched.length ? sigMatched[0].taxon : null;
+    }
+    const groupOptionsForBoxplot = state.metadata ? state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey) : [];
+    if (chartType === 'boxplot' && (!boxplotGroupCol || !groupOptionsForBoxplot.includes(boxplotGroupCol))) {
+      boxplotGroupCol = groupOptionsForBoxplot[0] || null;
+    }
+
     // ---- selector de tipo de gráfico ----
+    const tabOptions = [['volcano', t('differential.viewVolcano')], ['lollipop', t('differential.viewLollipop')], ['heatmap', t('differential.viewHeatmap')]];
+    if (canBoxplot) tabOptions.push(['boxplot', t('differential.viewBoxplot')]);
     const tabs = document.createElement('div');
     tabs.className = 'ql-tabs';
-    [['volcano', t('differential.viewVolcano')], ['lollipop', t('differential.viewLollipop')], ['heatmap', t('differential.viewHeatmap')]]
-      .forEach(([v, label]) => {
+    tabOptions.forEach(([v, label]) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'ql-tab' + (chartType === v ? ' is-active' : '');
@@ -279,7 +323,8 @@ export function render(container) {
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
     const chartNoteKey = chartType === 'lollipop' ? 'differential.chartNoteLolli'
-      : chartType === 'heatmap' ? 'differential.chartNoteHeat' : 'differential.chartNote';
+      : chartType === 'heatmap' ? 'differential.chartNoteHeat'
+      : chartType === 'boxplot' ? 'differential.chartNoteBoxplot' : 'differential.chartNote';
     chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t(chartNoteKey) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
@@ -333,10 +378,51 @@ export function render(container) {
       controls.appendChild(labelField);
     }
 
-    const searchField = document.createElement('div');
-    searchField.className = 'ql-field';
-    searchField.innerHTML = '<label>' + t('differential.searchLabel', { ent: entName }) + '</label><input type="text" id="searchInput" placeholder="' + t(isKO ? 'differential.searchPlaceholderKO' : 'differential.searchPlaceholder') + '" value="' + escapeHtml(search) + '" />';
-    controls.appendChild(searchField);
+    let searchField = null;
+    if (chartType !== 'boxplot') {
+      searchField = document.createElement('div');
+      searchField.className = 'ql-field';
+      searchField.innerHTML = '<label>' + t('differential.searchLabel', { ent: entName }) + '</label><input type="text" id="searchInput" placeholder="' + t(isKO ? 'differential.searchPlaceholderKO' : 'differential.searchPlaceholder') + '" value="' + escapeHtml(search) + '" />';
+      controls.appendChild(searchField);
+    }
+
+    if (chartType === 'boxplot') {
+      const taxonField = document.createElement('div');
+      taxonField.className = 'ql-field';
+      taxonField.innerHTML = '<label>' + t('differential.boxplotTaxonLabel', { ent: cap(entName) }) + '</label>';
+      const taxonSel = document.createElement('select');
+      sigMatched.forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = d.taxon;
+        opt.textContent = d.taxon + ' (padj ' + formatP(d.padj) + ', log2FC ' + d.lfc.toFixed(2) + ')';
+        if (d.taxon === boxplotTaxon) opt.selected = true;
+        taxonSel.appendChild(opt);
+      });
+      taxonSel.addEventListener('change', () => { boxplotTaxon = taxonSel.value; paint(); });
+      taxonField.appendChild(taxonSel);
+      controls.appendChild(taxonField);
+
+      if (groupOptionsForBoxplot.length > 0) {
+        const grpField = document.createElement('div');
+        grpField.className = 'ql-field';
+        grpField.innerHTML = '<label>' + t('barplots.groupCol') + '</label>';
+        const grpSel = document.createElement('select');
+        groupOptionsForBoxplot.forEach((h) => {
+          const opt = document.createElement('option');
+          opt.value = h; opt.textContent = h;
+          if (h === boxplotGroupCol) opt.selected = true;
+          grpSel.appendChild(opt);
+        });
+        grpSel.addEventListener('change', () => { boxplotGroupCol = grpSel.value; paint(); });
+        grpField.appendChild(grpSel);
+        controls.appendChild(grpField);
+      }
+
+      const matchNote = document.createElement('p');
+      matchNote.className = 'ql-field-help';
+      matchNote.textContent = t('differential.boxplotMatchNote', { n: sigMatched.length, total: data.filter((d) => d.status !== 'ns').length });
+      controls.appendChild(matchNote);
+    }
 
     const rBtn = document.createElement('button');
     rBtn.type = 'button';
@@ -511,6 +597,7 @@ export function render(container) {
       const term = search.trim().toLowerCase();
       if (chartType === 'lollipop') ceCfg = renderLollipop(term);
       else if (chartType === 'heatmap') ceCfg = renderHeatmap(term);
+      else if (chartType === 'boxplot') ceCfg = renderBoxplot();
       else ceCfg = renderVolcano(term);
     }
 
@@ -829,6 +916,57 @@ export function render(container) {
       return heatCfg(HW);
     }
 
+    // ===== Cajas y bigotes =====
+    // Complementa el lollipop/volcano (que resumen el efecto en un número)
+    // con la distribución real de abundancia del taxón elegido, agrupada por
+    // una columna de metadatos — mismo componente (drawGroupBoxplot) que
+    // diversidad alfa/recuentos, mismo Kruskal-Wallis de contraste.
+    function boxplotCfg(titleText) {
+      return {
+        key: 'differentialAbundance-boxplot',
+        filename: t('differential.title') + '-boxplot' + (boxplotTaxon ? '-' + boxplotTaxon : ''),
+        elements: [
+          { id: 'title', create: { text: titleText, x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+          { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+          { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+          { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+        ],
+        paletteType: 'categorical',
+      };
+    }
+    function renderBoxplot() {
+      const d = boxplotTaxon ? sigMatched.find((x) => x.taxon === boxplotTaxon) : null;
+      if (!d || !boxplotGroupCol) {
+        noSigText(W, H);
+        return boxplotCfg(t('differential.title'));
+      }
+      const sampleVals = relAbund.bySample[d.matchedKey]; // Map sampleId(taxaBarplot/Counts) -> %
+      const resolveGroup = makeGroupResolver(state.metadata, boxplotGroupCol);
+      const groupData = {};
+      const groupNames = [];
+      sampleVals.forEach((val, sid) => {
+        const g = resolveGroup(sid);
+        if (!g) return;
+        if (!groupData[g]) { groupData[g] = []; groupNames.push(g); }
+        groupData[g].push(val);
+      });
+      groupNames.sort();
+
+      if (groupNames.length === 0) {
+        noSigText(W, H);
+        return boxplotCfg(d.taxon);
+      }
+
+      const result = drawGroupBoxplot({
+        svg, chartWrap, tooltip,
+        groupNames, groupData,
+        title: d.taxon, xTitle: boxplotGroupCol, yTitle: t('differential.boxplotYAxis'),
+        valueLabel: t('differential.boxplotYAxis'), valueDecimals: 2,
+      });
+
+      return { ...boxplotCfg(d.taxon), elements: result.ceElements, paletteSeries: result.paletteSeries };
+    }
+
     function renderTable() {
       const sorted = data.slice().sort((a, b) => {
         const dir = sort.dir === 'asc' ? 1 : -1;
@@ -902,7 +1040,7 @@ export function render(container) {
     syncPair(lfcRange, lfcInput, 'lfc');
     syncPair(padjRange, padjInput, 'padj');
     if (labelNInput) labelNInput.addEventListener('input', () => { thresholds = { ...thresholds, labelN: parseInt(labelNInput.value, 10) || 0 }; refresh(); });
-    searchInput.addEventListener('input', () => { search = searchInput.value; renderChart(); if (editor) editor.sync(); });
+    if (searchInput) searchInput.addEventListener('input', () => { search = searchInput.value; renderChart(); if (editor) editor.sync(); });
     rBtn.addEventListener('click', () => { showRScript = !showRScript; paint(); });
     tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
       btn.addEventListener('click', () => {
