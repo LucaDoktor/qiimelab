@@ -327,6 +327,43 @@ const INDEPENDENT_TRAITS = [
   { category: 'ecology', trait: 'extremophile' },
 ];
 
+// Resoluciones manuales FIJADAS — 18 géneros donde MD2 contradecía la
+// curación manual en un grupo excluyente, revisados caso por caso con
+// criterio biológico (ver scripts/md2-conflicts-report.md y
+// qiimelab-prompt-resolver-conflictos-md2.md para el razonamiento completo
+// de cada uno; aplicado en js/lib/phenotypes.js el 2026-09-16).
+//
+// `md2At` es lo que opinaba el consenso de MD2 cuando se fijó esta decisión.
+// Mientras una regeneración futura vea que MD2 sigue opinando lo mismo, el
+// override se aplica en silencio (no se vuelve a reportar como conflicto
+// "nuevo" algo que ya se decidió). Si MD2 cambia de opinión respecto a
+// `md2At`, el override YA NO tapa el aviso — se reporta de nuevo como
+// conflicto (con una nota explicando que la fuente cambió desde que se
+// fijó), para que alguien pueda revisarlo otra vez con el dato actualizado.
+const MANUAL_OVERRIDES = [
+  { category: 'sporulation', genus: 'Actinomyces', trait: 'non_spore_forming', md2At: 'non_spore_forming' },
+  { category: 'ph_range', genus: 'Helicobacter', trait: 'neutrophile', md2At: 'neutrophile' },
+  { category: 'ph_range', genus: 'Enterococcus', trait: 'alkaliphile', md2At: 'alkaliphile' },
+  { category: 'salinity', genus: 'Halobacterium', trait: 'halophile', md2At: 'halotolerant' },
+  { category: 'salinity', genus: 'Staphylococcus', trait: 'halotolerant', md2At: 'halophile' },
+  { category: 'temperature_range', genus: 'Campylobacter', trait: 'thermophile', md2At: 'mesophile' },
+  { category: 'temperature_range', genus: 'Psychrobacter', trait: 'psychrophile', md2At: 'mesophile' },
+  { category: 'temperature_range', genus: 'Pseudoalteromonas', trait: 'psychrophile', md2At: 'mesophile' },
+  { category: 'temperature_range', genus: 'Shewanella', trait: 'mesophile', md2At: 'mesophile' },
+  { category: 'temperature_range', genus: 'Flavobacterium', trait: 'mesophile', md2At: 'mesophile' },
+  { category: 'ph_range', genus: 'Lactobacillus', trait: 'acidophile', md2At: 'neutrophile' },
+  { category: 'ph_range', genus: 'Gluconobacter', trait: 'acidophile', md2At: 'neutrophile' },
+  { category: 'ph_range', genus: 'Bifidobacterium', trait: 'neutrophile', md2At: 'neutrophile' },
+  { category: 'ph_range', genus: 'Streptococcus', trait: 'neutrophile', md2At: 'neutrophile' },
+  { category: 'ph_range', genus: 'Pediococcus', trait: 'neutrophile', md2At: 'neutrophile' },
+  { category: 'salinity', genus: 'Halobacillus', trait: 'halophile', md2At: 'halotolerant' },
+  { category: 'salinity', genus: 'Salinicoccus', trait: 'halophile', md2At: 'halotolerant' },
+  { category: 'salinity', genus: 'Halomonas', trait: 'halotolerant', md2At: 'halotolerant' },
+];
+function findOverride(category, genus) {
+  return MANUAL_OVERRIDES.find((o) => o.category === category && o.genus === genus) || null;
+}
+
 function findExistingTrait(curated, category, traits, genus) {
   const cat = curated[category] || {};
   for (const trait of traits) {
@@ -340,6 +377,18 @@ function mergeExclusiveGroup(curated, additions, conflicts, category, traits, ta
   for (const genus of tally.keys()) {
     const md2Trait = consensusLabel(tally, genus, CONSENSUS_THRESHOLD);
     if (!md2Trait || !traits.includes(md2Trait)) continue;
+    const override = findOverride(category, genus);
+    if (override) {
+      if (md2Trait === override.md2At) continue; // ya decidido contra esta misma opinión de MD2, no volver a tocar
+      // MD2 cambió de opinión desde que se fijó el override: el valor final
+      // sigue siendo el fijado a mano (no se pisa solo), pero si nadie lo
+      // revisa esto quedaría desactualizado en silencio — mejor avisar.
+      conflicts.push({
+        category, genus, curated: override.trait, md2: md2Trait,
+        note: `override fijado contra md2="${override.md2At}", pero MD2 ahora dice "${md2Trait}" — revisar de nuevo`,
+      });
+      continue;
+    }
     const existingTrait = findExistingTrait(curated, category, traits, genus);
     if (existingTrait === md2Trait) continue; // ya coincide, nada que hacer
     if (existingTrait && existingTrait !== md2Trait) {
@@ -676,9 +725,9 @@ async function main() {
     '(Gram, esporulación, temperatura, pH o salinidad) que MD2 contradice. NO se',
     'han sobrescrito automáticamente — revisar caso por caso antes de decidir.',
     '',
-    '| Categoría | Género | Curado (manual) | MD2 (agregado) |',
-    '|---|---|---|---|',
-    ...conflicts.map((c) => `| ${c.category} | ${c.genus} | ${c.curated} | ${c.md2} |`),
+    '| Categoría | Género | Curado (manual) | MD2 (agregado) | Nota |',
+    '|---|---|---|---|---|',
+    ...conflicts.map((c) => `| ${c.category} | ${c.genus} | ${c.curated} | ${c.md2} | ${c.note || ''} |`),
     '',
   ];
   await writeFile(REPORT_PATH, reportLines.join('\n'), 'utf-8');
