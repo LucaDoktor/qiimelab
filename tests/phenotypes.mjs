@@ -107,8 +107,7 @@ const controlAssertions = [
   ['temperature_range', 'thermophile', 'Thermus'],
   ['ecology', 'extremophile', 'Thermus'],
   ['temperature_range', 'psychrophile', 'Psychrobacter'],
-  ['salinity', 'halophile', 'Halomonas'],
-  ['salinity', 'halotolerant', 'Halomonas'],
+  ['salinity', 'halotolerant', 'Halomonas'], // resuelto 2026-09-16, ver sección 8 — antes era halophile
 ];
 for (const [cat, trait, genus] of controlAssertions) {
   check(`${genus} sigue en ${cat}.${trait}`, (DEFAULT_PHENOTYPES[cat]?.[trait] || []).includes(genus));
@@ -131,6 +130,47 @@ const sizeBytes = statSync(PHENOTYPES_PATH).size;
 const sizeKB = sizeBytes / 1024;
 check('js/lib/phenotypes.js pesa menos de 500 KB sin build step', sizeKB < 500, `${sizeKB.toFixed(0)} KB`);
 console.log(`  (tamaño actual: ${sizeKB.toFixed(0)} KB)`);
+
+console.log('\n--- 8. Resoluciones manuales de conflictos MD2 (18 géneros, 2026-09-16) ---');
+// scripts/md2-conflicts-report.md listaba 18 géneros donde MD2 contradecía
+// la curación manual en una categoría excluyente; cada uno se revisó a mano
+// (ver qiimelab-prompt-resolver-conflictos-md2.md y el bloque de comentario
+// en la cabecera de js/lib/phenotypes.js) y se fijó a UN valor concreto —
+// que no vuelva a moverse sin que salte este test, sea por una regeneración
+// accidental o por editar el género equivocado a mano.
+const md2Resolutions = [
+  ['sporulation', 'Actinomyces', 'non_spore_forming'],
+  ['ph_range', 'Helicobacter', 'neutrophile'],
+  ['ph_range', 'Enterococcus', 'alkaliphile'],
+  ['salinity', 'Halobacterium', 'halophile'],
+  ['salinity', 'Staphylococcus', 'halotolerant'],
+  ['temperature_range', 'Campylobacter', 'thermophile'],
+  ['temperature_range', 'Psychrobacter', 'psychrophile'],
+  ['temperature_range', 'Pseudoalteromonas', 'psychrophile'],
+  ['temperature_range', 'Shewanella', 'mesophile'],
+  ['temperature_range', 'Flavobacterium', 'mesophile'],
+  ['ph_range', 'Lactobacillus', 'acidophile'],
+  ['ph_range', 'Gluconobacter', 'acidophile'],
+  ['ph_range', 'Bifidobacterium', 'neutrophile'],
+  ['ph_range', 'Streptococcus', 'neutrophile'],
+  ['ph_range', 'Pediococcus', 'neutrophile'],
+  ['salinity', 'Halobacillus', 'halophile'],
+  ['salinity', 'Salinicoccus', 'halophile'],
+  ['salinity', 'Halomonas', 'halotolerant'],
+];
+const EXCLUSIVE_TRAITS = {
+  sporulation: ['spore_forming', 'non_spore_forming'],
+  temperature_range: ['thermophile', 'mesophile', 'psychrophile'],
+  ph_range: ['acidophile', 'neutrophile', 'alkaliphile'],
+  salinity: ['halophile', 'halotolerant'],
+};
+for (const [cat, genus, value] of md2Resolutions) {
+  check(`${genus} (${cat}) tiene el valor resuelto: ${value}`, (DEFAULT_PHENOTYPES[cat]?.[value] || []).includes(genus));
+  // y en NINGÚN otro rasgo del mismo grupo excluyente (nunca duplicado tras el movimiento)
+  const others = EXCLUSIVE_TRAITS[cat].filter((t) => t !== value);
+  const inOther = others.filter((t) => (DEFAULT_PHENOTYPES[cat]?.[t] || []).includes(genus));
+  check(`${genus} (${cat}) no sigue también en ${others.join('/')}`, inOther.length === 0, inOther.join(', '));
+}
 
 if (failed) {
   console.error('\n❌ Algunos tests de la base de datos fenotípica fallaron.');

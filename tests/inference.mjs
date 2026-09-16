@@ -259,7 +259,12 @@ check('Psychrobacter es psicrófilo', psychroTraits.has('psychrophile'));
 check('Psychrobacter es extremófilo', psychroTraits.has('extremophile'));
 
 const haloTraits = inference.findFunctionsForTaxon('g__Halomonas', phenoIndex);
-check('Halomonas es halófilo', haloTraits.has('halophile'));
+// Resolución manual de conflicto MD2 (2026-09-16, ver
+// scripts/md2-conflicts-report.md y qiimelab-prompt-resolver-conflictos-md2.md):
+// Halomonas es EL ejemplo de tolerancia salina de rango amplísimo en
+// microbiología ambiental, no de halofilia obligada — pasó de halophile
+// (curación manual original) a halotolerant.
+check('Halomonas no es halófilo (resuelto: halotolerante, no halofilia obligada)', !haloTraits.has('halophile'));
 check('Halomonas es halotolerante', haloTraits.has('halotolerant'));
 
 // 5. Traducciones y formato de nombres

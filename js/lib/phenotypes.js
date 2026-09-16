@@ -4,6 +4,28 @@
 // desde The Microbe Directory (MD2, https://github.com/dcdanko/MD2, MIT),
 // generada con scripts/build-phenotypes-md2.mjs (re-ejecutable cuando MD2
 // publique una versión nueva; umbral de consenso: 0.7).
+//
+// Resoluciones manuales de conflictos MD2 vs. curación (revisadas caso por
+// caso, criterio biológico — ver git log y scripts/md2-conflicts-report.md
+// para el detalle completo, 18 géneros resueltos 2026-09-16):
+//   - sporulation/Actinomyces -> non_spore_forming (se acepta la sugerencia de MD2 sobre el valor curado anterior): Rasgo diagnóstico clásico: Actinomyces no forma esporas (se confunde con Streptomyces, que sí).
+//   - ph_range/Helicobacter -> neutrophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): H. pylori sobrevive al ácido gástrico neutralizando su entorno con ureasa, pero su pH óptimo de crecimiento en cultivo es neutro (~6-7) — no es un acidófilo real.
+//   - ph_range/Enterococcus -> alkaliphile (se acepta la sugerencia de MD2 sobre el valor curado anterior): El test diagnóstico de manual es crecimiento a pH 9.6, justo lo contrario de "acidophile".
+//   - salinity/Halobacterium -> halophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Halófilo extremo de manual (arquea, necesita 25-32% NaCl, se lisa en baja salinidad) — no es meramente tolerante.
+//   - salinity/Staphylococcus -> halotolerant (se mantiene el valor curado, se rechaza la sugerencia de MD2): Crece bien sin sal pero tolera hasta 7.5-10% (agar manitol-sal, selectivo por eso) — el ejemplo de manual de halotolerante, no halófilo.
+//   - temperature_range/Campylobacter -> thermophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Conflicto de definición, no de biología: óptimo ~42°C, termotolerante por convención clínica (medios selectivos a 42°C); bajo el umbral estricto de esta app (>45°C) caería en mesófilo, pero se mantiene "thermophile" por ser la convención esperable en microbiología clínica. Decisión de convención, no de umbral numérico — no "corregir" de vuelta a mesophile sin releer esto.
+//   - temperature_range/Psychrobacter -> psychrophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Género nombrado específicamente por su psicrofilia; hay especies mesófilas/clínicas, pero no representan el género en un contexto docente.
+//   - temperature_range/Pseudoalteromonas -> psychrophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Icónico en microbiología marina/polar; un voto por especie diluye al representante ecológicamente más relevante del género.
+//   - temperature_range/Shewanella -> mesophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): El organismo modelo del género, S. oneidensis, es mesófilo (~30°C); la psicrofilia es real pero de un subconjunto, no representativa.
+//   - temperature_range/Flavobacterium -> mesophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): F. psychrophilum (patógeno de peces) es una especie muy conocida dentro de un género mucho más amplio de ambientales mesófilos.
+//   - ph_range/Lactobacillus -> acidophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): A diferencia de Bifidobacterium/Streptococcus, su pH óptimo real baja de 5.5-6.2 en muchas especies — define "bacteria del ácido láctico".
+//   - ph_range/Gluconobacter -> acidophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Bacteria acética (vinagre), óptimo típico ~5.5-6.0; su nicho industrial se basa en tolerar/producir ácido.
+//   - ph_range/Bifidobacterium -> neutrophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): Tolerante al ácido pero su pH óptimo de crecimiento reportado está cerca de neutro, no por debajo de 5.5.
+//   - ph_range/Streptococcus -> neutrophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): Mismo caso que Bifidobacterium.
+//   - ph_range/Pediococcus -> neutrophile (se acepta la sugerencia de MD2 sobre el valor curado anterior): Mismo caso, con algo menos de certeza (rango de cultivo amplio, óptimo cerca de neutro en la mayoría de fuentes).
+//   - salinity/Halobacillus -> halophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Halófilo moderado por nombre y descripción típica, aunque "halófilo moderado" no exista como categoría intermedia en el esquema actual.
+//   - salinity/Salinicoccus -> halophile (se mantiene el valor curado, se rechaza la sugerencia de MD2): Mismo caso que Halobacillus.
+//   - salinity/Halomonas -> halotolerant (se acepta la sugerencia de MD2 sobre el valor curado anterior): Al contrario que los dos anteriores: en microbiología ambiental es EL ejemplo de tolerancia salina de rango amplísimo (0-20%+), no de halofilia obligada.
 
 export const PHENOTYPES_METADATA = {
   name: 'BacDive/metaTraits + MD2 Core',
@@ -593,13 +615,13 @@ export const DEFAULT_PHENOTYPES = {
       'g__Alkaliphilus', 'Desulfotomaculum', 'g__Desulfotomaculum', 'Paenibacillus',
       'g__Paenibacillus', 'Brevibacillus', 'g__Brevibacillus', 'Lysinibacillus',
       'g__Lysinibacillus', 'Sporolactobacillus', 'g__Sporolactobacillus', 'Sporosarcina',
-      'g__Sporosarcina', 'Actinomyces', 'g__Actinomyces', 'Frankia', 'g__Frankia', 'Nocardiopsis',
-      'g__Nocardiopsis', 'Peptostreptococcaceae noname', 'g__Peptostreptococcaceae noname',
-      'Sporichthya', 'g__Sporichthya', 'Nocardia', 'g__Nocardia', 'Caldibacillus',
-      'g__Caldibacillus', 'Candidatus Arthromitus', 'g__Candidatus Arthromitus', 'Haliangium',
-      'g__Haliangium', 'Salinispora', 'g__Salinispora', 'Saccharomonospora',
-      'g__Saccharomonospora', 'Kitasatospora', 'g__Kitasatospora', 'Saccharopolyspora',
-      'g__Saccharopolyspora', 'Gracilibacillus', 'g__Gracilibacillus', 'Candidatus Glomeribacter',
+      'g__Sporosarcina', 'Frankia', 'g__Frankia', 'Nocardiopsis', 'g__Nocardiopsis',
+      'Peptostreptococcaceae noname', 'g__Peptostreptococcaceae noname', 'Sporichthya',
+      'g__Sporichthya', 'Nocardia', 'g__Nocardia', 'Caldibacillus', 'g__Caldibacillus',
+      'Candidatus Arthromitus', 'g__Candidatus Arthromitus', 'Haliangium', 'g__Haliangium',
+      'Salinispora', 'g__Salinispora', 'Saccharomonospora', 'g__Saccharomonospora',
+      'Kitasatospora', 'g__Kitasatospora', 'Saccharopolyspora', 'g__Saccharopolyspora',
+      'Gracilibacillus', 'g__Gracilibacillus', 'Candidatus Glomeribacter',
       'g__Candidatus Glomeribacter', 'Thermobispora', 'g__Thermobispora', 'Sulfobacillus',
       'g__Sulfobacillus', 'Lachnospiraceae noname', 'g__Lachnospiraceae noname', 'Anoxybacillus',
       'g__Anoxybacillus', 'Myxococcus', 'g__Myxococcus', 'Solibacillus', 'g__Solibacillus',
@@ -858,7 +880,7 @@ export const DEFAULT_PHENOTYPES = {
       'Turicibacter', 'g__Turicibacter', 'Enterobacteriaceae noname',
       'g__Enterobacteriaceae noname', 'Moraxella', 'g__Moraxella', 'Alkalilimnicola',
       'g__Alkalilimnicola', 'Propionimicrobium', 'g__Propionimicrobium', 'Actinobacillus',
-      'g__Actinobacillus', 'Smaragdicoccus', 'g__Smaragdicoccus'
+      'g__Actinobacillus', 'Smaragdicoccus', 'g__Smaragdicoccus', 'Actinomyces', 'g__Actinomyces'
     ],
   },
 
@@ -1213,17 +1235,16 @@ export const DEFAULT_PHENOTYPES = {
       'g__Bergeyella', 'Alkalilimnicola', 'g__Alkalilimnicola', 'Catelliglobosispora',
       'g__Catelliglobosispora', 'Candidatus Azobacteroides', 'g__Candidatus Azobacteroides',
       'Propionimicrobium', 'g__Propionimicrobium', 'Kiloniella', 'g__Kiloniella', 'Smaragdicoccus',
-      'g__Smaragdicoccus'
+      'g__Smaragdicoccus', 'Shewanella', 'g__Shewanella', 'Flavobacterium', 'g__Flavobacterium'
     ],
     psychrophile: [
       'Psychrobacter', 'g__Psychrobacter', 'Polaribacter', 'g__Polaribacter', 'Colwellia',
-      'g__Colwellia', 'Pseudoalteromonas', 'g__Pseudoalteromonas', 'Shewanella', 'g__Shewanella',
-      'Moritella', 'g__Moritella', 'Psychromonas', 'g__Psychromonas', 'Flavobacterium',
-      'g__Flavobacterium', 'Glaciecola', 'g__Glaciecola', 'Arthrobacter', 'g__Arthrobacter',
-      'Planococcus', 'g__Planococcus', 'Winogradskyella', 'g__Winogradskyella', 'Psychroflexus',
-      'g__Psychroflexus', 'Octadecabacter', 'g__Octadecabacter', 'Dorea', 'g__Dorea',
-      'Arcticibacter', 'g__Arcticibacter', 'Agrococcus', 'g__Agrococcus', 'Cenarchaeum',
-      'g__Cenarchaeum'
+      'g__Colwellia', 'Pseudoalteromonas', 'g__Pseudoalteromonas', 'Moritella', 'g__Moritella',
+      'Psychromonas', 'g__Psychromonas', 'Glaciecola', 'g__Glaciecola', 'Arthrobacter',
+      'g__Arthrobacter', 'Planococcus', 'g__Planococcus', 'Winogradskyella', 'g__Winogradskyella',
+      'Psychroflexus', 'g__Psychroflexus', 'Octadecabacter', 'g__Octadecabacter', 'Dorea',
+      'g__Dorea', 'Arcticibacter', 'g__Arcticibacter', 'Agrococcus', 'g__Agrococcus',
+      'Cenarchaeum', 'g__Cenarchaeum'
     ],
   },
 
@@ -1232,25 +1253,22 @@ export const DEFAULT_PHENOTYPES = {
   // -------------------------------------------------------------------------
   ph_range: {
     acidophile: [
-      'Lactobacillus', 'g__Lactobacillus', 'f__Lactobacillaceae', 'Streptococcus',
-      'g__Streptococcus', 'Bifidobacterium', 'g__Bifidobacterium', 'Helicobacter',
-      'g__Helicobacter', 'Acidithiobacillus', 'g__Acidithiobacillus', 'Acetobacter',
-      'g__Acetobacter', 'Gluconobacter', 'g__Gluconobacter', 'Acidobacterium', 'g__Acidobacterium',
-      'p__Acidobacteriota', 'Alicyclobacillus', 'g__Alicyclobacillus', 'Sulfolobus',
-      'g__Sulfolobus', 'Pediococcus', 'g__Pediococcus', 'Enterococcus', 'g__Enterococcus',
-      'Vulcanisaeta', 'g__Vulcanisaeta', 'Metallosphaera', 'g__Metallosphaera', 'Sulfobacillus',
-      'g__Sulfobacillus', 'Halarchaeum', 'g__Halarchaeum', 'Methylacidiphilum',
-      'g__Methylacidiphilum', 'Picrophilus', 'g__Picrophilus', 'Hydrogenobaculum',
-      'g__Hydrogenobaculum', 'Thermoplasma', 'g__Thermoplasma', 'Chthonomonas', 'g__Chthonomonas',
-      'Hoeflea', 'g__Hoeflea', 'Candidatus Koribacter', 'g__Candidatus Koribacter', 'Schlesneria',
-      'g__Schlesneria', 'Acidianus', 'g__Acidianus', 'Oceanicaulis', 'g__Oceanicaulis',
-      'Parascardovia', 'g__Parascardovia', 'Ferroplasma', 'g__Ferroplasma', 'Kyrpidia',
-      'g__Kyrpidia', 'Chlorobaculum', 'g__Chlorobaculum', 'Acidocella', 'g__Acidocella',
-      'Caldisphaera', 'g__Caldisphaera', 'Granulicella', 'g__Granulicella', 'Acidimicrobium',
-      'g__Acidimicrobium', 'Candidatus Solibacter', 'g__Candidatus Solibacter', 'Acidilobus',
-      'g__Acidilobus', 'Leptospirillum', 'g__Leptospirillum', 'Caldivirga', 'g__Caldivirga',
-      'Ethanoligenens', 'g__Ethanoligenens', 'Catonella', 'g__Catonella', 'Algoriphagus',
-      'g__Algoriphagus'
+      'Lactobacillus', 'g__Lactobacillus', 'f__Lactobacillaceae', 'Acidithiobacillus',
+      'g__Acidithiobacillus', 'Acetobacter', 'g__Acetobacter', 'Gluconobacter', 'g__Gluconobacter',
+      'Acidobacterium', 'g__Acidobacterium', 'p__Acidobacteriota', 'Alicyclobacillus',
+      'g__Alicyclobacillus', 'Sulfolobus', 'g__Sulfolobus', 'Vulcanisaeta', 'g__Vulcanisaeta',
+      'Metallosphaera', 'g__Metallosphaera', 'Sulfobacillus', 'g__Sulfobacillus', 'Halarchaeum',
+      'g__Halarchaeum', 'Methylacidiphilum', 'g__Methylacidiphilum', 'Picrophilus',
+      'g__Picrophilus', 'Hydrogenobaculum', 'g__Hydrogenobaculum', 'Thermoplasma',
+      'g__Thermoplasma', 'Chthonomonas', 'g__Chthonomonas', 'Hoeflea', 'g__Hoeflea',
+      'Candidatus Koribacter', 'g__Candidatus Koribacter', 'Schlesneria', 'g__Schlesneria',
+      'Acidianus', 'g__Acidianus', 'Oceanicaulis', 'g__Oceanicaulis', 'Parascardovia',
+      'g__Parascardovia', 'Ferroplasma', 'g__Ferroplasma', 'Kyrpidia', 'g__Kyrpidia',
+      'Chlorobaculum', 'g__Chlorobaculum', 'Acidocella', 'g__Acidocella', 'Caldisphaera',
+      'g__Caldisphaera', 'Granulicella', 'g__Granulicella', 'Acidimicrobium', 'g__Acidimicrobium',
+      'Candidatus Solibacter', 'g__Candidatus Solibacter', 'Acidilobus', 'g__Acidilobus',
+      'Leptospirillum', 'g__Leptospirillum', 'Caldivirga', 'g__Caldivirga', 'Ethanoligenens',
+      'g__Ethanoligenens', 'Catonella', 'g__Catonella', 'Algoriphagus', 'g__Algoriphagus'
     ],
     neutrophile: [
       'Pseudomonas', 'g__Pseudomonas', 'Clostridium', 'g__Clostridium', 'Bacillus', 'g__Bacillus',
@@ -1449,7 +1467,9 @@ export const DEFAULT_PHENOTYPES = {
       'Leuconostoc', 'g__Leuconostoc', 'Cytophaga', 'g__Cytophaga', 'Novosphingobium',
       'g__Novosphingobium', 'Salisaeta', 'g__Salisaeta', 'Afipia', 'g__Afipia', 'Turicibacter',
       'g__Turicibacter', 'Alkalilimnicola', 'g__Alkalilimnicola', 'Catelliglobosispora',
-      'g__Catelliglobosispora', 'Moorella', 'g__Moorella', 'Kiloniella', 'g__Kiloniella'
+      'g__Catelliglobosispora', 'Moorella', 'g__Moorella', 'Kiloniella', 'g__Kiloniella',
+      'Helicobacter', 'g__Helicobacter', 'Bifidobacterium', 'g__Bifidobacterium', 'Streptococcus',
+      'g__Streptococcus', 'Pediococcus', 'g__Pediococcus'
     ],
     alkaliphile: [
       'Alkaliphilus', 'g__Alkaliphilus', 'Bacillus', 'g__Bacillus', 'Salinibacter',
@@ -1477,7 +1497,7 @@ export const DEFAULT_PHENOTYPES = {
       'Salsuginibacillus', 'g__Salsuginibacillus', 'Gardnerella', 'g__Gardnerella', 'Citricoccus',
       'g__Citricoccus', 'Ureibacillus', 'g__Ureibacillus', 'Sporosarcina', 'g__Sporosarcina',
       'Rhodonellum', 'g__Rhodonellum', 'Indibacter', 'g__Indibacter', 'Advenella', 'g__Advenella',
-      'Thermobacillus', 'g__Thermobacillus'
+      'Thermobacillus', 'g__Thermobacillus', 'Enterococcus', 'g__Enterococcus'
     ],
   },
 
@@ -1832,32 +1852,31 @@ export const DEFAULT_PHENOTYPES = {
   // -------------------------------------------------------------------------
   salinity: {
     halophile: [
-      'Halomonas', 'g__Halomonas', 'Halobacterium', 'g__Halobacterium', 'Salinibacter',
-      'g__Salinibacter', 'Natronomonas', 'g__Natronomonas', 'Natronobacterium',
-      'g__Natronobacterium', 'Vibrio', 'g__Vibrio', 'Halobacillus', 'g__Halobacillus', 'Haloferax',
-      'g__Haloferax', 'Halococcus', 'g__Halococcus', 'Salinicoccus', 'g__Salinicoccus',
-      'Halorhabdus', 'g__Halorhabdus', 'Halosimplex', 'g__Halosimplex', 'Halorubrum',
-      'g__Halorubrum', 'Halogeometricum', 'g__Halogeometricum', 'Methanohalobium',
-      'g__Methanohalobium', 'Haloterrigena', 'g__Haloterrigena', 'Halovivax', 'g__Halovivax',
-      'Halanaeroarchaeum', 'g__Halanaeroarchaeum', 'Halapricum', 'g__Halapricum', 'Halarchaeum',
-      'g__Halarchaeum', 'Haloarchaeobius', 'g__Haloarchaeobius', 'Halorientalis',
-      'g__Halorientalis', 'Halobiforma', 'g__Halobiforma', 'Halocalculus', 'g__Halocalculus',
-      'Halogranum', 'g__Halogranum', 'Halolamina', 'g__Halolamina', 'Halomicroarcula',
-      'g__Halomicroarcula', 'Halonotius', 'g__Halonotius', 'Halopelagius', 'g__Halopelagius',
-      'Haloplanus', 'g__Haloplanus', 'Halorubellus', 'g__Halorubellus', 'Halorussus',
-      'g__Halorussus', 'Halosiccatus', 'g__Halosiccatus', 'Halostagnicola', 'g__Halostagnicola',
-      'Halostella', 'g__Halostella', 'Halovarius', 'g__Halovarius', 'Halovenus', 'g__Halovenus',
-      'Natribaculum', 'g__Natribaculum', 'Natrinema', 'g__Natrinema', 'Natronoarchaeum',
-      'g__Natronoarchaeum', 'Natronolimnobius', 'g__Natronolimnobius', 'Salarchaeum',
-      'g__Salarchaeum', 'Salinarchaeum', 'g__Salinarchaeum', 'Salinigranum', 'g__Salinigranum',
-      'Haloprofundus', 'g__Haloprofundus', 'Saliphagus', 'g__Saliphagus', 'Aphanothece',
-      'g__Aphanothece', 'Halorhodospira', 'g__Halorhodospira', 'Acetohalobium', 'g__Acetohalobium',
-      'Selenihalanaerobacter', 'g__Selenihalanaerobacter', 'Halanaerobaculum',
-      'g__Halanaerobaculum', 'Halanaerocella', 'g__Halanaerocella', 'Halanaerobacter',
-      'g__Halanaerobacter', 'Leibleinia', 'g__Leibleinia', 'Natranaerobius', 'g__Natranaerobius',
-      'Schizothrix', 'g__Schizothrix', 'Egibacter', 'g__Egibacter', 'Halopeptonella',
-      'g__Halopeptonella', 'Bounagaea', 'g__Bounagaea', 'Longimonas', 'g__Longimonas',
-      'Mzabimyces', 'g__Mzabimyces', 'Limimonas', 'g__Limimonas', 'Corallomonas',
+      'Halobacterium', 'g__Halobacterium', 'Salinibacter', 'g__Salinibacter', 'Natronomonas',
+      'g__Natronomonas', 'Natronobacterium', 'g__Natronobacterium', 'Vibrio', 'g__Vibrio',
+      'Halobacillus', 'g__Halobacillus', 'Haloferax', 'g__Haloferax', 'Halococcus',
+      'g__Halococcus', 'Salinicoccus', 'g__Salinicoccus', 'Halorhabdus', 'g__Halorhabdus',
+      'Halosimplex', 'g__Halosimplex', 'Halorubrum', 'g__Halorubrum', 'Halogeometricum',
+      'g__Halogeometricum', 'Methanohalobium', 'g__Methanohalobium', 'Haloterrigena',
+      'g__Haloterrigena', 'Halovivax', 'g__Halovivax', 'Halanaeroarchaeum', 'g__Halanaeroarchaeum',
+      'Halapricum', 'g__Halapricum', 'Halarchaeum', 'g__Halarchaeum', 'Haloarchaeobius',
+      'g__Haloarchaeobius', 'Halorientalis', 'g__Halorientalis', 'Halobiforma', 'g__Halobiforma',
+      'Halocalculus', 'g__Halocalculus', 'Halogranum', 'g__Halogranum', 'Halolamina',
+      'g__Halolamina', 'Halomicroarcula', 'g__Halomicroarcula', 'Halonotius', 'g__Halonotius',
+      'Halopelagius', 'g__Halopelagius', 'Haloplanus', 'g__Haloplanus', 'Halorubellus',
+      'g__Halorubellus', 'Halorussus', 'g__Halorussus', 'Halosiccatus', 'g__Halosiccatus',
+      'Halostagnicola', 'g__Halostagnicola', 'Halostella', 'g__Halostella', 'Halovarius',
+      'g__Halovarius', 'Halovenus', 'g__Halovenus', 'Natribaculum', 'g__Natribaculum', 'Natrinema',
+      'g__Natrinema', 'Natronoarchaeum', 'g__Natronoarchaeum', 'Natronolimnobius',
+      'g__Natronolimnobius', 'Salarchaeum', 'g__Salarchaeum', 'Salinarchaeum', 'g__Salinarchaeum',
+      'Salinigranum', 'g__Salinigranum', 'Haloprofundus', 'g__Haloprofundus', 'Saliphagus',
+      'g__Saliphagus', 'Aphanothece', 'g__Aphanothece', 'Halorhodospira', 'g__Halorhodospira',
+      'Acetohalobium', 'g__Acetohalobium', 'Selenihalanaerobacter', 'g__Selenihalanaerobacter',
+      'Halanaerobaculum', 'g__Halanaerobaculum', 'Halanaerocella', 'g__Halanaerocella',
+      'Halanaerobacter', 'g__Halanaerobacter', 'Leibleinia', 'g__Leibleinia', 'Natranaerobius',
+      'g__Natranaerobius', 'Schizothrix', 'g__Schizothrix', 'Egibacter', 'g__Egibacter',
+      'Halopeptonella', 'g__Halopeptonella', 'Bounagaea', 'g__Bounagaea', 'Longimonas',
+      'g__Longimonas', 'Mzabimyces', 'g__Mzabimyces', 'Limimonas', 'g__Limimonas', 'Corallomonas',
       'g__Corallomonas', 'Saliterribacillus', 'g__Saliterribacillus', 'Amphibacillus',
       'g__Amphibacillus', 'Salisediminibacterium', 'g__Salisediminibacterium', 'Desulfohalophilus',
       'g__Desulfohalophilus', 'Cobetia', 'g__Cobetia', 'Natronovirga', 'g__Natronovirga',
