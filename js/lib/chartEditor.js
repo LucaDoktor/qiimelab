@@ -350,11 +350,13 @@ export function attachChartEditor(cfg) {
       row.className = 'ce-title-row';
 
       const lab = document.createElement('label');
+      lab.setAttribute('for', td.cls);
       lab.textContent = td.label;
       row.appendChild(lab);
 
       const inp = document.createElement('input');
       inp.type = 'text';
+      inp.id = td.cls;
       inp.className = 'ql-input ce-textfield ' + td.cls;
       inp.placeholder = td.label;
 
