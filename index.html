@@ -9,6 +9,16 @@
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#12615f" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#57c9be" media="(prefers-color-scheme: dark)" />
+  <script>
+    // Aplica el tema guardado ANTES del primer pintado, para no dar un
+    // parpadeo claro→oscuro mientras carga js/app.js (módulo ES, diferido
+    // por especificación). js/lib/theme.js hace lo mismo en cada cambio;
+    // esto solo cubre el instante de arranque.
+    try {
+      var qlTheme = localStorage.getItem('smart-175.theme') || localStorage.getItem('qiimelab.theme');
+      if (qlTheme === 'light' || qlTheme === 'dark') document.documentElement.setAttribute('data-theme', qlTheme);
+    } catch (e) {}
+  </script>
   <link rel="preload" href="fonts/IBMPlexSans-var.latin.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="css/fonts.css" />
   <link rel="stylesheet" href="css/tokens.css" />

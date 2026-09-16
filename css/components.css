@@ -115,6 +115,7 @@ svg.ql-brand-mark {
   background: var(--page);
 }
 .ql-settings-input::placeholder { color: var(--ink-muted); }
+.ql-settings .ql-segmented-block { margin: 0 12px; width: calc(100% - 24px); }
 .ql-sidebar-note {
   font-size: 11px;
   color: var(--ink-muted);
@@ -814,6 +815,10 @@ svg.ql-brand-mark {
 .ql-seg-btn:hover { background: var(--accent-soft); }
 .ql-seg-btn.is-on { background: var(--accent); color: var(--accent-ink); }
 .ql-seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* variante que ocupa todo el ancho disponible, repartido a partes iguales
+   entre sus botones (p. ej. el selector de tema claro/oscuro/automático) */
+.ql-segmented-block { display: flex; width: 100%; }
+.ql-segmented-block .ql-seg-btn { flex: 1 1 0; padding: 7px 4px; text-align: center; }
 
 /* checklist agrupada (selector de variables) */
 .ql-checkgroup-h {

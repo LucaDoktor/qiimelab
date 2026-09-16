@@ -4,6 +4,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang, setLang, LANGS } from '../lib/i18n.js';
 import { getProfileName, setProfileName } from '../lib/profile.js';
+import { getTheme, setTheme } from '../lib/theme.js';
 
 // Sistema de iconos propio: 24×24, trazo 1.7, extremos redondeados, sin
 // relleno salvo los puntos de datos. Cada glifo abstrae su módulo.
@@ -232,6 +233,35 @@ export function renderShell(container, currentRoute) {
   });
   langSel.addEventListener('change', () => setLang(langSel.value));
   setWrap.appendChild(langSel);
+
+  const themeSeg = document.createElement('div');
+  themeSeg.className = 'ql-segmented ql-segmented-block';
+  themeSeg.setAttribute('role', 'group');
+  themeSeg.setAttribute('aria-label', t('shell.theme'));
+  const themeNow = getTheme();
+  [
+    ['light', t('shell.themeLight')],
+    ['dark', t('shell.themeDark')],
+    ['auto', t('shell.themeAuto')],
+  ].forEach(([v, lbl]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ql-seg-btn' + (themeNow === v ? ' is-on' : '');
+    if (themeNow === v) b.setAttribute('aria-pressed', 'true');
+    b.textContent = lbl;
+    b.addEventListener('click', () => {
+      if (getTheme() === v) return;
+      setTheme(v);
+      themeSeg.querySelectorAll('.ql-seg-btn').forEach((btn) => {
+        const isOn = btn === b;
+        btn.classList.toggle('is-on', isOn);
+        if (isOn) btn.setAttribute('aria-pressed', 'true');
+        else btn.removeAttribute('aria-pressed');
+      });
+    });
+    themeSeg.appendChild(b);
+  });
+  setWrap.appendChild(themeSeg);
 
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
