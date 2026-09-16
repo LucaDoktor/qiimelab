@@ -8,8 +8,27 @@ import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
 
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
+const NUM_RE = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+// columnas de metadatos usables como variable numérica de tamaño en el PCoA
+// de burbujas — mismo criterio que collectVariables() en correlogram.js: al
+// menos 3 valores numéricos que cubran ≥60% de las filas no vacías de esa columna.
+function numericMetaColumns(groupOptions) {
+  if (!state.metadata) return [];
+  return groupOptions.filter((col) => {
+    let seen = 0, numeric = 0;
+    state.metadata.rows.forEach((r) => {
+      const raw = r[col];
+      if (raw == null || String(raw).trim() === '') return;
+      seen++;
+      if (NUM_RE.test(String(raw).trim())) numeric++;
+    });
+    return numeric >= 3 && numeric >= seen * 0.6;
+  });
+}
 function line(x1, y1, x2, y2) {
   return svgEl('line', { x1, y1, x2, y2, class: 'ql-baseline-line' });
 }
@@ -53,6 +72,8 @@ export function render(container) {
   let orderMode = 'clustering';
   let pcX = 0, pcY = 1;
   let pcoaGroupCol = null;
+  let pcoaPlotStyle = 'scatter'; // 'scatter' | 'bubbles'
+  let pcoaSizeCol = null;        // columna numérica de metadatos usada como tamaño en 'bubbles'
   let editor = null;
   let permGroupCol = null;
   let permN = 999;
@@ -541,6 +562,48 @@ export function render(container) {
       controls.appendChild(p);
     }
 
+    const numericCols = numericMetaColumns(groupOptions);
+    let sizeVals = null; // Map<sampleId (metadata), number> — solo si plotStyle === 'bubbles'
+    let sizeMin = 0, sizeMax = 1;
+    if (numericCols.length > 0) {
+      if (!pcoaSizeCol || !numericCols.includes(pcoaSizeCol)) pcoaSizeCol = numericCols[0];
+      controls.appendChild(chartTypeField({
+        labelKey: 'beta.pcoaPlotStyleLabel',
+        options: [
+          { value: 'scatter', labelKey: 'beta.pcoaPlotStyleScatter' },
+          { value: 'bubbles', labelKey: 'beta.pcoaPlotStyleBubbles' },
+        ],
+        active: pcoaPlotStyle,
+        onChange: (v) => { pcoaPlotStyle = v; paint(); },
+      }));
+      if (pcoaPlotStyle === 'bubbles') {
+        const sizeField = document.createElement('div'); sizeField.className = 'ql-field';
+        sizeField.innerHTML = '<label>' + t('beta.pcoaSizeLabel') + '</label>';
+        const sizeSel = document.createElement('select');
+        numericCols.forEach((h) => {
+          const o = document.createElement('option'); o.value = h; o.textContent = h;
+          if (h === pcoaSizeCol) o.selected = true; sizeSel.appendChild(o);
+        });
+        sizeSel.addEventListener('change', () => { pcoaSizeCol = sizeSel.value; paint(); });
+        sizeField.appendChild(sizeSel);
+        controls.appendChild(sizeField);
+
+        const sizeResolver = makeGroupResolver(state.metadata, pcoaSizeCol);
+        sizeVals = new Map();
+        ord.sampleIds.forEach((sid) => {
+          const raw = sizeResolver(sid);
+          if (raw != null && NUM_RE.test(String(raw).trim())) sizeVals.set(sid, parseFloat(raw));
+        });
+        const vals = Array.from(sizeVals.values());
+        if (vals.length > 0) {
+          sizeMin = Math.min(...vals); sizeMax = Math.max(...vals);
+          const help = document.createElement('p'); help.className = 'ql-field-help';
+          help.textContent = t('beta.pcoaSizeHelp', { col: pcoaSizeCol, min: sizeMin.toFixed(2), max: sizeMax.toFixed(2) });
+          controls.appendChild(help);
+        }
+      }
+    }
+
     const cum3 = ord.proportionExplained.slice(0, 3).reduce((a, b) => a + b, 0);
     const sb = document.createElement('div');
     sb.style.marginTop = '10px';
@@ -585,13 +648,22 @@ export function render(container) {
       tx.textContent = v.toFixed(2); svg.appendChild(tx);
     });
 
+    const isBubbles = pcoaPlotStyle === 'bubbles' && sizeVals;
+    const sizeSpan = sizeMax - sizeMin || 1;
+    const radiusFor = (sid) => {
+      if (!isBubbles) return 5;
+      if (!sizeVals.has(sid)) return 4; // sin dato para esa variable: punto neutro, algo más pequeño
+      const frac = (sizeVals.get(sid) - sizeMin) / sizeSpan;
+      return 4 + Math.sqrt(Math.max(0, frac)) * 12; // 4–16px, escala de área
+    };
+
     const pts = svgEl('g', {});
     svg.appendChild(pts);
     ord.sampleIds.forEach((sid, i) => {
       const cx = sx(ord.coords[i][pcX]), cy = sy(ord.coords[i][pcY]);
       const g = groupOf[sid];
       const c = svgEl('circle', {
-        cx, cy, r: 5, fill: colorForGroup(g), 'fill-opacity': 0.85, stroke: 'var(--surface)', 'stroke-width': 1.4,
+        cx, cy, r: radiusFor(sid), fill: colorForGroup(g), 'fill-opacity': 0.78, stroke: 'var(--surface)', 'stroke-width': 1.4,
         'data-i': i,
         ...(g != null ? { 'data-ce-series-fill': 's' + groups.indexOf(g) } : {}),
       });
@@ -603,8 +675,9 @@ export function render(container) {
         const sid = ord.sampleIds[i];
         const g = groupOf[sid];
         const cx = sx(ord.coords[i][pcX]), cy = sy(ord.coords[i][pcY]);
+        const sizeLine = isBubbles ? ('<br>' + escapeHtml(pcoaSizeCol) + ': ' + (sizeVals.has(sid) ? sizeVals.get(sid).toFixed(2) : t('beta.pcoaSizeMissing'))) : '';
         showTooltip(chartWrap, cx, cy, escapeHtml(sid) + (g ? ' · ' + escapeHtml(g) : ''),
-          'PCo' + (pcX + 1) + ' ' + ord.coords[i][pcX].toFixed(3) + ' · PCo' + (pcY + 1) + ' ' + ord.coords[i][pcY].toFixed(3),
+          'PCo' + (pcX + 1) + ' ' + ord.coords[i][pcX].toFixed(3) + ' · PCo' + (pcY + 1) + ' ' + ord.coords[i][pcY].toFixed(3) + sizeLine,
           { svg, W, H, tooltip, rawHtml: true });
       },
       onLeave: () => hideTooltip(tooltip),
@@ -640,7 +713,7 @@ export function render(container) {
     }
 
     editor = attachChartEditor({
-      key: 'betaPcoa', svg, mount: chartPanel, filename: 'pcoa-' + ord.metricName, lang: getLang(),
+      key: isBubbles ? 'betaPcoaBubbles' : 'betaPcoa', svg, mount: chartPanel, filename: 'pcoa-' + ord.metricName, lang: getLang(),
       elements: [
         { id: 'title', create: { text: t('beta.pcoaFigTitle', { metric: ord.metricName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },

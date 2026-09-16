@@ -22,6 +22,7 @@ import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
+import { chartTypeField } from '../lib/chartTypeSelector.js';
 
 const NET_SEED = 0x9E3779B9; // semilla fija → layout de fuerzas determinista
 
@@ -162,6 +163,7 @@ export function render(container) {
   let topN = TOP_N_DEFAULT;
   let selected = null;           // Set de ids de variable; null = aún sin inicializar
   let view = 'matrix';           // 'matrix' | 'network'
+  let matrixStyle = 'heatmap';   // 'heatmap' | 'bubbles' — solo aplica dentro de view === 'matrix'
   let rThresh = 0.3;             // |r| mínimo para dibujar una arista (solo vista red)
   let pThresh = 0.05;            // p máximo (solo vista red)
   let netSort = { key: 'r', dir: 'desc' };
@@ -231,7 +233,7 @@ export function render(container) {
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
     chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
-      t(view === 'network' ? 'correlogram.netNote' : 'correlogram.chartNote') + '</p>';
+      t(view === 'network' ? 'correlogram.netNote' : (matrixStyle === 'bubbles' ? 'correlogram.bubbleNote' : 'correlogram.chartNote')) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap' + (view === 'matrix' ? ' scroll-x' : '');
     const svg = svgEl('svg', {
@@ -266,6 +268,19 @@ export function render(container) {
     mField.appendChild(seg);
     mField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('correlogram.methodHelp') + '</p>');
     controls.appendChild(mField);
+
+    if (view === 'matrix') {
+      controls.appendChild(chartTypeField({
+        labelKey: 'correlogram.matrixStyleLabel',
+        options: [
+          { value: 'heatmap', labelKey: 'correlogram.matrixStyleHeatmap' },
+          { value: 'bubbles', labelKey: 'correlogram.matrixStyleBubbles' },
+        ],
+        active: matrixStyle,
+        onChange: (v) => { matrixStyle = v; paint(); },
+        helpKey: 'correlogram.matrixStyleHelp',
+      }));
+    }
 
     // umbrales de la red (solo en la vista de red)
     if (view === 'network') {
@@ -428,6 +443,7 @@ export function render(container) {
     svg.style.maxWidth = 'none';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
+    const isBubbles = matrixStyle === 'bubbles';
     for (let i = 0; i < k; i++) {
       for (let j = 0; j < k; j++) {
         const res = results[i][j];
@@ -435,12 +451,23 @@ export function render(container) {
         const x = marginL + j * cell, y = marginT + i * cell;
         const rect = svgEl('rect', {
           x, y, width: cell - 1.5, height: cell - 1.5, rx: 2,
-          fill: isDiag ? 'color-mix(in srgb, var(--baseline) 55%, var(--surface))' : corrFill(res.r),
+          fill: isDiag ? 'color-mix(in srgb, var(--baseline) 55%, var(--surface))' : (isBubbles ? 'var(--surface)' : corrFill(res.r)),
+          stroke: (isBubbles && !isDiag) ? 'var(--gridline)' : undefined,
           ...(isDiag ? {} : { 'data-i': i, 'data-j': j }),
         });
         svg.appendChild(rect);
 
-        if (!isDiag) {
+        if (!isDiag && isBubbles) {
+          if (isFinite(res.r)) {
+            const cMax = (cell - 1.5) / 2 - 1.5;
+            const r = Math.max(1.5, cMax * Math.sqrt(Math.min(1, Math.abs(res.r))));
+            svg.appendChild(svgEl('circle', {
+              cx: x + (cell - 1.5) / 2, cy: y + (cell - 1.5) / 2, r,
+              fill: res.r >= 0 ? 'var(--corr-pos)' : 'var(--corr-neg)', 'fill-opacity': 0.82,
+              'data-ce-series-fill': res.r >= 0 ? 'pos' : 'neg', 'pointer-events': 'none',
+            }));
+          }
+        } else if (!isDiag) {
           const st = stars(res.p);
           if (st) {
             const strong = isFinite(res.r) && Math.abs(res.r) > 0.5;
@@ -490,31 +517,52 @@ export function render(container) {
     svg.appendChild(rowLabels);
     svg.appendChild(colLabels);
 
-    // leyenda: barra divergente -1 … 0 … +1
-    const legGradOv = getPaletteOverrides('correlogram');
+    // leyenda: barra divergente -1…0…+1 (mapa de calor) o 2 colores de signo
+    // + referencia de tamaño |r| (burbujas — el tamaño ya es la magnitud)
     const legG = svgEl('g', { 'data-ce': 'legend' });
-    const defs = svgEl('defs', {});
-    const grad = svgEl('linearGradient', { id: 'ql-corr-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': legGradOv.neg || 'var(--corr-neg)' }));
-    grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': legGradOv.mid || 'var(--corr-zero)' }));
-    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': legGradOv.pos || 'var(--corr-pos)' }));
-    defs.appendChild(grad);
-    svg.appendChild(defs);
-    const barW = Math.min(180, gridS * 0.7);
-    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-corr-scale)', stroke: 'var(--baseline)' }));
-    [['−1', 0, 'start'], ['0', barW / 2, 'middle'], ['+1', barW, 'end']].forEach(([lab, xx, anchor]) => {
-      const lt = svgEl('text', { x: xx, y: 25, class: 'ql-tick-label', 'text-anchor': anchor });
-      lt.textContent = lab;
-      legG.appendChild(lt);
-    });
-    const legNote = svgEl('text', { x: 0, y: 42, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
-    legNote.textContent = t('correlogram.legendStars');
-    legG.appendChild(legNote);
+    if (isBubbles) {
+      const cMaxLeg = (cell - 1.5) / 2 - 1.5;
+      [[t('correlogram.legendPos'), 'var(--corr-pos)', 'pos'], [t('correlogram.legendNeg'), 'var(--corr-neg)', 'neg']].forEach(([lab, col, id], i) => {
+        const yy = i * 15;
+        legG.appendChild(svgEl('rect', { x: 0, y: yy - 8, width: 10, height: 10, rx: 2, fill: col, 'data-ce-series-fill': id }));
+        const lt = svgEl('text', { x: 15, y: yy, class: 'ql-tick-label' });
+        lt.textContent = lab;
+        legG.appendChild(lt);
+      });
+      let rx = 90;
+      [0.25, 0.5, 1].forEach((v) => {
+        const r = Math.max(1.5, cMaxLeg * Math.sqrt(v));
+        legG.appendChild(svgEl('circle', { cx: rx + cMaxLeg, cy: cMaxLeg, r, fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 1.1 }));
+        const lt = svgEl('text', { x: rx + cMaxLeg, y: cMaxLeg * 2 + 13, class: 'ql-tick-label', 'text-anchor': 'middle' });
+        lt.textContent = '|r|=' + v;
+        legG.appendChild(lt);
+        rx += cMaxLeg * 2 + 16;
+      });
+    } else {
+      const legGradOv = getPaletteOverrides('correlogram');
+      const defs = svgEl('defs', {});
+      const grad = svgEl('linearGradient', { id: 'ql-corr-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
+      grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': legGradOv.neg || 'var(--corr-neg)' }));
+      grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': legGradOv.mid || 'var(--corr-zero)' }));
+      grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': legGradOv.pos || 'var(--corr-pos)' }));
+      defs.appendChild(grad);
+      svg.appendChild(defs);
+      const barW = Math.min(180, gridS * 0.7);
+      legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-corr-scale)', stroke: 'var(--baseline)' }));
+      [['−1', 0, 'start'], ['0', barW / 2, 'middle'], ['+1', barW, 'end']].forEach(([lab, xx, anchor]) => {
+        const lt = svgEl('text', { x: xx, y: 25, class: 'ql-tick-label', 'text-anchor': anchor });
+        lt.textContent = lab;
+        legG.appendChild(lt);
+      });
+      const legNote = svgEl('text', { x: 0, y: 42, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
+      legNote.textContent = t('correlogram.legendStars');
+      legG.appendChild(legNote);
+    }
     legG.setAttribute('transform', 'translate(' + marginL + ',' + (marginT + gridS + marginB - 50) + ')');
     svg.appendChild(legG);
 
     editor = attachChartEditor({
-      key: 'correlogram', svg, mount: chartPanel, lang: getLang(),
+      key: isBubbles ? 'correlogram-bubbles' : 'correlogram', svg, mount: chartPanel, lang: getLang(),
       filename: t('correlogram.title') + '-' + method,
       elements: [
         { id: 'title', create: { text: t('correlogram.figTitle', { method: method === 'pearson' ? t('correlogram.pearson') : t('correlogram.spearman') }), x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
@@ -523,14 +571,19 @@ export function render(container) {
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
       // orden alineado con DIVERGENT_STOPS = [neg=rojo, mid=gris, pos=azul];
-      // corr-neg/corr-pos ya son alias de enriched(rojo)/depleted(azul).
+      // corr-neg/corr-pos ya son alias de enriched(rojo)/depleted(azul). En
+      // burbujas 'mid' no se usa (solo 2 colores de signo, sin celda r≈0).
       paletteSeries: [
         { id: 'neg', label: t('correlogram.legendNeg') },
         { id: 'mid', label: t('correlogram.legendZero') },
         { id: 'pos', label: t('correlogram.legendPos') },
       ],
-      paletteType: 'divergent',
-      onChange: () => paint(), // degradado continuo: repinta para recalcular color-mix por celda
+      paletteType: isBubbles ? 'categorical' : 'divergent',
+      // el mapa de calor pinta con color-mix() continuo por celda: un cambio
+      // de paleta en el editor solo se ve si se repinta entero. Las burbujas
+      // usan data-ce-series-fill (2 colores planos) y el editor las recolorea
+      // en vivo sin repintar — igual que el resto de gráficos categóricos.
+      ...(isBubbles ? {} : { onChange: () => paint() }),
       onReset: () => paint(),
     });
 
