@@ -238,11 +238,11 @@ export function render(container) {
       thr.className = 'ql-field';
       thr.innerHTML = '<label for="clR">' + t('correlogram.rThreshLabel') + '</label>' +
         '<div class="ql-inputrow">' +
-        '<input type="range" id="clRr" min="0" max="0.95" step="0.05" value="' + rThresh + '" />' +
+        '<input type="range" aria-label="' + escapeHtml(t('correlogram.rThreshLabel')) + '" id="clRr" min="0" max="0.95" step="0.05" value="' + rThresh + '" />' +
         '<input type="number" id="clR" class="ql-num-small tabular" min="0" max="1" step="0.05" value="' + rThresh + '" /></div>' +
         '<label for="clP" style="margin-top:10px;">' + t('correlogram.pThreshLabel') + '</label>' +
         '<div class="ql-inputrow">' +
-        '<input type="range" id="clPr" min="0.001" max="1" step="0.001" value="' + pThresh + '" />' +
+        '<input type="range" aria-label="' + escapeHtml(t('correlogram.pThreshLabel')) + '" id="clPr" min="0.001" max="1" step="0.001" value="' + pThresh + '" />' +
         '<input type="number" id="clP" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + pThresh + '" /></div>' +
         '<p class="ql-field-help">' + t('correlogram.netThreshHelp') + '</p>';
       controls.appendChild(thr);
@@ -270,7 +270,7 @@ export function render(container) {
       tField.className = 'ql-field';
       tField.innerHTML = '<label for="clTopN">' + t('correlogram.topNLabel') + '</label>' +
         '<div class="ql-inputrow">' +
-        '<input type="range" id="clTopNr" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" />' +
+        '<input type="range" aria-label="' + escapeHtml(t('correlogram.topNLabel')) + '" id="clTopNr" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" />' +
         '<input type="number" id="clTopN" class="ql-num-small tabular" min="' + TOP_N_MIN + '" max="' + TOP_N_MAX + '" step="1" value="' + topN + '" /></div>' +
         '<p class="ql-field-help">' + t('correlogram.topNHelp') + '</p>';
       controls.appendChild(tField);

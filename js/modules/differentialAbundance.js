@@ -359,15 +359,15 @@ export function render(container) {
     const lfcField = document.createElement('div');
     lfcField.className = 'ql-field';
     lfcField.innerHTML = '<label>' + t('differential.thrLfc') + '</label><div class="ql-inputrow">' +
-      '<input type="range" min="0" max="4" step="0.1" value="' + thresholds.lfc + '" id="lfcRange" />' +
-      '<input type="number" class="ql-num-small tabular" min="0" max="10" step="0.1" value="' + thresholds.lfc + '" id="lfcInput" /></div>';
+      '<input type="range" aria-label="' + escapeHtml(t('differential.thrLfc')) + '" min="0" max="4" step="0.1" value="' + thresholds.lfc + '" id="lfcRange" />' +
+      '<input type="number" aria-label="' + escapeHtml(t('differential.thrLfc')) + '" class="ql-num-small tabular" min="0" max="10" step="0.1" value="' + thresholds.lfc + '" id="lfcInput" /></div>';
     controls.appendChild(lfcField);
 
     const padjField = document.createElement('div');
     padjField.className = 'ql-field';
     padjField.innerHTML = '<label>' + t('differential.thrPadj') + '</label><div class="ql-inputrow">' +
-      '<input type="range" min="0.001" max="0.2" step="0.001" value="' + thresholds.padj + '" id="padjRange" />' +
-      '<input type="number" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + thresholds.padj + '" id="padjInput" /></div>';
+      '<input type="range" aria-label="' + escapeHtml(t('differential.thrPadj')) + '" min="0.001" max="0.2" step="0.001" value="' + thresholds.padj + '" id="padjRange" />' +
+      '<input type="number" aria-label="' + escapeHtml(t('differential.thrPadj')) + '" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + thresholds.padj + '" id="padjInput" /></div>';
     controls.appendChild(padjField);
 
     let labelField = null;
@@ -1232,7 +1232,7 @@ export function render(container) {
     pf.className = 'ql-field';
     pf.innerHTML = '<label for="cmpPadj">' + t('differential.cmpPadjLabel') + '</label>' +
       '<div class="ql-inputrow">' +
-      '<input type="range" id="cmpPadjR" min="0.001" max="0.2" step="0.001" value="' + cmpPadj + '" />' +
+      '<input type="range" aria-label="' + escapeHtml(t('differential.cmpPadjLabel')) + '" id="cmpPadjR" min="0.001" max="0.2" step="0.001" value="' + cmpPadj + '" />' +
       '<input type="number" id="cmpPadj" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + cmpPadj + '" /></div>' +
       '<p class="ql-field-help">' + t('differential.cmpPadjHelp') + '</p>';
     ctl.appendChild(pf);

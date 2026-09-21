@@ -9,7 +9,7 @@ import { ancomBC } from '../lib/ancomBC.js';
 import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { randomForest } from '../lib/randomForest.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
-import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover, moreDetailsHtml } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 import { normalizeHeader } from '../lib/csv.js';
@@ -1834,7 +1834,7 @@ export function render(container) {
     disc.style.margin = '0 0 14px';
     disc.textContent = t('barplots.bmDisclaimer');
     container.appendChild(disc);
-    container.insertAdjacentHTML('beforeend', glossaryLinkHtml('biomarkers', 'display:inline-block;margin:-10px 0 14px;'));
+    container.insertAdjacentHTML('beforeend', glossaryLinkHtml('biomarkers'));
 
     container.appendChild(chartTypeField({
       labelKey: 'barplots.bmViewLabel',
@@ -1932,6 +1932,11 @@ export function render(container) {
     if (methodGlosId) {
       methodField.insertAdjacentHTML('beforeend', glossaryLinkHtml(methodGlosId));
     }
+    // el title= de cada botón no se ve en táctil ni con teclado, y la ayuda de
+    // arriba solo describe el método elegido: las tres, plegadas y a la vista
+    methodField.insertAdjacentHTML('beforeend', moreDetailsHtml(t('barplots.bmMethodCompare'),
+      [['bmMethodKw', 'bmMethodKwHelp'], ['bmMethodAncombc', 'bmMethodAncombcHelp'], ['bmMethodRf', 'bmMethodRfHelp']]
+        .map(([n, h]) => '<p><b>' + t('barplots.' + n) + '</b> — ' + t('barplots.' + h) + '</p>').join('')));
     controls.appendChild(methodField);
 
     // umbral q — no aplica a Random Forest (ahí la significancia sale de
@@ -1941,7 +1946,7 @@ export function render(container) {
       qf.className = 'ql-field';
       qf.innerHTML = '<label for="bmQ">' + t('barplots.bmQLabel') + '</label>' +
         '<div class="ql-inputrow">' +
-        '<input type="range" id="bmQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
+        '<input type="range" aria-label="' + escapeHtml(t('barplots.bmQLabel')) + '" id="bmQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
         '<input type="number" id="bmQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>' +
         '<p class="ql-field-help">' + t('barplots.bmQHelp') + '</p>';
       controls.appendChild(qf);
@@ -2260,7 +2265,7 @@ export function render(container) {
     qf.className = 'ql-field'; qf.style.cssText = 'flex:0 0 auto;margin:0;';
     qf.innerHTML = '<label for="bmConsQ">' + t('barplots.bmQLabel') + '</label>' +
       '<div class="ql-inputrow">' +
-      '<input type="range" id="bmConsQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
+      '<input type="range" aria-label="' + escapeHtml(t('barplots.bmQLabel')) + '" id="bmConsQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
       '<input type="number" id="bmConsQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>';
     row.appendChild(qf);
     controls.appendChild(row);

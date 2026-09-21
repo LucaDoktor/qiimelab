@@ -197,6 +197,13 @@ export const A11Y_PROBE = `(() => {
   document.querySelectorAll('svg[role="img"]').forEach((el) => {
     if (!(el.getAttribute('aria-label') || '').trim() && !el.getAttribute('aria-labelledby')) bad.push('svg[role=img] sin aria-label');
   });
+  // un slider en el DOM y con caja pero de ancho ~0 es un control invisible (visto: el ancho
+  // de input[type=number] de base.css aplastaba a los sliders vecinos dentro de .ql-inputrow)
+  document.querySelectorAll('input[type="range"]').forEach((el) => {
+    if (el.getClientRects().length && el.getBoundingClientRect().width < 40) {
+      bad.push('slider colapsado (' + Math.round(el.getBoundingClientRect().width) + 'px): ' + (el.id || el.className));
+    }
+  });
   const mains = document.querySelectorAll('main');
   if (mains.length !== 1) bad.push('nº de <main> = ' + mains.length);
   if (mains[0] && mains[0].getAttribute('tabindex') !== '-1') bad.push('<main> sin tabindex=-1');
