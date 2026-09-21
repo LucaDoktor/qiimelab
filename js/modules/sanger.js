@@ -58,7 +58,7 @@ export function renderAlignmentHTML(result, opts = {}) {
   const { lineLength = 60 } = opts;
   const { alignedA, alignedB, startA, startB, score, identity, length, matches, mismatches, gaps, cigar } = result;
 
-  const headerLine = `Score: ${score} | ${t('sanger.colLen')}: ${length} pb | ${t('sanger.colIdentity')}: ${(identity * 100).toFixed(1)}% (${matches}/${length}) | ${t('sanger.alignMismatches')}: ${mismatches} | ${t('sanger.alignGaps')}: ${gaps}${cigar ? ` | CIGAR: ${cigar}` : ''}`;
+  const headerLine = `${t('sanger.alignScore')}: ${score} | ${t('sanger.colLen')}: ${length} pb | ${t('sanger.colIdentity')}: ${(identity * 100).toFixed(1)}% (${matches}/${length}) | ${t('sanger.alignMismatches')}: ${mismatches} | ${t('sanger.alignGaps')}: ${gaps}${cigar ? ` | CIGAR: ${cigar}` : ''}`;
 
   const lines = [headerLine];
 

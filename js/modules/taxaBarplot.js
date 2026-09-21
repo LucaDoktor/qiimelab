@@ -1833,6 +1833,12 @@ export function render(container) {
     disc.style.margin = '0 0 14px';
     disc.textContent = t('barplots.bmDisclaimer');
     container.appendChild(disc);
+    const discGlosA = document.createElement('a');
+    discGlosA.className = 'ql-modcard-glos';
+    discGlosA.style.cssText = 'display:inline-block;margin:-10px 0 14px;';
+    discGlosA.href = '#/glosario?t=biomarkers';
+    discGlosA.textContent = t('home.glosLink');
+    container.appendChild(discGlosA);
 
     container.appendChild(chartTypeField({
       labelKey: 'barplots.bmViewLabel',
@@ -1925,6 +1931,10 @@ export function render(container) {
     methodField.appendChild(methodSeg);
     const methodHelpKey = bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcHelp' : bmMethod === 'rf' ? 'barplots.bmMethodRfHelp' : 'barplots.bmMethodKwHelp';
     methodField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t(methodHelpKey) + '</p>');
+    const methodGlosId = bmMethod === 'ancombc' ? 'ancombc' : bmMethod === 'rf' ? 'randomforest' : bmMethod === 'kw' ? 'kruskal' : null;
+    if (methodGlosId) {
+      methodField.insertAdjacentHTML('beforeend', '<a class="ql-modcard-glos" style="display:inline-block;" href="#/glosario?t=' + methodGlosId + '">' + t('home.glosLink') + '</a>');
+    }
     controls.appendChild(methodField);
 
     // umbral q — no aplica a Random Forest (ahí la significancia sale de
@@ -1982,6 +1992,14 @@ export function render(container) {
     method.style.marginTop = '14px';
     method.textContent = t(bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcDesc' : bmMethod === 'rf' ? 'barplots.bmMethodRfDesc' : 'barplots.bmMethod');
     controls.appendChild(method);
+    if (methodGlosId) {
+      const methodDescGlosA = document.createElement('a');
+      methodDescGlosA.className = 'ql-modcard-glos';
+      methodDescGlosA.style.cssText = 'display:inline-block;margin-top:2px;';
+      methodDescGlosA.href = '#/glosario?t=' + methodGlosId;
+      methodDescGlosA.textContent = t('home.glosLink');
+      controls.appendChild(methodDescGlosA);
+    }
 
     grid.appendChild(controls);
     container.appendChild(grid);

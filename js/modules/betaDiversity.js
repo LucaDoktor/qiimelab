@@ -569,7 +569,8 @@ export function render(container) {
         pct: (res.proportionExplained.slice(0, 2).reduce((a, b) => a + b, 0) * 100).toFixed(1),
         pctC: (res.proportionConstrained * 100).toFixed(1),
       }) + '</p>' +
-      '<p class="ql-field-help" style="font-style:italic;">' + t('beta.rdaDisclaimer') + '</p>';
+      '<p class="ql-field-help" style="font-style:italic;">' + t('beta.rdaDisclaimer') + '</p>' +
+      '<a class="ql-modcard-glos" style="display:inline-block;" href="#/glosario?t=' + rdaMethod + '">' + t('home.glosLink') + '</a>';
     container.appendChild(summary);
 
     const varTable = document.createElement('section');
