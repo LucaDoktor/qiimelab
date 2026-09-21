@@ -72,7 +72,8 @@ export function render(container) {
   let orderMode = 'clustering';
   let pcX = 0, pcY = 1;
   let pcoaGroupCol = null;
-  let pcoaPlotStyle = 'scatter'; // 'scatter' | 'bubbles'
+  let pcoaPlotStyle = 'scatter'; // 'scatter' | 'bubbles' | '3d'
+  let rot3dX = -0.4, rot3dY = 0.6; // ángulos de rotación (radianes) de la nube 3D, persisten entre repintados
   let pcoaSizeCol = null;        // columna numérica de metadatos usada como tamaño en 'bubbles'
   let editor = null;
   let permGroupCol = null;
@@ -544,8 +545,10 @@ export function render(container) {
       sel.addEventListener('change', () => { cb(parseInt(sel.value, 10)); paint(); });
       f.appendChild(sel); controls.appendChild(f);
     };
-    mkPCsel(t('beta.axisX'), pcX, (v) => { pcX = v; });
-    mkPCsel(t('beta.axisY'), pcY, (v) => { pcY = v; });
+    if (pcoaPlotStyle !== '3d') {
+      mkPCsel(t('beta.axisX'), pcX, (v) => { pcX = v; });
+      mkPCsel(t('beta.axisY'), pcY, (v) => { pcY = v; });
+    }
 
     if (groupOptions.length) {
       const f = document.createElement('div'); f.className = 'ql-field';
@@ -565,43 +568,57 @@ export function render(container) {
     const numericCols = numericMetaColumns(groupOptions);
     let sizeVals = null; // Map<sampleId (metadata), number> — solo si plotStyle === 'bubbles'
     let sizeMin = 0, sizeMax = 1;
-    if (numericCols.length > 0) {
-      if (!pcoaSizeCol || !numericCols.includes(pcoaSizeCol)) pcoaSizeCol = numericCols[0];
+    // '3d' necesita ≥3 ejes en el ordination.txt, no metadatos numéricos —
+    // por eso vive fuera del "if (numericCols.length > 0)" que gobierna burbujas
+    if (pcoaPlotStyle === 'bubbles' && numericCols.length === 0) pcoaPlotStyle = 'scatter';
+    if (pcoaPlotStyle === '3d' && maxPC < 3) pcoaPlotStyle = 'scatter';
+    const styleOptions = [{ value: 'scatter', labelKey: 'beta.pcoaPlotStyleScatter' }];
+    if (numericCols.length > 0) styleOptions.push({ value: 'bubbles', labelKey: 'beta.pcoaPlotStyleBubbles' });
+    if (maxPC >= 3) styleOptions.push({ value: '3d', labelKey: 'beta.pcoaPlotStyle3d' });
+    if (styleOptions.length > 1) {
       controls.appendChild(chartTypeField({
         labelKey: 'beta.pcoaPlotStyleLabel',
-        options: [
-          { value: 'scatter', labelKey: 'beta.pcoaPlotStyleScatter' },
-          { value: 'bubbles', labelKey: 'beta.pcoaPlotStyleBubbles' },
-        ],
+        options: styleOptions,
         active: pcoaPlotStyle,
         onChange: (v) => { pcoaPlotStyle = v; paint(); },
       }));
-      if (pcoaPlotStyle === 'bubbles') {
-        const sizeField = document.createElement('div'); sizeField.className = 'ql-field';
-        sizeField.innerHTML = '<label>' + t('beta.pcoaSizeLabel') + '</label>';
-        const sizeSel = document.createElement('select');
-        numericCols.forEach((h) => {
-          const o = document.createElement('option'); o.value = h; o.textContent = h;
-          if (h === pcoaSizeCol) o.selected = true; sizeSel.appendChild(o);
-        });
-        sizeSel.addEventListener('change', () => { pcoaSizeCol = sizeSel.value; paint(); });
-        sizeField.appendChild(sizeSel);
-        controls.appendChild(sizeField);
+    }
+    if (numericCols.length > 0 && pcoaPlotStyle === 'bubbles') {
+      if (!pcoaSizeCol || !numericCols.includes(pcoaSizeCol)) pcoaSizeCol = numericCols[0];
+      const sizeField = document.createElement('div'); sizeField.className = 'ql-field';
+      sizeField.innerHTML = '<label>' + t('beta.pcoaSizeLabel') + '</label>';
+      const sizeSel = document.createElement('select');
+      numericCols.forEach((h) => {
+        const o = document.createElement('option'); o.value = h; o.textContent = h;
+        if (h === pcoaSizeCol) o.selected = true; sizeSel.appendChild(o);
+      });
+      sizeSel.addEventListener('change', () => { pcoaSizeCol = sizeSel.value; paint(); });
+      sizeField.appendChild(sizeSel);
+      controls.appendChild(sizeField);
 
-        const sizeResolver = makeGroupResolver(state.metadata, pcoaSizeCol);
-        sizeVals = new Map();
-        ord.sampleIds.forEach((sid) => {
-          const raw = sizeResolver(sid);
-          if (raw != null && NUM_RE.test(String(raw).trim())) sizeVals.set(sid, parseFloat(raw));
-        });
-        const vals = Array.from(sizeVals.values());
-        if (vals.length > 0) {
-          sizeMin = Math.min(...vals); sizeMax = Math.max(...vals);
-          const help = document.createElement('p'); help.className = 'ql-field-help';
-          help.textContent = t('beta.pcoaSizeHelp', { col: pcoaSizeCol, min: sizeMin.toFixed(2), max: sizeMax.toFixed(2) });
-          controls.appendChild(help);
-        }
+      const sizeResolver = makeGroupResolver(state.metadata, pcoaSizeCol);
+      sizeVals = new Map();
+      ord.sampleIds.forEach((sid) => {
+        const raw = sizeResolver(sid);
+        if (raw != null && NUM_RE.test(String(raw).trim())) sizeVals.set(sid, parseFloat(raw));
+      });
+      const vals = Array.from(sizeVals.values());
+      if (vals.length > 0) {
+        sizeMin = Math.min(...vals); sizeMax = Math.max(...vals);
+        const help = document.createElement('p'); help.className = 'ql-field-help';
+        help.textContent = t('beta.pcoaSizeHelp', { col: pcoaSizeCol, min: sizeMin.toFixed(2), max: sizeMax.toFixed(2) });
+        controls.appendChild(help);
       }
+    }
+    if (pcoaPlotStyle === '3d') {
+      const help3d = document.createElement('p'); help3d.className = 'ql-field-help';
+      help3d.textContent = t('beta.pcoa3dHelp');
+      controls.appendChild(help3d);
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.style.marginTop = '4px';
+      resetBtn.textContent = t('beta.pcoa3dResetView');
+      resetBtn.addEventListener('click', () => { rot3dX = -0.4; rot3dY = 0.6; paint(); });
+      controls.appendChild(resetBtn);
     }
 
     const cum3 = ord.proportionExplained.slice(0, 3).reduce((a, b) => a + b, 0);
@@ -614,6 +631,13 @@ export function render(container) {
     container.appendChild(grid);
 
     // ---- dibujar scatter ----
+    if (pcoaPlotStyle === '3d' && maxPC >= 3) {
+      drawScatter3D();
+    } else {
+      drawScatter2D();
+    }
+
+    function drawScatter2D() {
     const W = 660, H = 520;
     const m = { t: 46, r: 20, b: 78, l: 62 };
     const innerW = W - m.l - m.r, innerH = H - m.t - m.b;
@@ -726,6 +750,146 @@ export function render(container) {
       paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
       onReset: () => paint(),
     });
+    }
+
+    // proyección ortográfica manual (yaw + pitch) de los 3 primeros ejes,
+    // rotable arrastrando — sin librería, mismo espíritu "a mano" que
+    // js/lib/forceLayout.js (red de co-ocurrencia del correlograma)
+    function drawScatter3D() {
+      const W = 660, H = 520;
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      const cx0 = W / 2, cy0 = (H - 60) / 2 + 6; // deja hueco abajo para la leyenda fija
+
+      const raw3 = ord.coords.map((c) => [c[0], c[1], c[2]]);
+      const centroid = [0, 1, 2].map((k) => raw3.reduce((s, p) => s + p[k], 0) / raw3.length);
+      const centered = raw3.map((p) => p.map((v, k) => v - centroid[k]));
+      // escala FIJA (no depende del ángulo): una rotación pura nunca aumenta
+      // la norma de un punto, así que ningún punto se sale del radio disponible
+      // sea cual sea la orientación actual — evita que el gráfico "respire" al girar
+      const maxNorm = Math.max(...centered.map((p) => Math.hypot(p[0], p[1], p[2]))) || 1;
+      const axisLen = maxNorm * 1.25;
+      const avail = Math.min(W, H - 70) / 2 - 18;
+      const scale = avail / axisLen;
+
+      function project(p) {
+        const [x, y, z] = p;
+        // yaw (eje vertical Y)
+        const cy_ = Math.cos(rot3dY), sy_ = Math.sin(rot3dY);
+        const x1 = x * cy_ + z * sy_;
+        const z1 = -x * sy_ + z * cy_;
+        // pitch (eje horizontal X)
+        const cx_ = Math.cos(rot3dX), sx_ = Math.sin(rot3dX);
+        const y1 = y * cx_ - z1 * sx_;
+        const z2 = y * sx_ + z1 * cx_;
+        return { x: cx0 + x1 * scale, y: cy0 - y1 * scale, depth: z2 };
+      }
+
+      function draw3D() {
+        svg.replaceChildren();
+        const g = svgEl('g', {});
+        svg.appendChild(g);
+
+        // gizmo de ejes PC1/PC2/PC3: del centro a +axisLen, rotan con la nube
+        const origin = project([0, 0, 0]);
+        [[axisLen, 0, 0], [0, axisLen, 0], [0, 0, axisLen]].forEach((dir, k) => {
+          const tip = project(dir);
+          g.appendChild(svgEl('line', { x1: origin.x, y1: origin.y, x2: tip.x, y2: tip.y, class: 'ql-baseline-line' }));
+          const lab = svgEl('text', { x: tip.x, y: tip.y, class: 'ql-tick-label', 'text-anchor': 'middle' });
+          lab.textContent = t('beta.pcAxis', { n: k + 1, pct: (ord.proportionExplained[k] || 0).toFixed(1) });
+          g.appendChild(lab);
+        });
+
+        // puntos: pintor's algorithm (más lejano primero) + tamaño/opacidad
+        // por profundidad para dar sensación de 3D sin sombreado real
+        const projected = ord.sampleIds.map((sid, i) => ({ sid, i, ...project(centered[i]) }));
+        const depths = projected.map((p) => p.depth);
+        const dMin = Math.min(...depths), dMax = Math.max(...depths), dSpan = (dMax - dMin) || 1;
+        projected.sort((a, b) => a.depth - b.depth);
+
+        const pts = svgEl('g', {});
+        g.appendChild(pts);
+        projected.forEach((p) => {
+          const frac = (p.depth - dMin) / dSpan; // 0 = más lejos de la cámara, 1 = más cerca
+          const gname = groupOf[p.sid];
+          const c = svgEl('circle', {
+            cx: p.x, cy: p.y, r: (3.6 + frac * 3.2).toFixed(2),
+            fill: colorForGroup(gname), 'fill-opacity': (0.5 + frac * 0.4).toFixed(2),
+            stroke: 'var(--surface)', 'stroke-width': 1.2, 'data-i': p.i,
+            ...(gname != null ? { 'data-ce-series-fill': 's' + groups.indexOf(gname) } : {}),
+          });
+          pts.appendChild(c);
+        });
+
+        // leyenda de grupos — posición fija en pantalla, no rota con la nube
+        if (groups.length) {
+          const legG = svgEl('g', { 'data-ce': 'legend' });
+          const perRow = Math.max(1, Math.floor((W - 40) / 130));
+          groups.forEach((gn, i) => {
+            const col = i % perRow, rw = Math.floor(i / perRow);
+            const xx = col * 130, yy = rw * 15;
+            legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 5, fill: colorForGroup(gn), 'data-ce-series-fill': 's' + i }));
+            const tx = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+            tx.textContent = gn.length > 16 ? gn.slice(0, 15) + '…' : gn;
+            legG.appendChild(tx);
+          });
+          legG.setAttribute('transform', 'translate(20,' + (H - 14) + ')');
+          svg.appendChild(legG);
+        }
+        if (editor) editor.sync();
+      }
+      draw3D();
+
+      delegateHover(svg, 'circle[data-i]', {
+        onEnter: (el) => {
+          const i = +el.dataset.i;
+          const sid = ord.sampleIds[i];
+          const gname = groupOf[sid];
+          const cx = parseFloat(el.getAttribute('cx')), cy = parseFloat(el.getAttribute('cy'));
+          showTooltip(chartWrap, cx, cy, escapeHtml(sid) + (gname ? ' · ' + escapeHtml(gname) : ''),
+            'PCo1 ' + ord.coords[i][0].toFixed(3) + ' · PCo2 ' + ord.coords[i][1].toFixed(3) + ' · PCo3 ' + ord.coords[i][2].toFixed(3),
+            { svg, W, H, tooltip, rawHtml: true });
+        },
+        onLeave: () => hideTooltip(tooltip),
+      });
+
+      // arrastrar para rotar — matriz de rotación calculada a mano (sin
+      // librería), mismos principios de pointer capture que chartEditor.js
+      svg.style.cursor = 'grab';
+      svg.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const startX = e.clientX, startY = e.clientY;
+        const baseX = rot3dX, baseY = rot3dY;
+        try { svg.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+        svg.style.cursor = 'grabbing';
+        const onMove = (ev) => {
+          const dx = ev.clientX - startX, dy = ev.clientY - startY;
+          rot3dY = baseY + dx * 0.012;
+          rot3dX = Math.max(-1.5, Math.min(1.5, baseX - dy * 0.012));
+          draw3D();
+        };
+        const onUp = (ev) => {
+          svg.removeEventListener('pointermove', onMove);
+          svg.removeEventListener('pointerup', onUp);
+          svg.removeEventListener('pointercancel', onUp);
+          try { svg.releasePointerCapture(ev.pointerId); } catch (err) { /* noop */ }
+          svg.style.cursor = 'grab';
+        };
+        svg.addEventListener('pointermove', onMove);
+        svg.addEventListener('pointerup', onUp);
+        svg.addEventListener('pointercancel', onUp);
+      });
+
+      editor = attachChartEditor({
+        key: 'betaPcoa3d', svg, mount: chartPanel, filename: 'pcoa3d-' + ord.metricName, lang: getLang(),
+        elements: [
+          { id: 'title', create: { text: t('beta.pcoa3dFigTitle', { metric: ord.metricName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+          { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+        ],
+        paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
+        paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
+        onReset: () => paint(),
+      });
+    }
 
     // ---- tabla ----
     const tableCard = document.createElement('section');
