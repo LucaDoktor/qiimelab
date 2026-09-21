@@ -36,6 +36,7 @@ export async function waitQC(c) {
 // pestañas .ql-tab / .ql-seg-btn a recorrer por ruta
 const TABS_FOR = {
   '#/alfa': ['rarefac', 'Boxplot'],
+  '#/beta': ['PCoA', 'RDA/CCA', 'Mapa de calor'],
   '#/barplots': ['Biomarc', 'Barplot'],
   '#/diferencial': ['Comparar', 'Lollipop', 'calor', 'Volcano', 'Individual'],
   '#/correlograma': ['Red', 'Matriz'],

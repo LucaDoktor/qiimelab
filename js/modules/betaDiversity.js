@@ -3,6 +3,8 @@ import { t, getLang } from '../lib/i18n.js';
 import { upgma, leafOrder, permanova, formatP } from '../lib/stats.js';
 import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
+import { rda, cca } from '../lib/constrainedOrdination.js';
+import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
 import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
@@ -12,6 +14,7 @@ import { chartTypeField } from '../lib/chartTypeSelector.js';
 
 const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 const NUM_RE = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+const RDA_TOPN_DEFAULT = 15, RDA_TOPN_MIN = 5, RDA_TOPN_MAX = 40;
 
 // columnas de metadatos usables como variable numérica de tamaño en el PCoA
 // de burbujas — mismo criterio que collectVariables() en correlogram.js: al
@@ -79,6 +82,12 @@ export function render(container) {
   let permGroupCol = null;
   let permN = 999;
   let permResult = null;   // cache del último cálculo {key, res}
+  let rdaMethod = 'rda';     // 'rda' | 'cca'
+  let rdaHellinger = true;   // transformación de Hellinger (solo aplica a 'rda')
+  let rdaTopN = RDA_TOPN_DEFAULT; // nº de taxones incluidos como matriz respuesta
+  let rdaVars = null;        // Set<nombre de columna de metadatos> elegidas como explicativas — null hasta inicializar
+  let rdaShowSpecies = false;
+  let rdaColorCol = null;
   // UPGMA de matrices grandes corre en un Web Worker (js/lib/heavyStats.js);
   // cacheamos el resultado para que el repaint tras el worker no lo relance.
   let heatCache = null;   // { key, tree, order }
@@ -97,8 +106,9 @@ export function render(container) {
 
     const hasHeat = !!state.betaDiversity;
     const hasPcoa = !!state.ordination;
+    const hasConstrained = !!(taxaRelativeAbundance() && state.metadata);
 
-    if (!hasHeat && !hasPcoa) {
+    if (!hasHeat && !hasPcoa && !hasConstrained) {
       const card = document.createElement('div');
       card.className = 'ql-card ql-panel';
       card.innerHTML =
@@ -111,12 +121,14 @@ export function render(container) {
       return;
     }
 
-    if (view === 'heatmap' && !hasHeat) view = 'pcoa';
-    if (view === 'pcoa' && !hasPcoa && hasHeat) view = 'heatmap';
+    if (view === 'heatmap' && !hasHeat) view = hasPcoa ? 'pcoa' : 'constrained';
+    if (view === 'pcoa' && !hasPcoa) view = hasHeat ? 'heatmap' : 'constrained';
+    if (view === 'constrained' && !hasConstrained) view = hasHeat ? 'heatmap' : 'pcoa';
 
+    const tabDefs = [['heatmap', t('beta.tabHeatmap'), hasHeat], ['pcoa', t('beta.tabPcoa'), hasPcoa], ['constrained', t('beta.tabConstrained'), hasConstrained]];
     const tabs = document.createElement('div');
     tabs.className = 'ql-tabs';
-    [['heatmap', t('beta.tabHeatmap')], ['pcoa', t('beta.tabPcoa')]].forEach(([v, label]) => {
+    tabDefs.filter(([, , avail]) => avail).forEach(([v, label]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ql-tab' + (view === v ? ' is-active' : '');
@@ -127,7 +139,8 @@ export function render(container) {
     container.appendChild(tabs);
 
     if (view === 'heatmap') renderHeatmap();
-    else renderPcoa(hasPcoa);
+    else if (view === 'pcoa') renderPcoa(hasPcoa);
+    else renderConstrained();
 
     if (hasHeat && state.metadata) renderPermanova();
   }
@@ -251,6 +264,353 @@ export function render(container) {
     card.appendChild(disc);
 
     container.appendChild(card);
+  }
+
+  // =========================================================================
+  //  ORDENACIÓN RESTRINGIDA — RDA / CCA (js/lib/constrainedOrdination.js)
+  // =========================================================================
+  function renderConstrained() {
+    const abundance = taxaRelativeAbundance();
+    if (!abundance || !state.metadata) {
+      const card = document.createElement('div');
+      card.className = 'ql-card ql-panel';
+      card.style.marginTop = '18px';
+      card.innerHTML = '<div class="ql-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="17" r="2.4"/><circle cx="17" cy="17" r="2.4"/><circle cx="12" cy="7" r="2.4"/><path d="m9 15.5 1.7-6M15 15.5l-1.7-6"/></svg>' +
+        '<h3>' + t('beta.rdaEmptyTitle') + '</h3><p>' + t('beta.rdaEmptyDesc') + '</p></div>';
+      container.appendChild(card);
+      mountExampleButtons(card.querySelector('.ql-empty'), { real: loadRealCommunityData, synthetic: loadExampleCommunityData, download: ['counts', 'metadata'] });
+      return;
+    }
+
+    const sampleIdsAll = Array.from(abundance.bySample[abundance.ranked[0]].keys());
+    const groupOptions = state.metadata.headers.filter((h) => h !== state.metadata.sampleIdKey);
+    const numericCols = numericMetaColumns(groupOptions);
+    if (rdaVars == null) rdaVars = new Set(numericCols.length ? numericCols.slice(0, Math.min(3, numericCols.length)) : groupOptions.slice(0, 1));
+
+    const grid = document.createElement('div');
+    grid.className = 'ql-grid-2';
+
+    const chartPanel = document.createElement('section');
+    chartPanel.className = 'ql-card ql-panel';
+    chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' + t('beta.rdaNote') + '</p>';
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'ql-chartwrap';
+    const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': rdaMethod.toUpperCase() });
+    const tooltip = document.createElement('div');
+    tooltip.className = 'ql-tooltip';
+    chartWrap.appendChild(svg); chartWrap.appendChild(tooltip);
+    chartPanel.appendChild(chartWrap);
+    grid.appendChild(chartPanel);
+
+    const controls = document.createElement('aside');
+    controls.className = 'ql-card ql-panel';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+
+    controls.appendChild(chartTypeField({
+      labelKey: 'beta.rdaMethodLabel',
+      options: [{ value: 'rda', labelKey: 'beta.rdaMethodRda' }, { value: 'cca', labelKey: 'beta.rdaMethodCca' }],
+      active: rdaMethod,
+      onChange: (v) => { rdaMethod = v; paint(); },
+      helpKey: rdaMethod === 'rda' ? 'beta.rdaMethodRdaHelp' : 'beta.rdaMethodCcaHelp',
+    }));
+
+    if (rdaMethod === 'rda') {
+      const hf = document.createElement('label');
+      hf.className = 'ql-checkrow';
+      hf.style.marginTop = '8px';
+      const hcb = document.createElement('input');
+      hcb.type = 'checkbox'; hcb.checked = rdaHellinger;
+      hcb.addEventListener('change', () => { rdaHellinger = hcb.checked; paint(); });
+      hf.appendChild(hcb);
+      hf.appendChild(document.createTextNode(' ' + t('beta.rdaHellingerLabel')));
+      controls.appendChild(hf);
+      const hh = document.createElement('p'); hh.className = 'ql-field-help'; hh.textContent = t('beta.rdaHellingerHelp');
+      controls.appendChild(hh);
+    }
+
+    const topField = document.createElement('div');
+    topField.className = 'ql-field';
+    topField.style.marginTop = '10px';
+    topField.innerHTML = '<label for="rdaTopNr">' + t('beta.rdaTopNLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="rdaTopNr" min="' + RDA_TOPN_MIN + '" max="' + Math.max(RDA_TOPN_MIN, Math.min(RDA_TOPN_MAX, abundance.ranked.length)) + '" step="1" value="' + rdaTopN + '" />' +
+      '<input type="number" id="rdaTopN" class="ql-num-small tabular" min="' + RDA_TOPN_MIN + '" max="' + RDA_TOPN_MAX + '" step="1" value="' + rdaTopN + '" /></div>';
+    controls.appendChild(topField);
+    const topR = topField.querySelector('#rdaTopNr'), topN2 = topField.querySelector('#rdaTopN');
+    const applyTopN = (v) => {
+      const nv = Math.max(RDA_TOPN_MIN, Math.min(RDA_TOPN_MAX, Math.round(Number(v) || RDA_TOPN_DEFAULT)));
+      if (nv !== rdaTopN) { rdaTopN = nv; paint(); }
+    };
+    topR.addEventListener('change', () => applyTopN(topR.value));
+    topN2.addEventListener('change', () => applyTopN(topN2.value));
+
+    const vField = document.createElement('div');
+    vField.className = 'ql-field';
+    vField.style.marginTop = '10px';
+    vField.innerHTML = '<label>' + t('beta.rdaVarsLabel') + ' (' + rdaVars.size + ')</label>';
+    [[numericCols, 'beta.rdaGrpNumeric'], [groupOptions.filter((h) => !numericCols.includes(h)), 'beta.rdaGrpCategorical']].forEach(([cols, labelKey]) => {
+      if (!cols.length) return;
+      const gh = document.createElement('div'); gh.className = 'ql-checkgroup-h'; gh.textContent = t(labelKey);
+      vField.appendChild(gh);
+      cols.forEach((h) => {
+        const row = document.createElement('label'); row.className = 'ql-checkrow';
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = rdaVars.has(h);
+        cb.addEventListener('change', () => { if (cb.checked) rdaVars.add(h); else rdaVars.delete(h); paint(); });
+        row.appendChild(cb); row.appendChild(document.createTextNode(' ' + h));
+        vField.appendChild(row);
+      });
+    });
+    controls.appendChild(vField);
+
+    const spf = document.createElement('label');
+    spf.className = 'ql-checkrow';
+    spf.style.marginTop = '10px';
+    const spcb = document.createElement('input');
+    spcb.type = 'checkbox'; spcb.checked = rdaShowSpecies;
+    spcb.addEventListener('change', () => { rdaShowSpecies = spcb.checked; paint(); });
+    spf.appendChild(spcb);
+    spf.appendChild(document.createTextNode(' ' + t('beta.rdaShowSpeciesLabel')));
+    controls.appendChild(spf);
+
+    if (groupOptions.length) {
+      const cf = document.createElement('div'); cf.className = 'ql-field'; cf.style.marginTop = '10px';
+      cf.innerHTML = '<label>' + t('beta.colorBy') + '</label>';
+      const csel = document.createElement('select');
+      const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = t('beta.rdaColorNone');
+      csel.appendChild(noneOpt);
+      groupOptions.forEach((h) => {
+        const o = document.createElement('option'); o.value = h; o.textContent = h;
+        if (h === rdaColorCol) o.selected = true; csel.appendChild(o);
+      });
+      csel.addEventListener('change', () => { rdaColorCol = csel.value || null; paint(); });
+      cf.appendChild(csel); controls.appendChild(cf);
+    }
+
+    grid.appendChild(controls);
+    container.appendChild(grid);
+
+    if (rdaVars.size === 0) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('beta.rdaNoVars') + '</p>');
+      return;
+    }
+
+    // ---- construir Y (top-N taxones) y X (variables elegidas, dummy-codificadas si son categóricas) ----
+    const speciesNames = abundance.ranked.slice(0, rdaTopN);
+    const varNames = [];
+    const resolvers = {};
+    rdaVars.forEach((col) => { resolvers[col] = makeGroupResolver(state.metadata, col); });
+    // solo se conservan muestras con dato en TODAS las variables elegidas (igual criterio que PERMANOVA con 'keep')
+    const validSamples = sampleIdsAll.filter((sid) => Array.from(rdaVars).every((col) => {
+      const v = resolvers[col](sid);
+      return v != null && String(v).trim() !== '';
+    }));
+    const nDropped = sampleIdsAll.length - validSamples.length;
+
+    const Xcols = []; // [{name, values:[por muestra válida]}]
+    Array.from(rdaVars).sort().forEach((col) => {
+      if (numericCols.includes(col)) {
+        Xcols.push({ name: col, values: validSamples.map((sid) => parseFloat(resolvers[col](sid))) });
+      } else {
+        const levels = Array.from(new Set(validSamples.map((sid) => String(resolvers[col](sid)).trim()))).sort();
+        levels.slice(1).forEach((lvl) => { // k-1 dummies, se omite el primer nivel (referencia)
+          Xcols.push({ name: col + '=' + lvl, values: validSamples.map((sid) => (String(resolvers[col](sid)).trim() === lvl ? 1 : 0)) });
+        });
+      }
+    });
+    Xcols.forEach((c) => varNames.push(c.name));
+    const X = validSamples.map((_, i) => Xcols.map((c) => c.values[i]));
+    let Y = validSamples.map((sid) => speciesNames.map((sp) => abundance.bySample[sp].get(sid) ?? 0));
+    if (rdaMethod === 'rda' && rdaHellinger) {
+      Y = Y.map((row) => {
+        const s = row.reduce((a, b) => a + b, 0);
+        return s > 0 ? row.map((v) => Math.sqrt(v / s)) : row.map(() => 0);
+      });
+    }
+
+    let res;
+    try {
+      res = rdaMethod === 'cca' ? cca(Y, X, speciesNames, varNames, validSamples) : rda(Y, X, speciesNames, varNames, validSamples);
+    } catch (e) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + escapeHtml(e.message) + '</p>');
+      return;
+    }
+
+    if (nDropped) {
+      chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('beta.rdaDropped', { n: nDropped }) + '</p>');
+    }
+
+    // ---- biplot: sitios + flechas de variables + especies (opcional) ----
+    const W = 660, H = 520;
+    const m = { t: 46, r: 20, b: 78, l: 62 };
+    const innerW = W - m.l - m.r, innerH = H - m.t - m.b;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+    const ax1 = 0, ax2 = Math.min(1, res.nAxes - 1);
+    const resolveColor = rdaColorCol ? makeGroupResolver(state.metadata, rdaColorCol) : null;
+    const colorGroups = resolveColor ? Array.from(new Set(validSamples.map((sid) => resolveColor(sid)).filter(Boolean))).sort() : [];
+    const colorFor = (g) => (g == null || !colorGroups.length ? 'var(--depleted)' : 'var(' + CAT_VARS[colorGroups.indexOf(g) % CAT_VARS.length] + ')');
+
+    const allX = res.siteScores.map((s) => s[ax1]).concat(rdaShowSpecies ? res.speciesScores.map((s) => s[ax1]) : []);
+    const allY = res.siteScores.map((s) => s[ax2]).concat(rdaShowSpecies ? res.speciesScores.map((s) => s[ax2]) : []);
+    // las flechas de variables viven en escala de correlación [-1,1]; se re-escalan
+    // para ocupar aprox. el mismo radio que la nube de puntos (convención habitual
+    // de biplot: la LONGITUD relativa de las flechas importa, no su unidad exacta)
+    const cloudRadius = Math.max(0.3, ...allX.map(Math.abs), ...allY.map(Math.abs));
+    const arrowScale = cloudRadius * 0.9;
+    const xr = [Math.min(-arrowScale, ...allX), Math.max(arrowScale, ...allX)];
+    const yr = [Math.min(-arrowScale, ...allY), Math.max(arrowScale, ...allY)];
+    const padX = (xr[1] - xr[0]) * 0.1 || 0.1, padY = (yr[1] - yr[0]) * 0.1 || 0.1;
+    const xMin = xr[0] - padX, xMax = xr[1] + padX, yMin = yr[0] - padY, yMax = yr[1] + padY;
+    const sx = (v) => m.l + ((v - xMin) / (xMax - xMin)) * innerW;
+    const sy = (v) => m.t + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+
+    for (let k = 0; k <= 4; k++) {
+      const gx = m.l + (k / 4) * innerW, gy = m.t + (k / 4) * innerH;
+      svg.appendChild(svgEl('line', { x1: gx, x2: gx, y1: m.t, y2: m.t + innerH, class: 'ql-gridline' }));
+      svg.appendChild(svgEl('line', { x1: m.l, x2: m.l + innerW, y1: gy, y2: gy, class: 'ql-gridline' }));
+    }
+    if (xMin < 0 && xMax > 0) svg.appendChild(svgEl('line', { x1: sx(0), x2: sx(0), y1: m.t, y2: m.t + innerH, class: 'ql-baseline-line' }));
+    if (yMin < 0 && yMax > 0) svg.appendChild(svgEl('line', { x1: m.l, x2: m.l + innerW, y1: sy(0), y2: sy(0), class: 'ql-baseline-line' }));
+
+    // especies (opcional), debajo de todo lo demás
+    if (rdaShowSpecies) {
+      const spG = svgEl('g', {});
+      svg.appendChild(spG);
+      res.speciesScores.forEach((s, i) => {
+        const cx = sx(s[ax1]), cy = sy(s[ax2]);
+        spG.appendChild(svgEl('circle', { cx, cy, r: 3, fill: 'var(--ink-muted)', 'fill-opacity': 0.55 }));
+        const lb = svgEl('text', { x: cx + 5, y: cy + 3, class: 'ql-tick-label', fill: 'var(--ink-muted)', 'font-size': 9 });
+        lb.textContent = speciesNames[i].length > 14 ? speciesNames[i].slice(0, 13) + '…' : speciesNames[i];
+        spG.appendChild(lb);
+      });
+    }
+
+    // flechas de variables explicativas
+    const arrowG = svgEl('g', {});
+    svg.appendChild(arrowG);
+    res.biplotScores.forEach((b, j) => {
+      const ex = b[ax1] * arrowScale, ey = b[ax2] * arrowScale;
+      const x1 = sx(0), y1 = sy(0), x2 = sx(ex), y2 = sy(ey);
+      arrowG.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: 'var(--enriched)', 'stroke-width': 1.6, 'marker-end': 'url(#rda-arrowhead)' }));
+      const lb = svgEl('text', { x: x2 + (ex >= 0 ? 4 : -4), y: y2, class: 'ql-tick-label', 'text-anchor': ex >= 0 ? 'start' : 'end', fill: 'var(--enriched)', 'font-weight': 600 });
+      lb.textContent = varNames[j];
+      arrowG.appendChild(lb);
+    });
+    const defs = svgEl('defs', {});
+    defs.innerHTML = '<marker id="rda-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--enriched)"/></marker>';
+    svg.insertBefore(defs, svg.firstChild);
+
+    // sitios
+    const pts = svgEl('g', {});
+    svg.appendChild(pts);
+    validSamples.forEach((sid, i) => {
+      const cx = sx(res.siteScores[i][ax1]), cy = sy(res.siteScores[i][ax2]);
+      const g = resolveColor ? resolveColor(sid) : null;
+      pts.appendChild(svgEl('circle', {
+        cx, cy, r: 5, fill: colorFor(g), 'fill-opacity': 0.82, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-i': i,
+        ...(g != null ? { 'data-ce-series-fill': 's' + colorGroups.indexOf(g) } : {}),
+      }));
+    });
+    delegateHover(svg, 'circle[data-i]', {
+      onEnter: (el) => {
+        const i = +el.dataset.i, sid = validSamples[i];
+        const g = resolveColor ? resolveColor(sid) : null;
+        const cx = sx(res.siteScores[i][ax1]), cy = sy(res.siteScores[i][ax2]);
+        showTooltip(chartWrap, cx, cy, escapeHtml(sid) + (g ? ' · ' + escapeHtml(g) : ''),
+          res.method.toUpperCase() + (ax1 + 1) + ' ' + res.siteScores[i][ax1].toFixed(3) + ' · ' + res.method.toUpperCase() + (ax2 + 1) + ' ' + res.siteScores[i][ax2].toFixed(3),
+          { svg, W, H, tooltip, rawHtml: true });
+      },
+      onLeave: () => hideTooltip(tooltip),
+    });
+
+    const mName = res.method.toUpperCase();
+    const xTitle = svgEl('text', { x: m.l + innerW / 2, y: H - 40, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+    xTitle.textContent = t('beta.rdaAxis', { method: mName, n: ax1 + 1, pct: (res.proportionExplained[ax1] * 100 || 0).toFixed(1) });
+    svg.appendChild(xTitle);
+    const yTitle = svgEl('text', { x: 16, y: m.t + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 16 ' + (m.t + innerH / 2) + ')', 'data-ce': 'ytitle' });
+    yTitle.textContent = t('beta.rdaAxis', { method: mName, n: ax2 + 1, pct: (res.proportionExplained[ax2] * 100 || 0).toFixed(1) });
+    svg.appendChild(yTitle);
+
+    if (colorGroups.length) {
+      const legG = svgEl('g', { 'data-ce': 'legend' });
+      const perRow = Math.max(1, Math.floor(innerW / 130));
+      colorGroups.forEach((g, i) => {
+        const col = i % perRow, rw = Math.floor(i / perRow);
+        const xx = col * 130, yy = rw * 15;
+        legG.appendChild(svgEl('rect', { x: xx, y: yy - 8, width: 10, height: 10, rx: 5, fill: colorFor(g), 'data-ce-series-fill': 's' + i }));
+        const tx = svgEl('text', { x: xx + 15, y: yy, class: 'ql-tick-label' });
+        tx.textContent = g.length > 16 ? g.slice(0, 15) + '…' : g;
+        legG.appendChild(tx);
+      });
+      legG.setAttribute('transform', 'translate(' + m.l + ',' + (H - 22) + ')');
+      svg.appendChild(legG);
+    }
+
+    editor = attachChartEditor({
+      key: 'betaConstrained', svg, mount: chartPanel, filename: rdaMethod + '-biplot', lang: getLang(),
+      elements: [
+        { id: 'title', create: { text: t('beta.rdaFigTitle', { method: mName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+      ],
+      paletteSeries: colorGroups.map((g, i) => ({ id: 's' + i, label: g })),
+      paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
+      onReset: () => paint(),
+    });
+
+    // ---- resumen + tablas ----
+    const summary = document.createElement('section');
+    summary.className = 'ql-card ql-panel';
+    summary.style.marginTop = '20px';
+    summary.innerHTML = '<h2>' + t('beta.rdaScreeTitle') + '</h2><p class="ql-panel-note">' +
+      t('beta.rdaScree', {
+        method: mName, n: res.nAxes,
+        pct: (res.proportionExplained.slice(0, 2).reduce((a, b) => a + b, 0) * 100).toFixed(1),
+        pctC: (res.proportionConstrained * 100).toFixed(1),
+      }) + '</p>' +
+      '<p class="ql-field-help" style="font-style:italic;">' + t('beta.rdaDisclaimer') + '</p>';
+    container.appendChild(summary);
+
+    const varTable = document.createElement('section');
+    varTable.className = 'ql-card ql-panel';
+    varTable.style.marginTop = '20px';
+    varTable.innerHTML = '<h2>' + t('beta.rdaVarTableTitle') + '</h2>';
+    const vScroll = document.createElement('div'); vScroll.className = 'ql-table-scroll';
+    const vTbl = document.createElement('table'); vTbl.className = 'ql-table';
+    let vHead = '<thead><tr><th>' + t('beta.rdaColVar') + '</th>';
+    for (let k = 0; k < res.nAxes; k++) vHead += '<th>' + mName + (k + 1) + '</th>';
+    vTbl.innerHTML = vHead + '</tr></thead>';
+    const vBody = document.createElement('tbody');
+    varNames.forEach((name, j) => {
+      const tr = document.createElement('tr');
+      let c = '<td>' + escapeHtml(name) + '</td>';
+      for (let k = 0; k < res.nAxes; k++) c += '<td class="ql-num tabular">' + res.biplotScores[j][k].toFixed(3) + '</td>';
+      tr.innerHTML = c; vBody.appendChild(tr);
+    });
+    vTbl.appendChild(vBody); vScroll.appendChild(vTbl); varTable.appendChild(vScroll);
+    container.appendChild(varTable);
+
+    const siteTable = document.createElement('section');
+    siteTable.className = 'ql-card ql-panel';
+    siteTable.style.marginTop = '20px';
+    siteTable.innerHTML = '<h2>' + t('beta.rdaTableTitle') + '</h2>';
+    const sScroll = document.createElement('div'); sScroll.className = 'ql-table-scroll scroll-x';
+    const sTbl = document.createElement('table'); sTbl.className = 'ql-table';
+    let sHead = '<thead><tr><th>' + t('beta.colSample') + '</th>';
+    if (colorGroups.length) sHead += '<th>' + escapeHtml(rdaColorCol) + '</th>';
+    for (let k = 0; k < res.nAxes; k++) sHead += '<th>' + mName + (k + 1) + '</th>';
+    sTbl.innerHTML = sHead + '</tr></thead>';
+    const sBody = document.createElement('tbody');
+    validSamples.forEach((sid, i) => {
+      const tr = document.createElement('tr');
+      let c = '<td>' + escapeHtml(sid) + '</td>';
+      if (colorGroups.length) c += '<td>' + escapeHtml((resolveColor && resolveColor(sid)) || '—') + '</td>';
+      for (let k = 0; k < res.nAxes; k++) c += '<td class="ql-num tabular">' + res.siteScores[i][k].toFixed(4) + '</td>';
+      tr.innerHTML = c; sBody.appendChild(tr);
+    });
+    sTbl.appendChild(sBody); sScroll.appendChild(sTbl); siteTable.appendChild(sScroll);
+    container.appendChild(siteTable);
   }
 
   // =========================================================================
