@@ -868,6 +868,10 @@ svg.ql-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .ql-gridline { stroke: var(--gridline); stroke-width: 1; }
 .ql-baseline-line { stroke: var(--baseline); stroke-width: 1.25; }
 .ql-threshold-line { stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.9; }
+/* Variante "elegida por el usuario" (vs. la de referencia automática arriba):
+   sólida y con --accent, para un control interactivo (p.ej. profundidad de
+   rarefacción) que el usuario mueve, no un umbral fijo del propio dato. */
+.ql-threshold-line-accent { stroke: var(--accent); stroke-width: 2; opacity: 0.95; }
 /* Árbol filogenético: punto en la punta de cada hoja (antes de la guía de
    puntos hasta la etiqueta) + etiqueta con algo más de presencia que un
    tick de eje genérico — mismo tono de accento que el resto de la app. */

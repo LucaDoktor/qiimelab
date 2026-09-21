@@ -34,6 +34,7 @@ export function render(container) {
   // el worker ni un cambio de columna de agrupación las recalculen.
   let rareCache = null; // { key, curves: { [sid]: {N,sObs,depths,richness} } }
   let rareGen = 0;
+  let rareDepth = null; // profundidad de submuestreo elegida a mano; null hasta que el usuario la toque o cambie el dataset
 
   function paint() {
     if (editor) { editor.destroy(); editor = null; }
@@ -397,6 +398,10 @@ export function render(container) {
     const minDepth = Math.min(...curves.map((c) => c.N));
     const maxN = Math.max(...curves.map((c) => c.N));
     const maxS = Math.max(...curves.map((c) => c.sObs));
+    // profundidad elegida: arranca en la mínima automática; se conserva entre
+    // repintados (cambio de columna de grupo, etc.) mientras siga cayendo
+    // dentro del rango del dataset actual
+    if (rareDepth == null || rareDepth < 1 || rareDepth > maxN) rareDepth = minDepth;
 
     // ---- layout ----
     const grid = document.createElement('div');
@@ -433,12 +438,35 @@ export function render(container) {
       f.appendChild(sel);
       controls.appendChild(f);
     }
+
+    const depthField = document.createElement('div');
+    depthField.className = 'ql-field';
+    depthField.innerHTML = '<label for="rareDepthR">' + t('alpha.rareDepthLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="rareDepthR" min="1" max="' + maxN + '" step="1" value="' + rareDepth + '" />' +
+      '<input type="number" id="rareDepthN" class="ql-num-small tabular" min="1" max="' + maxN + '" step="1" value="' + rareDepth + '" /></div>' +
+      '<p class="ql-field-help">' + t('alpha.rareDepthHelp') + '</p>';
+    controls.appendChild(depthField);
+    const depthRangeEl = depthField.querySelector('#rareDepthR');
+    const depthNumEl = depthField.querySelector('#rareDepthN');
+    const applyDepth = (v) => {
+      if (v === '') return;
+      const nv = Math.max(1, Math.min(maxN, Math.round(Number(v))));
+      if (isFinite(nv) && nv !== rareDepth) { rareDepth = nv; redraw(); }
+    };
+    depthRangeEl.addEventListener('input', () => { depthNumEl.value = depthRangeEl.value; applyDepth(depthRangeEl.value); });
+    depthNumEl.addEventListener('input', () => { depthRangeEl.value = depthNumEl.value || depthRangeEl.value; applyDepth(depthNumEl.value); });
+
     controls.insertAdjacentHTML('beforeend',
       '<div class="ql-stats" style="margin-top:6px;">' +
       '<div class="ql-stat"><div class="ql-stat-label">' + t('alpha.statSamples') + '</div><div class="ql-stat-value" style="font-size:20px;">' + curves.length + '</div></div>' +
       '<div class="ql-stat"><div class="ql-stat-label">' + t('alpha.rareStatMinDepth') + '</div><div class="ql-stat-value" style="font-size:20px;">' + fmtN(minDepth) + '</div></div>' +
+      '<div class="ql-stat"><div class="ql-stat-label">' + t('alpha.rareKeptStat') + '</div><div class="ql-stat-value" id="rareKeptValue" style="font-size:20px;"></div></div>' +
       '</div>' +
       '<p class="ql-field-help">' + t('alpha.rareMinDepthHelp') + '</p>');
+    const excludedBox = document.createElement('div');
+    excludedBox.id = 'rareExcludedBox';
+    controls.appendChild(excludedBox);
     grid.appendChild(controls);
     container.appendChild(grid);
 
@@ -450,90 +478,118 @@ export function render(container) {
     const sx = (v) => mL + (v / (maxN || 1)) * innerW;
     const sy = (v) => mT + innerH - (v / (maxS || 1)) * innerH;
 
-    const g = svgEl('g', {});
-    svg.appendChild(g);
+    // reconstruye SOLO el contenido del <svg> — se puede llamar de nuevo al
+    // mover el slider de profundidad sin recrear chartWrap/tooltip/controles
+    function drawChart() {
+      svg.replaceChildren();
+      const g = svgEl('g', {});
+      svg.appendChild(g);
 
-    // gridlines + ticks
-    for (let i = 0; i <= 4; i++) {
-      const yv = (i / 4) * maxS, y = sy(yv);
-      g.appendChild(svgEl('line', { x1: mL, x2: mL + innerW, y1: y, y2: y, class: 'ql-gridline' }));
-      const tk = svgEl('text', { x: mL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
-      tk.textContent = Math.round(yv);
-      g.appendChild(tk);
-    }
-    for (let i = 0; i <= 4; i++) {
-      const xv = (i / 4) * maxN, x = sx(xv);
-      g.appendChild(svgEl('line', { x1: x, x2: x, y1: mT, y2: mT + innerH, class: 'ql-gridline' }));
-      const tk = svgEl('text', { x, y: mT + innerH + 18, class: 'ql-tick-label', 'text-anchor': 'middle' });
-      tk.textContent = xv >= 1000 ? (xv / 1000).toFixed(xv >= 10000 ? 0 : 1) + 'k' : String(Math.round(xv));
-      g.appendChild(tk);
-    }
-    g.appendChild(svgEl('line', { x1: mL, x2: mL + innerW, y1: mT + innerH, y2: mT + innerH, class: 'ql-baseline-line' }));
-    g.appendChild(svgEl('line', { x1: mL, x2: mL, y1: mT, y2: mT + innerH, class: 'ql-baseline-line' }));
+      // gridlines + ticks
+      for (let i = 0; i <= 4; i++) {
+        const yv = (i / 4) * maxS, y = sy(yv);
+        g.appendChild(svgEl('line', { x1: mL, x2: mL + innerW, y1: y, y2: y, class: 'ql-gridline' }));
+        const tk = svgEl('text', { x: mL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
+        tk.textContent = Math.round(yv);
+        g.appendChild(tk);
+      }
+      for (let i = 0; i <= 4; i++) {
+        const xv = (i / 4) * maxN, x = sx(xv);
+        g.appendChild(svgEl('line', { x1: x, x2: x, y1: mT, y2: mT + innerH, class: 'ql-gridline' }));
+        const tk = svgEl('text', { x, y: mT + innerH + 18, class: 'ql-tick-label', 'text-anchor': 'middle' });
+        tk.textContent = xv >= 1000 ? (xv / 1000).toFixed(xv >= 10000 ? 0 : 1) + 'k' : String(Math.round(xv));
+        g.appendChild(tk);
+      }
+      g.appendChild(svgEl('line', { x1: mL, x2: mL + innerW, y1: mT + innerH, y2: mT + innerH, class: 'ql-baseline-line' }));
+      g.appendChild(svgEl('line', { x1: mL, x2: mL, y1: mT, y2: mT + innerH, class: 'ql-baseline-line' }));
 
-    // línea vertical en la profundidad mínima (el uso real de la gráfica)
-    if (minDepth > 0 && minDepth < maxN) {
-      const xd = sx(minDepth);
-      g.appendChild(svgEl('line', { x1: xd, x2: xd, y1: mT, y2: mT + innerH, class: 'ql-threshold-line' }));
-      const lab = svgEl('text', { x: xd, y: mT - 6, class: 'ql-tick-label', 'text-anchor': 'middle', fill: 'var(--ink-2)' });
-      lab.textContent = t('alpha.rareMinDepthMark', { n: fmtN(minDepth) });
-      g.appendChild(lab);
-    }
+      // línea de referencia: profundidad mínima automática (todas las muestras
+      // caben). Si coincide con la elegida, se pinta ya en acento (son el
+      // mismo punto); si no, se deja tenue y la elegida se dibuja aparte.
+      const depthDiffers = rareDepth !== minDepth;
+      if (minDepth > 0 && minDepth < maxN) {
+        const xd = sx(minDepth);
+        g.appendChild(svgEl('line', {
+          x1: xd, x2: xd, y1: mT, y2: mT + innerH,
+          class: depthDiffers ? 'ql-threshold-line' : 'ql-threshold-line-accent',
+        }));
+        const lab = svgEl('text', {
+          x: xd, y: mT - 6, class: 'ql-tick-label', 'text-anchor': 'middle',
+          fill: depthDiffers ? 'var(--ink-2)' : 'var(--accent)',
+        });
+        lab.textContent = depthDiffers
+          ? t('alpha.rareMinDepthMark', { n: fmtN(minDepth) })
+          : t('alpha.rareDepthMark', { n: fmtN(rareDepth) });
+        g.appendChild(lab);
+      }
+      // línea de la profundidad elegida a mano (solo si difiere de la automática)
+      if (depthDiffers && rareDepth > 0 && rareDepth < maxN) {
+        const xc = sx(rareDepth);
+        g.appendChild(svgEl('line', { x1: xc, x2: xc, y1: mT, y2: mT + innerH, class: 'ql-threshold-line-accent' }));
+        const labC = svgEl('text', { x: xc, y: mT + 14, class: 'ql-tick-label', 'text-anchor': 'middle', fill: 'var(--accent)' });
+        labC.textContent = t('alpha.rareDepthMark', { n: fmtN(rareDepth) });
+        g.appendChild(labC);
+      }
 
-    // una polilínea por muestra
-    const lines = svgEl('g', {});
-    g.appendChild(lines);
-    curves.forEach((c) => {
-      const pts = c.depths.map((d, i) => sx(d) + ',' + sy(c.richness[i])).join(' ');
-      const pl = svgEl('polyline', {
-        points: pts, fill: 'none', stroke: colorFor(c.group),
-        'stroke-width': 1.6, 'stroke-opacity': 0.8, 'stroke-linejoin': 'round',
-        ...(c.group ? { 'data-ce-series-stroke': 's' + groupNames.indexOf(c.group) } : {}),
+      // una polilínea por muestra — atenuada si quedaría excluida a la
+      // profundidad elegida (mismo criterio que richAt(): N < profundidad)
+      const lines = svgEl('g', {});
+      g.appendChild(lines);
+      curves.forEach((c) => {
+        const excluded = c.N < rareDepth;
+        const pts = c.depths.map((d, i) => sx(d) + ',' + sy(c.richness[i])).join(' ');
+        const pl = svgEl('polyline', {
+          points: pts, fill: 'none', stroke: colorFor(c.group),
+          'stroke-width': excluded ? 1.1 : 1.6, 'stroke-opacity': excluded ? 0.28 : 0.8, 'stroke-linejoin': 'round',
+          ...(c.group ? { 'data-ce-series-stroke': 's' + groupNames.indexOf(c.group) } : {}),
+        });
+        pl.addEventListener('mouseenter', () => {
+          pl.setAttribute('stroke-width', '3'); pl.setAttribute('stroke-opacity', '1');
+          showTooltip(chartWrap, sx(c.N), sy(c.sObs),
+            escapeHtml(c.sid) + (c.group ? ' · ' + escapeHtml(c.group) : ''),
+            t('alpha.rareColReads') + ' ' + fmtN(c.N) + ' · ' + t('alpha.rareColSobs') + ' ' + c.sObs,
+            { svg, W, H, tooltip, rawHtml: true });
+        });
+        pl.addEventListener('mouseleave', () => {
+          pl.setAttribute('stroke-width', excluded ? '1.1' : '1.6'); pl.setAttribute('stroke-opacity', excluded ? '0.28' : '0.8');
+          hideTooltip(tooltip);
+        });
+        lines.appendChild(pl);
       });
-      pl.addEventListener('mouseenter', () => {
-        pl.setAttribute('stroke-width', '3'); pl.setAttribute('stroke-opacity', '1');
-        showTooltip(chartWrap, sx(c.N), sy(c.sObs),
-          escapeHtml(c.sid) + (c.group ? ' · ' + escapeHtml(c.group) : ''),
-          t('alpha.rareColReads') + ' ' + fmtN(c.N) + ' · ' + t('alpha.rareColSobs') + ' ' + c.sObs,
-          { svg, W, H, tooltip, rawHtml: true });
-      });
-      pl.addEventListener('mouseleave', () => {
-        pl.setAttribute('stroke-width', '1.6'); pl.setAttribute('stroke-opacity', '0.8');
-        hideTooltip(tooltip);
-      });
-      lines.appendChild(pl);
-    });
 
-    // títulos de eje
-    const xT = svgEl('text', { x: mL + innerW / 2, y: H - 44, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
-    xT.textContent = t('alpha.rareXAxis');
-    g.appendChild(xT);
-    const yT = svgEl('text', {
-      x: 15, y: mT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
-      transform: 'rotate(-90 15 ' + (mT + innerH / 2) + ')', 'data-ce': 'ytitle',
-    });
-    yT.textContent = t('alpha.rareYAxis');
-    g.appendChild(yT);
-
-    // leyenda por grupo
-    if (groupNames.length) {
-      const legG = svgEl('g', { 'data-ce': 'legend' });
-      const perRow = Math.max(1, Math.floor(innerW / 150));
-      groupNames.forEach((gn, i) => {
-        const col = i % perRow, rw = Math.floor(i / perRow);
-        const xx = col * 150, yy = rw * 16;
-        legG.appendChild(svgEl('line', { x1: xx, x2: xx + 16, y1: yy, y2: yy, stroke: colorFor(gn), 'stroke-width': 2.4, 'data-ce-series-stroke': 's' + i }));
-        const lt = svgEl('text', { x: xx + 22, y: yy + 3.5, class: 'ql-tick-label' });
-        lt.textContent = gn.length > 16 ? gn.slice(0, 15) + '…' : gn;
-        legG.appendChild(lt);
+      // títulos de eje
+      const xT = svgEl('text', { x: mL + innerW / 2, y: H - 44, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      xT.textContent = t('alpha.rareXAxis');
+      g.appendChild(xT);
+      const yT = svgEl('text', {
+        x: 15, y: mT + innerH / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+        transform: 'rotate(-90 15 ' + (mT + innerH / 2) + ')', 'data-ce': 'ytitle',
       });
-      legG.setAttribute('transform', 'translate(' + mL + ',' + (H - 22) + ')');
-      svg.appendChild(legG);
-    } else {
-      const nt = svgEl('text', { x: mL, y: H - 20, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
-      nt.textContent = t('alpha.rareNoGroups');
-      svg.appendChild(nt);
+      yT.textContent = t('alpha.rareYAxis');
+      g.appendChild(yT);
+
+      // leyenda por grupo
+      if (groupNames.length) {
+        const legG = svgEl('g', { 'data-ce': 'legend' });
+        const perRow = Math.max(1, Math.floor(innerW / 150));
+        groupNames.forEach((gn, i) => {
+          const col = i % perRow, rw = Math.floor(i / perRow);
+          const xx = col * 150, yy = rw * 16;
+          legG.appendChild(svgEl('line', { x1: xx, x2: xx + 16, y1: yy, y2: yy, stroke: colorFor(gn), 'stroke-width': 2.4, 'data-ce-series-stroke': 's' + i }));
+          const lt = svgEl('text', { x: xx + 22, y: yy + 3.5, class: 'ql-tick-label' });
+          lt.textContent = gn.length > 16 ? gn.slice(0, 15) + '…' : gn;
+          legG.appendChild(lt);
+        });
+        legG.setAttribute('transform', 'translate(' + mL + ',' + (H - 22) + ')');
+        svg.appendChild(legG);
+      } else {
+        const nt = svgEl('text', { x: mL, y: H - 20, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
+        nt.textContent = t('alpha.rareNoGroups');
+        svg.appendChild(nt);
+      }
     }
+
+    drawChart();
 
     editor = attachChartEditor({
       key: 'alphaRarefaction', svg, mount: chartPanel,
@@ -549,23 +605,37 @@ export function render(container) {
       onReset: () => paint(),
     });
 
+    // ---- panel de muestras excluidas a la profundidad elegida ----
+    function drawExcluded() {
+      const kept = curves.filter((c) => c.N >= rareDepth);
+      const excluded = curves.filter((c) => c.N < rareDepth).sort((a, b) => a.N - b.N);
+      const keptStat = controls.querySelector('#rareKeptValue');
+      if (keptStat) keptStat.textContent = t('alpha.rareKeptValue', { kept: kept.length, total: curves.length });
+      if (excluded.length === 0) {
+        excludedBox.innerHTML = '<p class="ql-field-help" style="margin-top:10px;">' + t('alpha.rareExcludedNone', { n: fmtN(rareDepth) }) + '</p>';
+        return;
+      }
+      let html = '<h3 style="margin-top:14px;font-size:14px;">' + t('alpha.rareExcludedTitle') + '</h3>' +
+        '<p class="ql-field-help">' + t('alpha.rareExcludedNote', { n: fmtN(rareDepth) }) + '</p>' +
+        '<div class="ql-table-scroll" style="max-height:200px;"><table class="ql-table"><thead><tr>' +
+        '<th>' + t('alpha.colSample') + '</th><th>' + t('alpha.rareColReads') + '</th></tr></thead><tbody>';
+      excluded.forEach((c) => {
+        html += '<tr><td>' + escapeHtml(c.sid) + '</td><td class="ql-num tabular">' + fmtN(c.N) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      excludedBox.innerHTML = html;
+    }
+    drawExcluded();
+
     // ---- tabla (alternativa al gráfico) ----
     const tableCard = document.createElement('section');
     tableCard.className = 'ql-card ql-panel';
     tableCard.style.marginTop = '20px';
-    tableCard.innerHTML = '<h2>' + t('alpha.rareTableTitle') + '</h2>' +
-      '<p class="ql-panel-note">' + t('alpha.rareTableNote', { n: fmtN(minDepth) }) + '</p>';
-    const scrollDiv = document.createElement('div');
-    scrollDiv.className = 'ql-table-scroll';
-    const tbl = document.createElement('table');
-    tbl.className = 'ql-table';
-    tbl.innerHTML = '<thead><tr><th>' + t('alpha.colSample') + '</th>' +
-      (groupNames.length ? '<th>' + escapeHtml(groupCol) + '</th>' : '') +
-      '<th>' + t('alpha.rareColReads') + '</th><th>' + t('alpha.rareColSobs') + '</th>' +
-      '<th>' + t('alpha.rareColRarefied', { n: fmtN(minDepth) }) + '</th></tr></thead>';
-    const tbody = document.createElement('tbody');
-    // S a la profundidad mínima: la curva pasa por ahí exactamente si minDepth es
-    // el N de esa muestra; para el resto interpolamos linealmente entre puntos.
+    container.appendChild(tableCard);
+    // S a la profundidad elegida: la curva pasa por ahí exactamente si esa
+    // profundidad es el N de esa muestra; para el resto interpolamos
+    // linealmente entre puntos (mismo criterio de igualdad que "conservada":
+    // N >= profundidad no extrapola, usa la riqueza observada tal cual).
     const richAt = (c, n) => {
       if (n >= c.N) return c.sObs;
       for (let i = 1; i < c.depths.length; i++) {
@@ -577,21 +647,44 @@ export function render(container) {
       }
       return c.sObs;
     };
-    curves.slice()
-      .sort((a, b) => (a.group === b.group ? a.N - b.N : String(a.group).localeCompare(String(b.group))))
-      .forEach((c) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + escapeHtml(c.sid) + '</td>' +
-          (groupNames.length ? '<td>' + escapeHtml(c.group || '—') + '</td>' : '') +
-          '<td class="ql-num tabular">' + fmtN(c.N) + '</td>' +
-          '<td class="ql-num tabular">' + c.sObs + '</td>' +
-          '<td class="ql-num tabular">' + richAt(c, minDepth).toFixed(1) + '</td>';
-        tbody.appendChild(tr);
-      });
-    tbl.appendChild(tbody);
-    scrollDiv.appendChild(tbl);
-    tableCard.appendChild(scrollDiv);
-    container.appendChild(tableCard);
+    function drawTable() {
+      tableCard.innerHTML = '<h2>' + t('alpha.rareTableTitle') + '</h2>' +
+        '<p class="ql-panel-note">' + t('alpha.rareTableNote', { n: fmtN(rareDepth) }) + '</p>';
+      const scrollDiv = document.createElement('div');
+      scrollDiv.className = 'ql-table-scroll';
+      const tbl = document.createElement('table');
+      tbl.className = 'ql-table';
+      tbl.innerHTML = '<thead><tr><th>' + t('alpha.colSample') + '</th>' +
+        (groupNames.length ? '<th>' + escapeHtml(groupCol) + '</th>' : '') +
+        '<th>' + t('alpha.rareColReads') + '</th><th>' + t('alpha.rareColSobs') + '</th>' +
+        '<th>' + t('alpha.rareColRarefied', { n: fmtN(rareDepth) }) + '</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      curves.slice()
+        .sort((a, b) => (a.group === b.group ? a.N - b.N : String(a.group).localeCompare(String(b.group))))
+        .forEach((c) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + escapeHtml(c.sid) + '</td>' +
+            (groupNames.length ? '<td>' + escapeHtml(c.group || '—') + '</td>' : '') +
+            '<td class="ql-num tabular">' + fmtN(c.N) + '</td>' +
+            '<td class="ql-num tabular">' + c.sObs + '</td>' +
+            '<td class="ql-num tabular">' + richAt(c, rareDepth).toFixed(1) + '</td>';
+          tbody.appendChild(tr);
+        });
+      tbl.appendChild(tbody);
+      scrollDiv.appendChild(tbl);
+      tableCard.appendChild(scrollDiv);
+    }
+    drawTable();
+
+    // ---- repintado ligero al mover el slider de profundidad: solo el
+    // gráfico + el panel de excluidas + la tabla, sin tocar el resto de
+    // controles (mismo patrón que differentialAbundance.js refresh()) ----
+    function redraw() {
+      drawChart();
+      drawExcluded();
+      drawTable();
+      if (editor) editor.sync();
+    }
   }
 
   paint();
