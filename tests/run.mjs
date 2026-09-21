@@ -44,6 +44,7 @@ const SUITE = [
   { name: 'sangerinspector', file: 'sangerinspector.mjs', kind: 'estático' },
   { name: 'taxagrouping', file: 'taxagrouping.mjs', kind: 'estático' },
   { name: 'dom_tooltip', file: 'dom_tooltip.mjs', kind: 'estático' },
+  { name: 'glosario-links', file: 'glosario-links.mjs', kind: 'estático' },
   { name: 'stats/diversity', file: 'stats/diversity.mjs', kind: 'R' },
   { name: 'stats/rarefaction', file: 'stats/rarefaction.mjs', kind: 'R' },
   { name: 'stats/richness', file: 'stats/richness.mjs', kind: 'R' },

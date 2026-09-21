@@ -1918,6 +1918,7 @@ export function render(container) {
       b.type = 'button';
       b.className = 'ql-seg-btn' + (bmMethod === v ? ' is-on' : '');
       b.textContent = lbl;
+      b.title = t(v === 'ancombc' ? 'barplots.bmMethodAncombcHelp' : v === 'rf' ? 'barplots.bmMethodRfHelp' : 'barplots.bmMethodKwHelp');
       b.addEventListener('click', () => {
         if (bmMethod === v) return;
         bmMethod = v;
@@ -1992,14 +1993,6 @@ export function render(container) {
     method.style.marginTop = '14px';
     method.textContent = t(bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcDesc' : bmMethod === 'rf' ? 'barplots.bmMethodRfDesc' : 'barplots.bmMethod');
     controls.appendChild(method);
-    if (methodGlosId) {
-      const methodDescGlosA = document.createElement('a');
-      methodDescGlosA.className = 'ql-modcard-glos';
-      methodDescGlosA.style.cssText = 'display:inline-block;margin-top:2px;';
-      methodDescGlosA.href = '#/glosario?t=' + methodGlosId;
-      methodDescGlosA.textContent = t('home.glosLink');
-      controls.appendChild(methodDescGlosA);
-    }
 
     grid.appendChild(controls);
     container.appendChild(grid);
