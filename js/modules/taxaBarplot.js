@@ -6,6 +6,7 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
 import { ancomBC } from '../lib/ancomBC.js';
+import { randomForest } from '../lib/randomForest.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
@@ -277,6 +278,61 @@ function emptyState(container, title, desc) {
   container.appendChild(box);
 }
 
+/**
+ * Calcula el conjunto de taxones significativos/importantes para UN método
+ * de biomarcadores, sin el resto del detalle (grupo enriquecido, δ, LDA...)
+ * que sí construye renderBiomarkers() para la vista de un solo método.
+ * Extraído para poder correr los 3 métodos a la vez en el panel de
+ * consenso (renderBiomarkerConsensus) sin duplicar la lógica de
+ * significancia de cada uno.
+ * @param {'kw'|'ancombc'|'rf'} method
+ * @param {{table:object, sampleKey:string, taxonHeaders:string[], rowSum:(row:object)=>number, resolveGroup:(sid:string)=>string|null, groups:string[], relByTaxon:object, qThresh:number}} ctx
+ * @returns {{ sig:Set<string>, tested:number, error?:string, oobAccuracy?:number }}
+ */
+function computeSigSet(method, ctx) {
+  const { table, sampleKey, taxonHeaders, rowSum, resolveGroup, groups, relByTaxon, qThresh } = ctx;
+  if (method === 'rf') {
+    const sampleRows = table.rows.filter((row) => resolveGroup(String(row[sampleKey]).trim()));
+    const sampleGroupsArr = sampleRows.map((row) => resolveGroup(String(row[sampleKey]).trim()));
+    const relMatrix = sampleRows.map((row) => {
+      const total = rowSum(row) || 1;
+      return taxonHeaders.map((h) => (parseFloat(row[h]) || 0) / total * 100);
+    });
+    let rfRes;
+    try {
+      rfRes = randomForest(relMatrix, sampleGroupsArr, { nTree: 300, seed: 42, shadows: true });
+    } catch (e) {
+      return { sig: new Set(), tested: 0, error: e.message };
+    }
+    const sig = new Set();
+    taxonHeaders.forEach((h, i) => { if (rfRes.importance[i] > rfRes.shadowMax) sig.add(h); });
+    return { sig, tested: taxonHeaders.length, oobAccuracy: rfRes.oobAccuracy };
+  }
+
+  let tested = [];
+  if (method === 'ancombc') {
+    const sampleRows = table.rows.filter((row) => resolveGroup(String(row[sampleKey]).trim()));
+    const sampleGroupsArr = sampleRows.map((row) => resolveGroup(String(row[sampleKey]).trim()));
+    const countMatrix = taxonHeaders.map((h) => sampleRows.map((row) => parseFloat(row[h]) || 0));
+    const ancomRes = ancomBC(countMatrix, sampleGroupsArr, {}, studentTwoTailedP);
+    taxonHeaders.forEach((h, i) => {
+      const r = ancomRes[i];
+      if (r && isFinite(r.p)) tested.push({ taxon: h, p: r.p });
+    });
+  } else {
+    taxonHeaders.forEach((h) => {
+      const perGroup = groups.map((g) => relByTaxon[h][g] || []);
+      if (perGroup.some((arr) => arr.length === 0)) return;
+      const kw = kruskalWallis(perGroup);
+      if (isFinite(kw.p)) tested.push({ taxon: h, p: kw.p });
+    });
+  }
+  const q = benjaminiHochberg(tested.map((x) => x.p));
+  const sig = new Set();
+  tested.forEach((x, i) => { if (q[i] < qThresh) sig.add(x.taxon); });
+  return { sig, tested: tested.length };
+}
+
 export function render(container) {
   let level = null;
   let sortByGroup = true;
@@ -290,9 +346,11 @@ export function render(container) {
   let sbFocusPath = [];        // ruta (nombres) del nodo centrado en el sunburst — [] = raíz (sin zoom)
   let sbMaxRings = 4;          // anillos visibles a la vez desde el foco (rendimiento con datasets grandes)
   let qThresh = 0.05;          // umbral q (BH) de la vista de biomarcadores
-  let bmMethod = 'kw';         // 'kw' (Kruskal-Wallis, de siempre) | 'ancombc' (composicional) — decide de dónde sale el p/q de significancia
+  let bmMethod = 'kw';         // 'kw' (Kruskal-Wallis, de siempre) | 'ancombc' (composicional) | 'rf' (Random Forest) — decide de dónde sale la significancia (p/q, o el umbral de las variables sombra en 'rf')
   let bmScore = 'cliffs';      // 'cliffs' | 'lda' | 'ancom' — qué score manda en el gráfico y el orden por defecto
   let bmSort = { key: 'delta', dir: 'desc' };
+  let bmView = 'single';       // 'single' (un método, el de siempre) | 'consensus' (panel taxón × método)
+  let bmConsSort = { key: 'count', dir: 'desc' };
   let editor = null;
   let alluvialNodeWidth = 20;
   let alluvialNodeGap = 2;
@@ -1776,6 +1834,16 @@ export function render(container) {
     disc.textContent = t('barplots.bmDisclaimer');
     container.appendChild(disc);
 
+    container.appendChild(chartTypeField({
+      labelKey: 'barplots.bmViewLabel',
+      options: [{ value: 'single', labelKey: 'barplots.bmViewSingle' }, { value: 'consensus', labelKey: 'barplots.bmViewConsensus' }],
+      active: bmView,
+      onChange: (v) => { bmView = v; paint(); },
+      helpKey: bmView === 'consensus' ? 'barplots.bmViewConsensusHelp' : undefined,
+    }));
+
+    if (bmView === 'consensus') { renderBiomarkerConsensus(table, levels, groupOptions); return; }
+
     const grid = document.createElement('div');
     grid.className = 'ql-grid-2';
 
@@ -1839,32 +1907,48 @@ export function render(container) {
     methodField.innerHTML = '<label>' + t('barplots.bmMethodLabel') + '</label>';
     const methodSeg = document.createElement('div');
     methodSeg.className = 'ql-segmented';
-    [['kw', t('barplots.bmMethodKw')], ['ancombc', t('barplots.bmMethodAncombc')]].forEach(([v, lbl]) => {
+    [['kw', t('barplots.bmMethodKw')], ['ancombc', t('barplots.bmMethodAncombc')], ['rf', t('barplots.bmMethodRf')]].forEach(([v, lbl]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ql-seg-btn' + (bmMethod === v ? ' is-on' : '');
       b.textContent = lbl;
-      b.addEventListener('click', () => { if (bmMethod !== v) { bmMethod = v; if (bmScore === 'ancom' && v !== 'ancombc') { bmScore = 'cliffs'; bmSort = { key: 'delta', dir: 'desc' }; } paint(); } });
+      b.addEventListener('click', () => {
+        if (bmMethod === v) return;
+        bmMethod = v;
+        if (v === 'rf') { bmScore = 'rf'; bmSort = { key: 'rfImportance', dir: 'desc' }; }
+        else if (bmScore === 'ancom' && v !== 'ancombc') { bmScore = 'cliffs'; bmSort = { key: 'delta', dir: 'desc' }; }
+        else if (bmScore === 'rf') { bmScore = 'cliffs'; bmSort = { key: 'delta', dir: 'desc' }; }
+        paint();
+      });
       methodSeg.appendChild(b);
     });
     methodField.appendChild(methodSeg);
-    methodField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + (bmMethod === 'ancombc' ? t('barplots.bmMethodAncombcHelp') : t('barplots.bmMethodKwHelp')) + '</p>');
+    const methodHelpKey = bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcHelp' : bmMethod === 'rf' ? 'barplots.bmMethodRfHelp' : 'barplots.bmMethodKwHelp';
+    methodField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t(methodHelpKey) + '</p>');
     controls.appendChild(methodField);
 
-    // umbral q
-    const qf = document.createElement('div');
-    qf.className = 'ql-field';
-    qf.innerHTML = '<label for="bmQ">' + t('barplots.bmQLabel') + '</label>' +
-      '<div class="ql-inputrow">' +
-      '<input type="range" id="bmQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
-      '<input type="number" id="bmQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>' +
-      '<p class="ql-field-help">' + t('barplots.bmQHelp') + '</p>';
-    controls.appendChild(qf);
-    const qR = qf.querySelector('#bmQr'), qN = qf.querySelector('#bmQ');
-    const applyQ = (v) => { const nv = Math.max(0.0001, Math.min(1, Number(v))); if (isFinite(nv) && nv !== qThresh) { qThresh = nv; paint(); } };
-    qR.addEventListener('input', () => { qN.value = qR.value; });
-    qR.addEventListener('change', () => applyQ(qR.value));
-    qN.addEventListener('change', () => applyQ(qN.value));
+    // umbral q — no aplica a Random Forest (ahí la significancia sale de
+    // comparar contra variables "sombra" barajadas, no de un p-valor)
+    if (bmMethod !== 'rf') {
+      const qf = document.createElement('div');
+      qf.className = 'ql-field';
+      qf.innerHTML = '<label for="bmQ">' + t('barplots.bmQLabel') + '</label>' +
+        '<div class="ql-inputrow">' +
+        '<input type="range" id="bmQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
+        '<input type="number" id="bmQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>' +
+        '<p class="ql-field-help">' + t('barplots.bmQHelp') + '</p>';
+      controls.appendChild(qf);
+      const qR = qf.querySelector('#bmQr'), qN = qf.querySelector('#bmQ');
+      const applyQ = (v) => { const nv = Math.max(0.0001, Math.min(1, Number(v))); if (isFinite(nv) && nv !== qThresh) { qThresh = nv; paint(); } };
+      qR.addEventListener('input', () => { qN.value = qR.value; });
+      qR.addEventListener('change', () => applyQ(qR.value));
+      qN.addEventListener('change', () => applyQ(qN.value));
+    } else {
+      const rfNote = document.createElement('p');
+      rfNote.className = 'ql-field-help';
+      rfNote.textContent = t('barplots.bmRfSigNote');
+      controls.appendChild(rfNote);
+    }
 
     // score del gráfico: δ de Cliff (no asume normalidad), LDA bootstrapeado
     // (el nombre que la gente espera de "LEfSe"), y — solo con ANCOM-BC — su
@@ -1878,7 +1962,8 @@ export function render(container) {
     scoreSeg.className = 'ql-segmented';
     const scoreOptions = [['cliffs', t('barplots.bmScoreCliffs')], ['lda', t('barplots.bmScoreLda')]];
     if (bmMethod === 'ancombc') scoreOptions.push(['ancom', t('barplots.bmScoreAncom')]);
-    const scoreSortKey = { lda: 'ldaScore', ancom: 'ancomLog2FC', cliffs: 'delta' };
+    if (bmMethod === 'rf') scoreOptions.push(['rf', t('barplots.bmScoreRf')]);
+    const scoreSortKey = { lda: 'ldaScore', ancom: 'ancomLog2FC', cliffs: 'delta', rf: 'rfImportance' };
     scoreOptions.forEach(([v, lbl]) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -1888,14 +1973,14 @@ export function render(container) {
       scoreSeg.appendChild(b);
     });
     scoreField.appendChild(scoreSeg);
-    const scoreHelpKey = bmScore === 'lda' ? 'barplots.bmScoreLdaHelp' : bmScore === 'ancom' ? 'barplots.bmScoreAncomHelp' : 'barplots.bmScoreCliffsHelp';
+    const scoreHelpKey = bmScore === 'lda' ? 'barplots.bmScoreLdaHelp' : bmScore === 'ancom' ? 'barplots.bmScoreAncomHelp' : bmScore === 'rf' ? 'barplots.bmScoreRfHelp' : 'barplots.bmScoreCliffsHelp';
     scoreField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t(scoreHelpKey) + '</p>');
     controls.appendChild(scoreField);
 
     const method = document.createElement('p');
     method.className = 'ql-field-help';
     method.style.marginTop = '14px';
-    method.textContent = t(bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcDesc' : 'barplots.bmMethod');
+    method.textContent = t(bmMethod === 'ancombc' ? 'barplots.bmMethodAncombcDesc' : bmMethod === 'rf' ? 'barplots.bmMethodRfDesc' : 'barplots.bmMethod');
     controls.appendChild(method);
 
     grid.appendChild(controls);
@@ -1941,10 +2026,41 @@ export function render(container) {
     }
 
     // --- significancia por taxón: Kruskal-Wallis (de siempre, sobre la
-    // abundancia relativa) o ANCOM-BC (composicional, sobre los conteos
-    // crudos — ver js/lib/ancomBC.js). ---
+    // abundancia relativa), ANCOM-BC (composicional, sobre los conteos
+    // crudos — ver js/lib/ancomBC.js), o Random Forest (js/lib/randomForest.js). ---
     let tested = [];
-    if (bmMethod === 'ancombc') {
+    let rfShadowMax = null, rfOobAccuracy = null;
+    if (bmMethod === 'rf') {
+      // UN solo bosque multiclase (todos los grupos a la vez) sobre la
+      // abundancia relativa de TODOS los taxones testados, con una copia
+      // "sombra" de cada uno (valores barajados al azar entre muestras —
+      // rompe cualquier relación con el grupo por construcción). Un taxón
+      // es relevante si su importancia supera a la sombra más fuerte de
+      // todas (criterio de Kursa & Rudnicki 2010, "Boruta"), en vez de un
+      // p-valor + BH como en los otros dos métodos.
+      const sampleRows = table.rows.filter((row) => resolveGroup(String(row[sampleKey]).trim()));
+      const sampleGroupsArr = sampleRows.map((row) => resolveGroup(String(row[sampleKey]).trim()));
+      const relMatrix = sampleRows.map((row) => {
+        const total = rowSum(row) || 1;
+        return taxonHeaders.map((h) => (parseFloat(row[h]) || 0) / total * 100);
+      });
+      let rfRes;
+      try {
+        rfRes = randomForest(relMatrix, sampleGroupsArr, { nTree: 300, seed: 42, shadows: true });
+      } catch (e) {
+        chartPanel.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + escapeHtml(e.message) + '</p>');
+        return;
+      }
+      rfShadowMax = rfRes.shadowMax;
+      rfOobAccuracy = rfRes.oobAccuracy;
+      taxonHeaders.forEach((h, i) => {
+        tested.push({
+          taxon: h, label: shortTaxonName(h), p: null,
+          perGroup: groups.map((g) => relByTaxon[h][g] || []),
+          rfImportance: rfRes.importance[i],
+        });
+      });
+    } else if (bmMethod === 'ancombc') {
       // ANCOM-BC necesita los conteos CRUDOS (no el % de relByTaxon) para
       // poder estimar el sesgo de muestra; no exige presencia en todos los
       // grupos (el pseudo-conteo se encarga de los ceros estructurales).
@@ -1972,9 +2088,12 @@ export function render(container) {
       });
     }
 
-    // --- BH sobre TODOS los p testados (misma corrección, sea cual sea el método) ---
-    const q = benjaminiHochberg(tested.map((x) => x.p));
-    tested.forEach((x, i) => { x.q = q[i]; });
+    // --- BH sobre TODOS los p testados (misma corrección, sea cual sea el
+    // método) — no aplica a Random Forest, que no produce un p-valor ---
+    if (bmMethod !== 'rf') {
+      const q = benjaminiHochberg(tested.map((x) => x.p));
+      tested.forEach((x, i) => { x.q = q[i]; });
+    }
 
     // --- significativos: grupo enriquecido + tres scores de tamaño de
     // efecto, calculados siempre que aplique (no uno u otro): delta de
@@ -1985,7 +2104,7 @@ export function render(container) {
     // enriquecido es el de mediana más alta (one-vs-rest); con ANCOM-BC es
     // el que su propio modelo ya identificó como tal, para que toda la fila
     // (grupo, δ, LDA, log2FC, q) hable del mismo contraste. ---
-    const sig = tested.filter((x) => x.q < qThresh).map((x) => {
+    const sig = tested.filter((x) => (bmMethod === 'rf' ? x.rfImportance > rfShadowMax : x.q < qThresh)).map((x) => {
       let bi;
       if (x.ancomGroupIdx != null) {
         bi = x.ancomGroupIdx;
@@ -2003,13 +2122,17 @@ export function render(container) {
         ldaScore: lda.error ? null : lda.score,
       };
     });
-    const scoreOf = (x) => (bmScore === 'lda' ? x.ldaScore : bmScore === 'ancom' ? x.ancomLog2FC : x.delta);
+    const scoreOf = (x) => (bmScore === 'lda' ? x.ldaScore : bmScore === 'ancom' ? x.ancomLog2FC : bmScore === 'rf' ? x.rfImportance : x.delta);
     sig.sort((a, b) => Math.abs(scoreOf(b) ?? -Infinity) - Math.abs(scoreOf(a) ?? -Infinity));
     const ldaMissing = sig.filter((x) => x.ldaScore == null).length;
 
     chartPanel.insertAdjacentHTML('beforeend',
       '<p class="ql-field-help" style="margin-top:6px;">' +
-      t('barplots.bmCount', { n: sig.length, total: tested.length, q: qThresh }) + '</p>');
+      (bmMethod === 'rf' ? t('barplots.bmCountRf', { n: sig.length, total: tested.length }) : t('barplots.bmCount', { n: sig.length, total: tested.length, q: qThresh })) + '</p>');
+    if (bmMethod === 'rf' && rfOobAccuracy != null) {
+      chartPanel.insertAdjacentHTML('beforeend',
+        '<p class="ql-field-help">' + t('barplots.bmRfOob', { pct: (rfOobAccuracy * 100).toFixed(1) }) + '</p>');
+    }
     if (bmScore === 'lda' && ldaMissing > 0) {
       chartPanel.insertAdjacentHTML('beforeend',
         '<p class="ql-field-help">' + t('barplots.bmLdaMissing', { n: ldaMissing }) + '</p>');
@@ -2032,7 +2155,8 @@ export function render(container) {
       ['ldaScore', t('barplots.bmColLda')],
     ];
     if (bmMethod === 'ancombc') cols.push(['ancomLog2FC', t('barplots.bmColAncomLfc')]);
-    cols.push(['q', t('barplots.bmColQ')]);
+    if (bmMethod === 'rf') cols.push(['rfImportance', t('barplots.bmColRf')]);
+    if (bmMethod !== 'rf') cols.push(['q', t('barplots.bmColQ')]);
     let thead = '<thead><tr>';
     cols.forEach(([key, lbl]) => {
       const on = bmSort.key === key;
@@ -2046,7 +2170,7 @@ export function render(container) {
       tb.innerHTML = '<tr><td colspan="' + cols.length + '" style="text-align:center;color:var(--ink-muted);padding:20px;">' + t('barplots.bmNone') + '</td></tr>';
     } else {
       const dir = bmSort.dir === 'asc' ? 1 : -1;
-      const absSortKeys = new Set(['delta', 'ldaScore', 'ancomLog2FC']);
+      const absSortKeys = new Set(['delta', 'ldaScore', 'ancomLog2FC', 'rfImportance']);
       const rows = sig.slice().sort((a, b) => {
         const av = a[bmSort.key], bv = b[bmSort.key];
         if (absSortKeys.has(bmSort.key)) return ((Math.abs(av) || -Infinity) - (Math.abs(bv) || -Infinity)) * dir;
@@ -2061,7 +2185,8 @@ export function render(container) {
           '<td class="ql-num tabular">' + r.delta.toFixed(3) + '</td>' +
           '<td class="ql-num tabular">' + (r.ldaScore == null ? '—' : r.ldaScore.toFixed(3)) + '</td>' +
           (bmMethod === 'ancombc' ? '<td class="ql-num tabular">' + r.ancomLog2FC.toFixed(3) + '</td>' : '') +
-          '<td class="ql-num tabular">' + formatP(r.q) + '</td>';
+          (bmMethod === 'rf' ? '<td class="ql-num tabular">' + r.rfImportance.toFixed(4) + '</td>' : '') +
+          (bmMethod !== 'rf' ? '<td class="ql-num tabular">' + formatP(r.q) + '</td>' : '');
         tb.appendChild(tr);
       });
     }
@@ -2072,11 +2197,182 @@ export function render(container) {
       btn.addEventListener('click', () => {
         const key = btn.getAttribute('data-sort');
         if (bmSort.key === key) bmSort = { key, dir: bmSort.dir === 'asc' ? 'desc' : 'asc' };
-        // por defecto: nombres y q ascendente; scores de efecto (δ, LDA, ANCOM-BC) descendente
-        else bmSort = { key, dir: (key === 'delta' || key === 'ldaScore' || key === 'ancomLog2FC') ? 'desc' : 'asc' };
+        // por defecto: nombres y q ascendente; scores de efecto (δ, LDA, ANCOM-BC, RF) descendente
+        else bmSort = { key, dir: (key === 'delta' || key === 'ldaScore' || key === 'ancomLog2FC' || key === 'rfImportance') ? 'desc' : 'asc' };
         paint();
       });
     });
+  }
+
+  // =========================================================================
+  //  PANEL DE CONSENSO — taxón × método (Kruskal-Wallis / ANCOM-BC / Random
+  //  Forest), corridos los 3 a la vez sobre la MISMA columna de grupo. Cada
+  //  método decide su propia significancia con su propio criterio (q < umbral
+  //  BH para KW/ANCOM-BC, importancia > sombra para RF) — este panel solo
+  //  junta los 3 resultados en una tabla, sin gráfico (no hay una única
+  //  "unidad" de tamaño de efecto comparable entre los tres).
+  // =========================================================================
+  function renderBiomarkerConsensus(table, levels, groupOptions) {
+    const controls = document.createElement('section');
+    controls.className = 'ql-card ql-panel';
+    controls.style.marginBottom = '18px';
+    controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
+    const row = document.createElement('div');
+    row.className = 'ql-inputrow';
+    row.style.cssText = 'flex-wrap:wrap;gap:14px;';
+
+    if (levels.length > 1) {
+      const lf = document.createElement('div');
+      lf.className = 'ql-field'; lf.style.cssText = 'flex:1 1 160px;margin:0;';
+      lf.innerHTML = '<label>' + t('barplots.levelLabel') + '</label>';
+      const sel = document.createElement('select');
+      levels.forEach((lv) => {
+        const o = document.createElement('option'); o.value = lv;
+        o.textContent = t('barplots.level', { n: lv }) + (Number(lv) === 6 ? t('barplots.levelGenus') : Number(lv) === 2 ? t('barplots.levelPhylum') : '');
+        if (String(level) === lv) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => { level = sel.value; paint(); });
+      lf.appendChild(sel); row.appendChild(lf);
+    }
+
+    if (groupOptions.length > 0) {
+      const gf = document.createElement('div');
+      gf.className = 'ql-field'; gf.style.cssText = 'flex:1 1 160px;margin:0;';
+      gf.innerHTML = '<label>' + t('barplots.groupLabel') + '</label>';
+      const sel = document.createElement('select');
+      groupOptions.forEach((g) => {
+        const o = document.createElement('option'); o.value = g; o.textContent = g;
+        if (g === groupCol) o.selected = true; sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => { groupCol = sel.value; paint(); });
+      gf.appendChild(sel); row.appendChild(gf);
+    }
+
+    const qf = document.createElement('div');
+    qf.className = 'ql-field'; qf.style.cssText = 'flex:0 0 auto;margin:0;';
+    qf.innerHTML = '<label for="bmConsQ">' + t('barplots.bmQLabel') + '</label>' +
+      '<div class="ql-inputrow">' +
+      '<input type="range" id="bmConsQr" min="0.001" max="0.25" step="0.001" value="' + qThresh + '" />' +
+      '<input type="number" id="bmConsQ" class="ql-num-small tabular" min="0.0001" max="1" step="0.001" value="' + qThresh + '" /></div>';
+    row.appendChild(qf);
+    controls.appendChild(row);
+    const qR = qf.querySelector('#bmConsQr'), qN = qf.querySelector('#bmConsQ');
+    const applyQ = (v) => { const nv = Math.max(0.0001, Math.min(1, Number(v))); if (isFinite(nv) && nv !== qThresh) { qThresh = nv; paint(); } };
+    qR.addEventListener('input', () => { qN.value = qR.value; });
+    qR.addEventListener('change', () => applyQ(qR.value));
+    qN.addEventListener('change', () => applyQ(qN.value));
+    controls.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + t('barplots.bmConsQHelp') + '</p>');
+    container.appendChild(controls);
+
+    if (!state.metadata || !groupCol) {
+      container.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmNeedGroup') + '</p>');
+      return;
+    }
+
+    const sampleKey = table.headers[0];
+    const abundHeaders = table.headers.filter((h, i) => i !== 0);
+    const taxonHeaders = abundHeaders.filter((h) => !OTHER_COL_RE.test(String(h).trim()));
+    const rowSum = (r) => abundHeaders.reduce((a, h) => a + (parseFloat(r[h]) || 0), 0);
+    const resolveGroup = makeGroupResolver(state.metadata, groupCol);
+
+    const relByTaxon = {};
+    const groupSet = new Set();
+    table.rows.forEach((r) => {
+      const g = resolveGroup(String(r[sampleKey]).trim());
+      if (!g) return;
+      groupSet.add(g);
+      const total = rowSum(r) || 1;
+      taxonHeaders.forEach((h) => {
+        const rel = (parseFloat(r[h]) || 0) / total * 100;
+        const byG = (relByTaxon[h] = relByTaxon[h] || {});
+        (byG[g] = byG[g] || []).push(rel);
+      });
+    });
+    const groups = [...groupSet].sort();
+    if (groups.length < 2) {
+      container.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmNeed2Groups') + '</p>');
+      return;
+    }
+
+    const ctx = { table, sampleKey, taxonHeaders, rowSum, resolveGroup, groups, relByTaxon, qThresh };
+    const METHODS = [['kw', t('barplots.bmMethodKw')], ['ancombc', t('barplots.bmMethodAncombc')], ['rf', t('barplots.bmMethodRf')]];
+    const results = METHODS.map(([m]) => computeSigSet(m, ctx));
+
+    const failed = results.find((r) => r.error);
+    if (failed) {
+      container.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + escapeHtml(failed.error) + '</p>');
+      return;
+    }
+
+    const allTaxa = new Set();
+    results.forEach((r) => r.sig.forEach((tx) => allTaxa.add(tx)));
+
+    const tableCard = document.createElement('section');
+    tableCard.className = 'ql-card ql-panel';
+    tableCard.innerHTML = '<h2>' + t('barplots.bmConsTableTitle') + '</h2>' +
+      '<p class="ql-panel-note">' + t('barplots.bmConsNote', { n: allTaxa.size }) + '</p>';
+    container.appendChild(tableCard);
+
+    if (allTaxa.size === 0) {
+      tableCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmNone') + '</p>');
+      return;
+    }
+
+    const rows = [...allTaxa].map((tx) => {
+      const flags = results.map((r) => r.sig.has(tx));
+      return { taxon: tx, label: shortTaxonName(tx), flags, count: flags.filter(Boolean).length };
+    });
+
+    const scrollDiv = document.createElement('div');
+    scrollDiv.className = 'ql-table-scroll';
+    const tbl = document.createElement('table');
+    tbl.className = 'ql-table';
+    const cols = [['label', t('barplots.bmColTaxon')], ...METHODS.map(([m, lbl]) => [m, lbl]), ['count', t('barplots.bmConsColCount')]];
+    let thead = '<thead><tr>';
+    cols.forEach(([key, lbl]) => {
+      const on = bmConsSort.key === key;
+      thead += '<th aria-sort="' + (on ? (bmConsSort.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        '<button type="button" data-sort="' + key + '">' + escapeHtml(lbl) +
+        (on ? ' <span aria-hidden="true">' + (bmConsSort.dir === 'asc' ? '▲' : '▼') + '</span>' : '') + '</button></th>';
+    });
+    tbl.innerHTML = thead + '</tr></thead>';
+
+    const dir = bmConsSort.dir === 'asc' ? 1 : -1;
+    const sorted = rows.slice().sort((a, b) => {
+      if (bmConsSort.key === 'label') return a.label.localeCompare(b.label) * dir;
+      if (bmConsSort.key === 'count') return (a.count - b.count) * dir || a.label.localeCompare(b.label);
+      const mi = METHODS.findIndex(([m]) => m === bmConsSort.key);
+      return ((a.flags[mi] ? 1 : 0) - (b.flags[mi] ? 1 : 0)) * dir || a.label.localeCompare(b.label);
+    });
+
+    const tb = document.createElement('tbody');
+    sorted.forEach((r) => {
+      const tr = document.createElement('tr');
+      let html = '<td>' + escapeHtml(r.label) + '</td>';
+      r.flags.forEach((f) => { html += '<td class="ql-num tabular">' + (f ? '<span class="ql-cons-ok">✓</span>' : '<span class="ql-cell-muted">—</span>') + '</td>'; });
+      html += '<td class="ql-num tabular"><strong>' + r.count + '</strong> / ' + METHODS.length + '</td>';
+      tr.innerHTML = html;
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    scrollDiv.appendChild(tbl);
+    tableCard.appendChild(scrollDiv);
+    tbl.querySelectorAll('th button[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-sort');
+        if (bmConsSort.key === key) bmConsSort = { key, dir: bmConsSort.dir === 'asc' ? 'desc' : 'asc' };
+        else bmConsSort = { key, dir: key === 'label' ? 'asc' : 'desc' };
+        paint();
+      });
+    });
+
+    const rfR = results[2];
+    if (rfR.oobAccuracy != null) {
+      tableCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('barplots.bmRfOob', { pct: (rfR.oobAccuracy * 100).toFixed(1) }) + '</p>');
+    }
+    const fullConsensus = rows.filter((r) => r.count === METHODS.length).length;
+    tableCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('barplots.bmConsFull', { n: fullConsensus, m: METHODS.length }) + '</p>');
   }
 
   function drawBiomarkerBars(svg, mount, chartWrap, tooltip, sig, groups, bmScore) {
@@ -2118,7 +2414,7 @@ export function render(container) {
     svg.style.width = '';
     svg.style.maxWidth = '';
 
-    const scoreOf = (s) => (bmScore === 'lda' ? s.ldaScore : bmScore === 'ancom' ? s.ancomLog2FC : s.delta);
+    const scoreOf = (s) => (bmScore === 'lda' ? s.ldaScore : bmScore === 'ancom' ? s.ancomLog2FC : bmScore === 'rf' ? s.rfImportance : s.delta);
     const maxAbs = Math.max(...sig.map((s) => Math.abs(scoreOf(s))), 0.2);
     const x = (d) => marginL + (Math.abs(d) / maxAbs) * innerW;
 
@@ -2135,7 +2431,7 @@ export function render(container) {
     svg.appendChild(svgEl('line', { x1: marginL, x2: marginL, y1: marginT - 6, y2: barsBottom, class: 'ql-baseline-line' }));
 
     const axT = svgEl('text', { x: marginL + innerW / 2, y: axisY, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
-    axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : bmScore === 'ancom' ? t('barplots.bmAxisAncom') : t('barplots.bmAxisDelta');
+    axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : bmScore === 'ancom' ? t('barplots.bmAxisAncom') : bmScore === 'rf' ? t('barplots.bmAxisRf') : t('barplots.bmAxisDelta');
     svg.appendChild(axT);
 
     const barsG = svgEl('g', { 'data-ce': 'bars' });
@@ -2155,7 +2451,8 @@ export function render(container) {
           t('barplots.bmEnrichedIn', { group: s.enrichedGroup }) +
           ' · δ = ' + s.delta.toFixed(3) + (s.ldaScore == null ? '' : ' · LDA = ' + s.ldaScore.toFixed(3)) +
           (s.ancomLog2FC == null ? '' : ' · log2FC = ' + s.ancomLog2FC.toFixed(3)) +
-          ' · q = ' + formatP(s.q),
+          (s.rfImportance == null ? '' : ' · importancia = ' + s.rfImportance.toFixed(4)) +
+          (s.q == null ? '' : ' · q = ' + formatP(s.q)),
         ], { svg, W, H, tooltip });
       });
       rect.addEventListener('mouseleave', () => hideTooltip(tooltip));

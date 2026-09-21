@@ -56,6 +56,7 @@ Chrome, R, un paquete de R, o Biopython). El runner sale ≠ 0 solo si algo
 | `stats/primertm.mjs` | Biopython | `tmNN()`/`meltingTemp()` (`js/lib/primerAnalysis.js`, Tm de vecino más próximo SantaLucia 1998) vs `Bio.SeqUtils.MeltingTemp.Tm_NN` (`nn_table=DNA_NN3`, `saltcorr=5`) — 10 casos (secuencias concretas, sal/concentración de primer variadas) + el primer degenerado 515F (4 resoluciones IUPAC → min/max/media). |
 | `stats/rda.mjs` | R (`vegan`) | `rda()` (`js/lib/constrainedOrdination.js`, ordenación restringida lineal) sobre `varespec`/`varechem` (N,P,K,Ca,pH) de vegan: los 5 autovalores y la inercia total **exactos** vs `vegan::rda()$CCA$eig`/`$tot.chi` (recálculo en vivo ~1e-15 de error relativo); las coordenadas de sitios/especies/biplot usan una convención de escalado propia (no la de vegan), verificada con el invariante ‖lc_k‖²/(n-1) == autovalor_k. |
 | `stats/cca.mjs` | R (`vegan`) | Igual que `rda.mjs` pero para `cca()` (ordenación restringida por correspondencias, chi-cuadrado) — mismo dataset e invariante (aquí sin dividir por n-1), más casos de error (valores negativos, tabla vacía). |
+| `stats/randomforest.mjs` | R (`randomForest`) | `randomForest()` (`js/lib/randomForest.js`, bagging de árboles CART + importancia Mean Decrease Gini) vs `randomForest::randomForest(importance=TRUE)` sobre un dataset sintético de 45 muestras/3 grupos/12 variables (3 informativas + 9 de ruido puro): al ser un método estocástico (bootstrap + submuestreo de variables) NO se compara valor a valor, sino que se verifica que el RANKING coincide — correlación de Spearman, mismo top-3 exacto, y separación limpia (sin solape) entre informativas y ruido en ambos bosques; además el criterio de significancia "Boruta-lite" (variables sombra barajadas) y casos de error. |
 | `mobile-audit.mjs` | navegador | Recorre las 19 rutas a 375px y 768px con todos los ejemplos cargados. **Falla** si alguna ruta ensancha el layout más allá del viewport (ratio > 1.04 → scroll-x del body). Los casos "apretado" (ratio 1.0–1.04) se informan pero no fallan. |
 | `pwa.mjs` | estático + navegador | `manifest.json` es JSON válido con los campos obligatorios y sus iconos existen; `index.html` enlaza el manifest. Con navegador: el service worker registra, activa y controla la página tras la 1ª carga; con la red simulada offline por CDP una 2ª navegación sigue sirviendo el shell (sidebar + main + footer) desde caché sin errores; y el evento `offline`/`online` muestra/oculta el banner "sin conexión" de `js/lib/pwa.js`. |
 | `perf-stress.mjs` | navegador | Genera un dataset de estrés (260 muestras × 2800 taxones, semilla fija, **no** en `datos-ejemplo/`) y cronometra las 4 operaciones pesadas midiendo el "jank" (hueco máximo entre frames de `requestAnimationFrame`). **Falla** si la ruta migrada a Web Worker (`js/lib/heavyStats.js`: UPGMA de matrices grandes + curvas de rarefacción) vuelve a bloquear el hilo principal (> 120 ms). El resto solo se informa. |
@@ -90,10 +91,12 @@ R instalado.
 - **`upgma()` / `leafOrder()`** (clustering del mapa de calor beta): sin
   verificación numérica contra R (`hclust`).
 - **Vista de biomarcadores end-to-end**: `stats/benjaminihochberg.mjs` +
-  `stats/cliffsdelta.mjs` + `stats/kruskalwallis.mjs` cubren las fórmulas;
-  la comprobación de que la pestaña “Biomarcadores” pinta esos números no está
-  persistida (sí lo está la equivalente de “Comparar varias”, ver
-  `compare-overlap.mjs`).
+  `stats/cliffsdelta.mjs` + `stats/kruskalwallis.mjs` + `stats/ancombc.mjs` +
+  `stats/randomforest.mjs` cubren las fórmulas de los 3 métodos (incl. el
+  criterio "Boruta-lite" de variables sombra de Random Forest); la
+  comprobación de que la pestaña “Biomarcadores” pinta esos números — incluida
+  la subvista "Consenso entre métodos" (taxón × método) — no está persistida
+  (sí lo está la equivalente de “Comparar varias”, ver `compare-overlap.mjs`).
 - **Exportación SVG/PNG del editor de gráficos**, **impresión del informe
   combinado**, **descarga del HTML autocontenido**: no automatizadas.
 - **`#/arbol` interactivo**: `sweep-routes.mjs` carga el ejemplo, espera a que

@@ -62,6 +62,7 @@ const SUITE = [
   { name: 'stats/phylodistance', file: 'stats/phylodistance.mjs', kind: 'R' },
   { name: 'stats/rda', file: 'stats/rda.mjs', kind: 'R' },
   { name: 'stats/cca', file: 'stats/cca.mjs', kind: 'R' },
+  { name: 'stats/randomforest', file: 'stats/randomforest.mjs', kind: 'R' },
   { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },
   { name: 'keyboard-editor', file: 'keyboard-editor.mjs', kind: 'navegador' },
   { name: 'chart-fullscreen', file: 'chart-fullscreen.mjs', kind: 'navegador' },
