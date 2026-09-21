@@ -54,6 +54,7 @@ for (const f of readdirSync(join(ROOT, 'js/modules')).filter((f) => f.endsWith('
   const src = readFileSync(join(ROOT, 'js/modules', f), 'utf8');
   for (const m of src.matchAll(/#\/glosario\?t=([A-Za-z0-9_]+)/g)) addRef(m[1], f);
   for (const m of src.matchAll(/\bglos:\s*'([^']+)'/g)) addRef(m[1], f + ' (glos:)');
+  for (const m of src.matchAll(/glossaryLinkHtml\('([^']+)'/g)) addRef(m[1], f + ' (glossaryLinkHtml)');
 }
 // enlaces construidos con una variable (no se pueden leer del texto): se
 // declaran aquí y se comprueba abajo que el módulo sigue construyéndolos

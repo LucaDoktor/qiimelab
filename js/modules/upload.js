@@ -11,7 +11,7 @@ import {
   loadRealCommunityData, loadRealDifferentialAbundance, loadRealFunctional,
   exampleDownloadBlock, exampleFileLinks,
 } from '../lib/exampleData.js';
-import { escapeHtml } from '../lib/dom.js';
+import { escapeHtml, moreDetailsHtml, splitLead } from '../lib/dom.js';
 
 function downloadFile(name, text, mime) {
   try {
@@ -380,7 +380,9 @@ export function render(container) {
     guide.className = 'ql-fmt-guide';
     ['gRows0', 'gWrongType', 'gColumnMissing', 'gBiom', 'gArtifact', 'gGzip'].forEach((k) => {
       const li = document.createElement('li');
-      li.innerHTML = t('fmt.' + k);
+      // qué falló siempre visible; "cómo arreglarlo" plegado (si es lo bastante largo)
+      const { lead, rest } = splitLead(t('fmt.' + k));
+      li.innerHTML = rest ? lead + moreDetailsHtml(t('ui.moreDetails'), rest) : lead;
       guide.appendChild(li);
     });
     guideCard.appendChild(guide);

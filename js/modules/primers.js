@@ -16,7 +16,7 @@ import { parseFasta, findPrimerSites, findAmplicons, CRITICAL_3PRIME_ZONE } from
 import { computeCoverage, groupCoverageByTaxon, buildTaxonomyMap } from '../lib/primerCoverage.js';
 import { parseTable } from '../lib/csv.js';
 import { designPrimers, MODES as DESIGN_MODES } from '../lib/primerDesign.js';
-import { escapeHtml } from '../lib/dom.js';
+import { escapeHtml, moreDetailsHtml } from '../lib/dom.js';
 
 const STORE_KEY = 'smart-175.primers';
 const LEGACY_STORE_KEY = 'qiimelab.primers';
@@ -375,7 +375,7 @@ export function render(container) {
     ctrl.appendChild(modeField);
     if (s.designMode === 'qpcr') {
       ctrl.insertAdjacentHTML('beforeend',
-        '<p class="ql-field-help">' + t('primers.qpcrSpecificityNote') + '</p>' +
+        '<p class="ql-field-help">' + t('primers.qpcrSpecificityNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.qpcrSpecificityNoteMore')) +
         '<p class="ql-field-help" style="margin-top:6px;">' + t('primers.qpcrValidationNote') + '</p>');
     }
 
@@ -549,7 +549,7 @@ export function render(container) {
 
     const card = document.createElement('section');
     card.className = 'ql-card ql-panel';
-    card.innerHTML = '<h2>' + t('primers.dimersTitle') + '</h2><p class="ql-panel-note">' + t('primers.dimersNote') + '</p>';
+    card.innerHTML = '<h2>' + t('primers.dimersTitle') + '</h2><p class="ql-panel-note">' + t('primers.dimersNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.dimersNoteMore'));
 
     if (!named.length) {
       card.insertAdjacentHTML('beforeend', '<div class="ql-empty"><h3>' + t('primers.emptyTitle') + '</h3><p>' + t('primers.dimersEmpty') + '</p></div>');
@@ -582,7 +582,7 @@ export function render(container) {
     tbl.innerHTML = thead + tbody;
     scroll.appendChild(tbl);
     card.appendChild(scroll);
-    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.dimersLegend') + '</p>');
+    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.dimersLegend') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.dimersLegendMore')));
     container.appendChild(card);
 
     // ---- horquillas: una por primer, no es una matriz ----
@@ -667,7 +667,7 @@ export function render(container) {
     const loadCard = document.createElement('section');
     loadCard.className = 'ql-card ql-panel';
     loadCard.innerHTML = '<h2>' + t('primers.templateTitle') + '</h2><p class="ql-panel-note">' +
-      t('primers.templateNote', { n: CRITICAL_3PRIME_ZONE }) + '</p>';
+      t('primers.templateNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.templateNoteMore', { n: CRITICAL_3PRIME_ZONE }));
 
     const dz = document.createElement('div');
     dz.className = 'ql-dropzone';
@@ -856,7 +856,7 @@ export function render(container) {
     // ---- carga de la referencia + taxonomía opcional ----
     const loadCard = document.createElement('section');
     loadCard.className = 'ql-card ql-panel';
-    loadCard.innerHTML = '<h2>' + t('primers.coverageTitle') + '</h2><p class="ql-panel-note">' + t('primers.coverageNote') + '</p>' +
+    loadCard.innerHTML = '<h2>' + t('primers.coverageTitle') + '</h2><p class="ql-panel-note">' + t('primers.coverageNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.coverageNoteMore')) +
       '<p class="ql-field-help" style="font-style:italic;">' + t('primers.coverageDisclaimer') + '</p>';
 
     const mkDropzone = (labelKey, subKey, onText) => {
@@ -1089,7 +1089,7 @@ export function render(container) {
 
     const card = document.createElement('section');
     card.className = 'ql-card ql-panel';
-    card.innerHTML = '<h2>' + t('primers.batchTitle') + '</h2><p class="ql-panel-note">' + t('primers.batchNote') + '</p>';
+    card.innerHTML = '<h2>' + t('primers.batchTitle') + '</h2><p class="ql-panel-note">' + t('primers.batchNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.batchNoteMore'));
 
     if (valid.length < 2) {
       card.insertAdjacentHTML('beforeend', '<div class="ql-empty"><h3>' + t('primers.emptyTitle') + '</h3><p>' + t('primers.batchEmpty') + '</p></div>');
@@ -1190,7 +1190,7 @@ export function render(container) {
     });
     card.appendChild(addBtn);
 
-    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:12px;">' + t('primers.batchDeltaTmGuideline') + '</p>');
+    card.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:12px;">' + t('primers.batchDeltaTmGuideline') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.batchDeltaTmGuidelineMore')));
     if (!refs.length) card.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('primers.batchNoRefGlobal') + '</p>');
     container.appendChild(card);
   }
@@ -1408,7 +1408,7 @@ export function render(container) {
     sTbl.appendChild(sTb);
     sScroll.appendChild(sTbl);
     statsCard.appendChild(sScroll);
-    statsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.statsNote') + '</p>');
+    statsCard.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:10px;">' + t('primers.statsNote') + '</p>' + moreDetailsHtml(t('ui.moreDetails'), t('primers.statsNoteMore')));
     statsCard.appendChild(reportButtons(() => buildPrimersReportText(derived, s), 'primers-analisis.txt'));
     container.appendChild(statsCard);
   }

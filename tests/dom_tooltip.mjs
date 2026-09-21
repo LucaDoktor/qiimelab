@@ -3,7 +3,7 @@
 //
 //   node tests/dom_tooltip.mjs
 
-import { escapeHtml, svgEl } from '../js/lib/dom.js';
+import { escapeHtml, svgEl, moreDetailsHtml, splitLead } from '../js/lib/dom.js';
 import { createTooltip, hideTooltip, showTooltip } from '../js/lib/tooltip.js';
 
 let failed = false;
@@ -130,6 +130,22 @@ console.log('\n--- 3. js/lib/tooltip.js: createTooltip, hideTooltip, showTooltip
     html: '<span class="custom-tt">Info personalizada</span>',
   });
   check('showTooltip soporta opción html personalizada', tt.innerHTML === '<span class="custom-tt">Info personalizada</span>');
+}
+
+// --- moreDetailsHtml / splitLead (detalle plegable de las notas largas) ---
+{
+  const h = moreDetailsHtml('Más detalles', '<b>texto</b> largo');
+  check('moreDetailsHtml: <details class="ql-more"> con resumen y cuerpo',
+    h.startsWith('<details class="ql-more"><summary>Más detalles</summary>') && h.includes('<div class="ql-more-body"><b>texto</b> largo</div>') && h.endsWith('</details>'));
+  const long = 'x'.repeat(150);
+  const a = splitLead('<b>Qué falló:</b> ' + long);
+  check('splitLead: separa la cabecera en negrita del resto', a.lead === '<b>Qué falló:</b>' && a.rest === long, JSON.stringify(a).slice(0, 80));
+  const b = splitLead('<b>Corto:</b> poco texto');
+  check('splitLead: si el resto es corto no hay nada que plegar', b.rest === '' && b.lead === '<b>Corto:</b> poco texto');
+  const c = splitLead('Sin cabecera en negrita ' + long);
+  check('splitLead: sin <b> inicial devuelve todo como lead', c.rest === '' && c.lead.startsWith('Sin cabecera'));
+  const d = splitLead('<b>Ok:</b> ' + 'y'.repeat(60), 40);
+  check('splitLead: respeta minRest', d.rest.length === 60);
 }
 
 // Restaurar globales

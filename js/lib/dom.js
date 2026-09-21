@@ -66,3 +66,35 @@ export function delegateHover(container, selector, { onEnter, onLeave, onMove } 
     });
   }
 }
+
+/**
+ * Detalle plegable ("más detalles") para no dejar párrafos largos siempre
+ * visibles: una nota corta va fuera y el texto completo vive dentro de un
+ * <details>. Devuelve HTML (los textos de i18n ya pueden llevar marcado, igual
+ * que el resto de la app los inserta con innerHTML); `label` y `bodyHtml` NO
+ * se escapan aquí — vienen de t().
+ * @param {string} label    texto del resumen (t('ui.moreDetails'))
+ * @param {string} bodyHtml contenido completo
+ * @returns {string}
+ */
+export function moreDetailsHtml(label, bodyHtml) {
+  return '<details class="ql-more"><summary>' + label + '</summary>' +
+    '<div class="ql-more-body">' + bodyHtml + '</div></details>';
+}
+
+/**
+ * Parte un texto del tipo `<b>Qué falló:</b> cómo arreglarlo…` en la cabecera
+ * en negrita y el resto. Si no hay cabecera en negrita al principio, o lo que
+ * queda es corto (< minRest), no hay nada que plegar: devuelve rest = ''.
+ * @param {string} html
+ * @param {number} [minRest=120]
+ * @returns {{ lead: string, rest: string }}
+ */
+export function splitLead(html, minRest = 120) {
+  const s = String(html);
+  const m = s.match(/^\s*<b>[\s\S]*?<\/b>/);
+  if (!m) return { lead: s, rest: '' };
+  const lead = m[0].trim();
+  const rest = s.slice(m[0].length).trim();
+  return rest.length >= minRest ? { lead, rest } : { lead: s, rest: '' };
+}

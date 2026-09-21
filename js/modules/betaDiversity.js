@@ -4,6 +4,7 @@ import { upgma, leafOrder, permanova, formatP } from '../lib/stats.js';
 import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { rda, cca } from '../lib/constrainedOrdination.js';
+import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
@@ -570,7 +571,7 @@ export function render(container) {
         pctC: (res.proportionConstrained * 100).toFixed(1),
       }) + '</p>' +
       '<p class="ql-field-help" style="font-style:italic;">' + t('beta.rdaDisclaimer') + '</p>' +
-      '<a class="ql-modcard-glos" style="display:inline-block;" href="#/glosario?t=' + rdaMethod + '">' + t('home.glosLink') + '</a>';
+      glossaryLinkHtml(rdaMethod);
     container.appendChild(summary);
 
     const varTable = document.createElement('section');

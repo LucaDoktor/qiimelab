@@ -6,6 +6,7 @@ import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
 import { ancomBC } from '../lib/ancomBC.js';
+import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { randomForest } from '../lib/randomForest.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout } from '../lib/alluvial.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
@@ -1833,12 +1834,7 @@ export function render(container) {
     disc.style.margin = '0 0 14px';
     disc.textContent = t('barplots.bmDisclaimer');
     container.appendChild(disc);
-    const discGlosA = document.createElement('a');
-    discGlosA.className = 'ql-modcard-glos';
-    discGlosA.style.cssText = 'display:inline-block;margin:-10px 0 14px;';
-    discGlosA.href = '#/glosario?t=biomarkers';
-    discGlosA.textContent = t('home.glosLink');
-    container.appendChild(discGlosA);
+    container.insertAdjacentHTML('beforeend', glossaryLinkHtml('biomarkers', 'display:inline-block;margin:-10px 0 14px;'));
 
     container.appendChild(chartTypeField({
       labelKey: 'barplots.bmViewLabel',
@@ -1934,7 +1930,7 @@ export function render(container) {
     methodField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t(methodHelpKey) + '</p>');
     const methodGlosId = bmMethod === 'ancombc' ? 'ancombc' : bmMethod === 'rf' ? 'randomforest' : bmMethod === 'kw' ? 'kruskal' : null;
     if (methodGlosId) {
-      methodField.insertAdjacentHTML('beforeend', '<a class="ql-modcard-glos" style="display:inline-block;" href="#/glosario?t=' + methodGlosId + '">' + t('home.glosLink') + '</a>');
+      methodField.insertAdjacentHTML('beforeend', glossaryLinkHtml(methodGlosId));
     }
     controls.appendChild(methodField);
 

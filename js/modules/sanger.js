@@ -19,7 +19,8 @@ import { CATEGORICAL } from '../lib/palettes.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { alignWithWorker } from '../lib/aligner.js';
 import { openPanel } from '../lib/modal.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { svgEl, escapeHtml, moreDetailsHtml } from '../lib/dom.js';
+import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 
 const STORE_KEY = 'smart-175.sanger';
 const LEGACY_STORE_KEY = 'qiimelab.sanger';
@@ -1712,7 +1713,8 @@ export function render(container) {
 
     const scopeCard = document.createElement('section');
     scopeCard.className = 'ql-card ql-panel';
-    scopeCard.innerHTML = '<h2>' + t('sanger.scopeTitle') + '</h2><p class="ql-panel-note">' + t('sanger.scopeNote') + '</p>';
+    scopeCard.innerHTML = '<h2>' + t('sanger.scopeTitle') + '</h2><p class="ql-panel-note">' + t('sanger.scopeNote') + '</p>' +
+      glossaryLinkHtml('sangerConsensusTerm');
     stack.appendChild(scopeCard);
 
     // --- dropzone ---
@@ -2576,7 +2578,8 @@ export function render(container) {
         btnRow.appendChild(blastLink);
       }
       detailWrap.appendChild(btnRow);
-      detailWrap.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + t('sanger.blastNote') + '</p>');
+      detailWrap.insertAdjacentHTML('beforeend', '<p class="ql-field-help" style="margin-top:8px;">' + t('sanger.blastNote') + '</p>' +
+        moreDetailsHtml(t('ui.moreDetails'), t('sanger.blastNoteMore')));
     }
 
     const initial = results.find((r) => r.id === s.selectedSampleId) || results[0];

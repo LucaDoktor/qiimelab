@@ -24,7 +24,8 @@ import { fisherLSD, compactLetterDisplay } from '../lib/stats.js';
 import {
   loadExampleMicrobialCountsPlate, loadExampleMicrobialCountsMPN, exampleDownloadBlock,
 } from '../lib/exampleData.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { svgEl, escapeHtml, moreDetailsHtml } from '../lib/dom.js';
+import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { createTooltip, hideTooltip, showTooltip } from '../lib/tooltip.js';
 function fmt(v, d) {
   return (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
@@ -471,7 +472,8 @@ export function render(container) {
         updateMicrobialCountSeries(s.id, { mapping: { ...s.mapping, facetCol: fc < 0 ? null : fc } });
       });
       facetField.appendChild(facetSel);
-      facetField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.facetHelp') + '</p>');
+      facetField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.facetHelp') + '</p>' +
+        moreDetailsHtml(t('ui.moreDetails'), t('recuentos.facetHelpMore')));
       box.appendChild(facetField);
 
       box.appendChild(renderAddVariable(s));
@@ -621,6 +623,7 @@ export function render(container) {
       lsdNote.style.marginTop = '6px';
       lsdNote.textContent = t('recuentos.lsdCaveat');
       controls.appendChild(lsdNote);
+      lsdNote.insertAdjacentHTML('afterend', glossaryLinkHtml('lsd'));
     } else if (usable.length >= 2) {
       const w = document.createElement('p');
       w.className = 'ql-field-help';

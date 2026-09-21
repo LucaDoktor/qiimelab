@@ -72,6 +72,7 @@ const GLOSSARY = [
       { id: 'kruskal', def: 'alpha.kwHelp' },
       { id: 'cliff', route: 'barplots' },
       { id: 'sdvsse', route: 'recuentos' },
+      { id: 'lsd', route: 'recuentos' },
     ],
   },
   {
