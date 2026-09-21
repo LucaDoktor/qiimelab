@@ -15,11 +15,16 @@ function esc(s) {
 }
 
 /** Atrapa el foco dentro de `dlg` (Tab/Shift+Tab ciclan, Escape llama a
- *  `onEscape`) y devuelve la función a quitar de `document` al cerrar. */
-function trapFocus(dlg, onEscape) {
-  const focusables = () => Array.from(
-    dlg.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
-  ).filter((el) => !el.disabled);
+ *  `onEscape`) y devuelve la función a quitar de `document` al cerrar.
+ *  `dlg` puede ser también una lista de raíces (el cajón de navegación de
+ *  js/lib/navDrawer.js atrapa el foco entre su botón y su panel, que no son
+ *  hermanos ni descendientes uno del otro). Exportada para reutilizarla. */
+export function trapFocus(dlg, onEscape) {
+  const roots = Array.isArray(dlg) ? dlg : [dlg];
+  const focusables = () => roots.flatMap((r) => Array.from(
+    r.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+  )).filter((el) => !el.disabled);
+  const inside = () => roots.some((r) => r.contains(document.activeElement));
   function onKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); onEscape(); return; }
     if (e.key === 'Tab') {
@@ -28,7 +33,7 @@ function trapFocus(dlg, onEscape) {
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-      else if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      else if (!inside()) { e.preventDefault(); first.focus(); }
     }
   }
   document.addEventListener('keydown', onKey, true);

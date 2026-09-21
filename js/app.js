@@ -8,6 +8,7 @@ import { onProfileChange } from './lib/profile.js';
 import { watchFieldLabels, linkFieldLabels } from './lib/a11yFields.js';
 import { initPWA, onPWAChange } from './lib/pwa.js';
 import { initTheme } from './lib/theme.js';
+import { initNavDrawer } from './lib/navDrawer.js';
 
 const sidebar = document.getElementById('sidebar');
 const view = document.getElementById('app-view');
@@ -26,6 +27,9 @@ skipLink.addEventListener('click', (e) => {
 document.body.insertBefore(skipLink, document.body.firstChild);
 function syncSkipLink() { skipLink.textContent = t('ui.skipToContent'); }
 syncSkipLink();
+
+// ≤ 860 px: la barra lateral es un cajón tras un botón «Menú» (ver js/lib/navDrawer.js)
+initNavDrawer(sidebar, view);
 
 const moduleLoaders = {
   '': () => import('./modules/home.js'),
