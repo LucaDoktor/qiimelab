@@ -260,6 +260,75 @@ try {
   })()`);
   check('volver a "sólido" poda el <pattern> huérfano y repinta con el color plano', backToSolid.defsLeft === 0, JSON.stringify(backToSolid));
 
+  // ---- Paso 6 (cont.): el degradado/patrón rasteriza de verdad en PNG,
+  // no solo en pantalla — reabre "degradado" y exporta a PNG real ----
+  const pngCheck = await c.ev(`(async () => {
+    const sel = document.querySelector('.ce-pal-row-head select');
+    sel.value = 'gradient';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const mod = await import('/js/lib/figureExport.js');
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    const res = await mod.exportFigure(svg, { formats: ['png'], scheme: 'light', background: 'white', dpi: 150 });
+    // decodificar el PNG resultante y comprobar que el píxel donde está la
+    // 1ª barra NO es el blanco de fondo (si el degradado se hubiera perdido
+    // en la rasterización, toda la figura saldría en blanco o con el fill
+    // por defecto — un test de "no está vacío", no de comparación exacta)
+    const blob = new Blob([res.png], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = url; });
+    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+    const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0);
+    // muestrear una franja de píxeles en el tercio superior (donde caen las
+    // barras apiladas) y comprobar que hay algo distinto de blanco puro
+    const data = ctx.getImageData(0, Math.round(img.height * 0.3), img.width, 1).data;
+    let nonWhite = 0;
+    for (let i = 0; i < data.length; i += 4) { if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++; }
+    URL.revokeObjectURL(url);
+    return { width: img.width, height: img.height, nonWhitePixels: nonWhite };
+  })()`);
+  check('el degradado sobrevive a la rasterización PNG real (píxeles no blancos donde deberían estar las barras)',
+    pngCheck.width > 0 && pngCheck.nonWhitePixels > 10, JSON.stringify(pngCheck));
+
+  // ---- Pasos 5-6 (generalización): el borde independiente también
+  // funciona en las otras 2 gráficas piloto del prompt (cajas de
+  // groupBoxplot.js, regiones de venn.js) — no solo en las barras ----
+  console.log('\n-- generalización a las 3 gráficas piloto (barras/cajas/Venn) --');
+  await c.ev(`location.hash = '#/alfa'`);
+  await sleep(1500);
+  await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); b.click(); })()`);
+  await sleep(500);
+  const boxplotSetup = await c.ev(`(() => {
+    const box = document.querySelector('[data-ce-series-fill="s0"][data-ce-series-stroke="s0"]');
+    return box ? { present: true, tag: box.tagName.toLowerCase(), hasBorderDetails: !!document.querySelector('.ce-pal-border') } : { present: false };
+  })()`);
+  check('groupBoxplot.js: la caja ya lleva data-ce-series-fill Y -stroke en el MISMO nodo, y el panel ofrece el control de borde',
+    boxplotSetup.present && boxplotSetup.tag === 'rect' && boxplotSetup.hasBorderDetails, JSON.stringify(boxplotSetup));
+  if (boxplotSetup.present) {
+    await c.ev(`(() => { document.querySelector('.ce-pal-border').open = true; })()`);
+    const boxplotBorder = await c.ev(`(() => {
+      const colorInp = document.querySelector('.ce-pal-border input[type=color]');
+      colorInp.value = '#00ff00';
+      colorInp.dispatchEvent(new Event('change', { bubbles: true }));
+      const box = document.querySelector('[data-ce-series-fill="s0"][data-ce-series-stroke="s0"]');
+      return { stroke: getComputedStyle(box).stroke, fill: getComputedStyle(box).fill };
+    })()`);
+    check('groupBoxplot.js: el borde independiente cambia el stroke de la caja SIN tocar su fill (relleno translúcido propio)',
+      boxplotBorder.stroke === 'rgb(0, 255, 0)' && boxplotBorder.fill !== 'rgb(0, 255, 0)', JSON.stringify(boxplotBorder));
+  }
+
+  await c.ev(`(async () => { const m = await import('/js/lib/exampleData.js'); await m.loadRealCounts(); })()`);
+  await sleep(1000);
+  await c.ev(`location.hash = '#/venn'`);
+  await sleep(1500);
+  await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); if (b) b.click(); })()`);
+  await sleep(500);
+  const vennSetup = await c.ev(`(() => {
+    const region = document.querySelector('[data-ce-series-fill^="s"][data-ce-series-stroke]');
+    return region ? { present: true, tag: region.tagName.toLowerCase(), hasBorderDetails: !!document.querySelector('.ce-pal-border') } : { present: false };
+  })()`);
+  check('venn.js (vía js/lib/setDiagram.js): las regiones también llevan -fill/-stroke y ofrecen el control de borde (generaliza a <path>, no solo <rect>)',
+    vennSetup.present && vennSetup.hasBorderDetails, JSON.stringify(vennSetup));
+
   check('sin errores de consola', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
