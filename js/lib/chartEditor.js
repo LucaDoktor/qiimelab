@@ -59,7 +59,10 @@ import {
   PALETTES, paletteColorAt, palettesForType, resolvePaletteColors,
   paletteColorsOf, evenlySampleColors, PALETTE_TYPE_FAMILY,
 } from './palettes.js';
-import { normalizeSeriesStyle } from './paletteStyle.js';
+import {
+  normalizeSeriesStyle, representativeColor, defaultGradient, defaultPattern,
+  gradientLineFromAngle, patternTileSpec, defId, defIdPrefix,
+} from './paletteStyle.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 import { openPanel as openModalPanel } from './modal.js';
 import { escapeHtml } from './dom.js';
@@ -158,6 +161,14 @@ const I18N = {
         paletteAppDefault: 'por defecto', paletteApply: 'Aplicar', paletteChoose: 'Elegir paleta',
         paletteWarnSafeN: (n, max) => n + ' series superan las ' + max + ' que esta paleta distingue con seguridad bajo daltonismo',
         paletteOpacity: 'Opacidad',
+        paletteFillSolid: 'Sólido', paletteFillGradient: 'Degradado', paletteFillPattern: 'Patrón',
+        paletteGradientAngle: 'Ángulo', paletteGradientStop: (n) => 'Parada ' + n,
+        paletteAddStop: '+ añadir parada intermedia', paletteRemoveStop: 'Quitar parada intermedia',
+        palettePatternKind: 'Tipo', palettePatternDiagonal: 'Rayado diagonal', palettePatternDots: 'Puntos', palettePatternGrid: 'Cuadrícula',
+        palettePatternFg: 'Trazo', palettePatternBg: 'Fondo', palettePatternTransparentBg: 'Fondo transparente',
+        palettePatternSpacing: 'Separación', palettePatternStroke: 'Grosor', palettePatternAngle: 'Ángulo del rayado',
+        paletteBorderTitle: 'Borde independiente', paletteBorderColor: 'Color del borde',
+        paletteBorderWidth: 'Grosor', paletteBorderRadius: 'Radio de esquina',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
@@ -178,6 +189,14 @@ const I18N = {
         paletteAppDefault: 'default', paletteApply: 'Apply', paletteChoose: 'Choose palette',
         paletteWarnSafeN: (n, max) => n + ' series exceed the ' + max + ' this palette safely tells apart under colour blindness',
         paletteOpacity: 'Opacity',
+        paletteFillSolid: 'Solid', paletteFillGradient: 'Gradient', paletteFillPattern: 'Pattern',
+        paletteGradientAngle: 'Angle', paletteGradientStop: (n) => 'Stop ' + n,
+        paletteAddStop: '+ add middle stop', paletteRemoveStop: 'Remove middle stop',
+        palettePatternKind: 'Type', palettePatternDiagonal: 'Diagonal hatch', palettePatternDots: 'Dots', palettePatternGrid: 'Grid',
+        palettePatternFg: 'Stroke', palettePatternBg: 'Background', palettePatternTransparentBg: 'Transparent background',
+        palettePatternSpacing: 'Spacing', palettePatternStroke: 'Thickness', palettePatternAngle: 'Hatch angle',
+        paletteBorderTitle: 'Independent border', paletteBorderColor: 'Border colour',
+        paletteBorderWidth: 'Thickness', paletteBorderRadius: 'Corner radius',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
@@ -259,14 +278,28 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-pal-preview { margin-top:6px; }
 .ce-pal-swatchbar { display:flex; }
 .ce-pal-swatchbar span { display:block; width:8px; height:14px; }
-.ce-pal-rows { display:flex; flex-direction:column; gap:6px; max-width:420px; }
-.ce-pal-row { display:flex; align-items:center; gap:8px; }
-.ce-pal-row label { flex:0 0 auto; min-width:90px; font-size:12px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ce-pal-row input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
-.ce-pal-row input[type=text] { flex:0 0 84px; }
-.ce-pal-row input[type=range] { flex:0 1 80px; min-width:50px; }
+.ce-pal-rows { display:flex; flex-direction:column; gap:10px; max-width:480px; }
+.ce-pal-row-block { border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; }
+.ce-pal-row-head { display:flex; align-items:center; gap:8px; }
+.ce-pal-row-head label { flex:1 1 auto; font-size:12px; font-weight:500; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ce-pal-row-head select { flex:none; width:auto; min-width:96px; }
+.ce-pal-row-fill, .ce-pal-opacity { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ce-pal-solid, .ce-pal-gradient, .ce-pal-pattern { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ce-pal-row-fill input[type=color], .ce-pal-border-body input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
+.ce-pal-row-fill input[type=text] { flex:0 0 84px; }
+.ce-pal-row-fill input[type=number], .ce-pal-border-body input[type=number] { width:56px; flex:none; }
+.ce-pal-row-fill select { flex:none; width:auto; min-width:110px; }
+.ce-pal-grad-stops { display:flex; gap:4px; }
+.ce-pal-pat-num { display:flex; align-items:center; gap:4px; }
+.ce-pal-pat-num label { font-size:11px; color:var(--ink-muted); }
+.ce-pal-opacity input[type=range] { flex:0 1 80px; min-width:50px; }
 .ce-pal-op-val { flex:none; width:34px; font-size:11px; color:var(--ink-muted); font-family:var(--font-mono); }
-.ce-pal-warn { font-size:11px; color:#8a5a00; flex:1 1 100%; margin:0; }
+.ce-pal-border { font-size:12px; }
+.ce-pal-border summary { cursor:pointer; color:var(--ink-2); font-size:11.5px; }
+.ce-pal-border-body { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; }
+.ce-pal-border-row { display:flex; align-items:center; gap:6px; }
+.ce-pal-border-row label { font-size:11px; color:var(--ink-muted); }
+.ce-pal-warn { font-size:11px; color:#8a5a00; margin:0; }
 .ce-geometry { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-geometry h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
 .ce-geom-rows { display:flex; flex-direction:column; gap:8px; max-width:420px; }
@@ -394,7 +427,8 @@ export function attachChartEditor(cfg) {
    *  dentro de la paleta activa — solo como referencia para el aviso de choque. */
   function effectiveSeriesColor(id, idx) {
     const style = seriesStyle(id);
-    if (style.color) return style.color;
+    const rep = representativeColor(style, null);
+    if (rep) return rep;
     const node = svg.querySelector('[data-ce-series-fill="' + id + '"], [data-ce-series-stroke="' + id + '"]');
     if (node) {
       const prop = node.hasAttribute('data-ce-series-fill') ? 'fill' : 'stroke';
@@ -403,24 +437,155 @@ export function attachChartEditor(cfg) {
     return paletteColorAt(paletteType, idx, { max: paletteMax }) || '#888888';
   }
 
-  /** Aplica (o revierte, si no hay override) el color y la opacidad de cada
-   *  serie configurada a los nodos ya dibujados — sin repintar el gráfico.
+  // ---- <defs> de degradado/patrón (Pasos 3-4 de qiimelab-prompt-editor-
+  // fase-2-paletas-relleno-series.md) — un <linearGradient>/<pattern> por
+  // serie en modo degradado/patrón, dentro de un único <defs> al principio
+  // del propio <svg>. Los ids llevan el `key` del módulo (namespaced, ver
+  // js/lib/paletteStyle.js defId): js/modules/informe.js clona el <svg> de
+  // varios módulos dentro de UNA sola página, así que dos gráficos con una
+  // serie 's0' cada uno no pueden compartir id sin que uno "robe" el
+  // degradado del otro.
+  function svgDefs() {
+    let defs = svg.querySelector(':scope > defs');
+    if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
+    return defs;
+  }
+
+  /** Borra los <defs> de degradado/patrón de ESTE módulo que ya no
+   *  corresponden a ninguna serie en ese modo — si no, cambiar de
+   *  degradado a sólido y volver a degradado dejaría <defs> huérfanos
+   *  acumulándose en el <svg> (inofensivo para el pintado, pero ensucia el
+   *  SVG exportado). Se llama al principio de applyPalette(), antes de
+   *  recrear los que sí hacen falta. */
+  function pruneOwnDefs(neededIds) {
+    const defs = svg.querySelector(':scope > defs');
+    if (!defs) return;
+    const prefixes = [defIdPrefix('gradient', key), defIdPrefix('pattern', key)];
+    [...defs.children].forEach((el) => {
+      const id = el.getAttribute('id') || '';
+      if (prefixes.some((p) => id.startsWith(p)) && !neededIds.has(id)) defs.removeChild(el);
+    });
+  }
+
+  function ensureGradientDef(seriesId, gradCfg) {
+    const id = defId('gradient', key, seriesId);
+    const defs = svgDefs();
+    let grad = defs.querySelector('#' + CSS.escape(id));
+    if (!grad) { grad = document.createElementNS(NS, 'linearGradient'); grad.setAttribute('id', id); defs.appendChild(grad); }
+    const line = gradientLineFromAngle(gradCfg.angle || 0);
+    grad.setAttribute('x1', line.x1); grad.setAttribute('y1', line.y1);
+    grad.setAttribute('x2', line.x2); grad.setAttribute('y2', line.y2);
+    while (grad.firstChild) grad.removeChild(grad.firstChild);
+    (gradCfg.stops || []).forEach((st) => {
+      const stop = document.createElementNS(NS, 'stop');
+      stop.setAttribute('offset', (st.pos != null ? st.pos : 0) + '%');
+      stop.setAttribute('stop-color', isValidHex(st.color) ? st.color : '#000000');
+      grad.appendChild(stop);
+    });
+    return id;
+  }
+
+  function ensurePatternDef(seriesId, patCfg) {
+    const id = defId('pattern', key, seriesId);
+    const defs = svgDefs();
+    let pat = defs.querySelector('#' + CSS.escape(id));
+    if (!pat) {
+      pat = document.createElementNS(NS, 'pattern');
+      pat.setAttribute('id', id);
+      pat.setAttribute('patternUnits', 'userSpaceOnUse');
+      defs.appendChild(pat);
+    }
+    const spec = patternTileSpec(patCfg);
+    pat.setAttribute('width', spec.width);
+    pat.setAttribute('height', spec.height);
+    if (spec.patternTransform) pat.setAttribute('patternTransform', spec.patternTransform);
+    else pat.removeAttribute('patternTransform');
+    while (pat.firstChild) pat.removeChild(pat.firstChild);
+    if (patCfg.bg && patCfg.bg !== 'transparent') {
+      const bgRect = document.createElementNS(NS, 'rect');
+      bgRect.setAttribute('width', spec.width); bgRect.setAttribute('height', spec.height);
+      bgRect.setAttribute('fill', patCfg.bg);
+      pat.appendChild(bgRect);
+    }
+    const fg = isValidHex(patCfg.fg) ? patCfg.fg : '#000000';
+    (spec.shapes || []).forEach((sh) => {
+      let el;
+      if (sh.type === 'circle') {
+        el = document.createElementNS(NS, 'circle');
+        el.setAttribute('cx', sh.cx); el.setAttribute('cy', sh.cy); el.setAttribute('r', sh.r);
+        el.setAttribute('fill', fg);
+      } else {
+        el = document.createElementNS(NS, 'line');
+        el.setAttribute('x1', sh.x1); el.setAttribute('y1', sh.y1); el.setAttribute('x2', sh.x2); el.setAttribute('y2', sh.y2);
+        el.setAttribute('stroke', fg);
+        el.setAttribute('stroke-width', sh.strokeWidth || 1);
+      }
+      pat.appendChild(el);
+    });
+    return id;
+  }
+
+  /** Aplica (o revierte, si no hay override) el relleno de cada serie
+   *  configurada a los nodos ya dibujados — sin repintar el gráfico.
    *  Opacidad 1 (o ausente) se trata como "sin personalizar": se limpia el
    *  estilo inline y el nodo vuelve a su fill-opacity/stroke-opacity propios
    *  (p. ej. las cajas de groupBoxplot.js dibujan fill-opacity:0.16 fijo —
-   *  tocar el color de una serie no debe borrar eso de regalo). */
+   *  tocar el color de una serie no debe borrar eso de regalo). Tipo de
+   *  relleno (Pasos 3-4): sólido (color plano, como antes) | degradado
+   *  (<linearGradient>) | patrón (<pattern>) — mutuamente excluyentes, no
+   *  3 casillas independientes (ver prompt Paso 3). */
   function applyPalette() {
+    // 1ª pasada: qué <defs> hacen falta en total — hay que conocer el
+    // conjunto completo ANTES de podar huérfanos, o se borraría uno que
+    // otra serie acaba de pedir en esta misma llamada.
+    const neededDefIds = new Set();
     paletteSeries.forEach((s) => {
       const style = seriesStyle(s.id);
-      const fillValue = style.color || '';
+      const fillType = style.fillType || 'solid';
+      if (fillType === 'gradient' && style.gradient) neededDefIds.add(defId('gradient', key, s.id));
+      else if (fillType === 'pattern' && style.pattern) neededDefIds.add(defId('pattern', key, s.id));
+    });
+    pruneOwnDefs(neededDefIds);
+    paletteSeries.forEach((s) => {
+      const style = seriesStyle(s.id);
+      const fillType = style.fillType || 'solid';
       const opacityStr = style.opacity != null ? String(style.opacity) : '';
-      svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => {
-        n.style.fill = fillValue;
-        n.style.fillOpacity = opacityStr;
-      });
-      svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => {
-        n.style.stroke = fillValue;
-        n.style.strokeOpacity = opacityStr;
+      let fillValue = style.color || '';
+      if (fillType === 'gradient' && style.gradient) fillValue = 'url(#' + ensureGradientDef(s.id, style.gradient) + ')';
+      else if (fillType === 'pattern' && style.pattern) fillValue = 'url(#' + ensurePatternDef(s.id, style.pattern) + ')';
+
+      const fillNodes = svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]');
+      const strokeNodes = svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]');
+      fillNodes.forEach((n) => { n.style.fill = fillValue; n.style.fillOpacity = opacityStr; });
+
+      // borde: si hay `border` explícito, manda sobre el color de relleno —
+      // y se aplica también a nodos que SOLO llevan -fill (p. ej. las
+      // barras de taxaBarplot.js, que hoy no tienen ningún stroke propio)
+      // porque si no el control no tendría ningún efecto visible ahí. Sin
+      // `border` explícito: mismo comportamiento que antes de la Fase 2 —
+      // el color de serie sigue marcando fill Y stroke, pero SOLO en los
+      // nodos que el propio módulo ya etiquetó con -stroke (nunca se
+      // inventa un borde en una barra que nunca lo tuvo).
+      if (style.border) {
+        const strokeTargets = strokeNodes.length ? strokeNodes : fillNodes;
+        const bc = style.border.color || style.color || '';
+        const bw = style.border.width != null ? String(style.border.width) : '';
+        strokeTargets.forEach((n) => { n.style.stroke = bc; n.style.strokeWidth = bw; n.style.strokeOpacity = opacityStr; });
+      } else {
+        strokeNodes.forEach((n) => { n.style.stroke = fillValue; n.style.strokeWidth = ''; n.style.strokeOpacity = opacityStr; });
+      }
+
+      // radio de esquina: solo tiene sentido en <rect>; nunca se inventa
+      // en un <path>/<circle> (Venn, puntos de dispersión…).
+      fillNodes.forEach((n) => {
+        if (!n.tagName || n.tagName.toLowerCase() !== 'rect') return;
+        if (style.border && style.border.radius != null) {
+          n.style.setProperty('rx', style.border.radius + 'px');
+          n.style.setProperty('ry', style.border.radius + 'px');
+        } else {
+          n.style.removeProperty('rx');
+          n.style.removeProperty('ry');
+        }
       });
     });
   }
@@ -443,6 +608,35 @@ export function attachChartEditor(cfg) {
   /** opacity=1 (o null) se trata como valor neutro/no personalizado — ver
    *  el porqué en el comentario de applyPalette(). */
   function setSeriesOpacity(id, opacity) { setSeriesStyleField(id, 'opacity', opacity, opacity == null || opacity === 1); }
+  /** 'solid' es el valor neutro/por defecto — no deja rastro en
+   *  localStorage (mismo criterio que el resto de campos ralos). Al entrar
+   *  por primera vez en degradado/patrón, siembra una configuración por
+   *  defecto a partir del color actual de la serie (Paso 6: cambiar el
+   *  SELECTOR de tipo de relleno debe verse en el gráfico al momento, no
+   *  quedarse en blanco hasta que el usuario también elija paradas/trazo). */
+  function setSeriesFillType(id, type) {
+    const pal = (store.__palette = store.__palette || {});
+    const cur = normalizeSeriesStyle(pal[id]);
+    if (!type || type === 'solid') {
+      delete cur.fillType;
+    } else {
+      cur.fillType = type;
+      const idx = paletteSeries.findIndex((p) => p.id === id);
+      const baseColor = cur.color || effectiveSeriesColor(id, idx);
+      if (type === 'gradient' && !cur.gradient) cur.gradient = defaultGradient(baseColor);
+      if (type === 'pattern' && !cur.pattern) cur.pattern = defaultPattern(baseColor);
+    }
+    if (Object.keys(cur).length) pal[id] = cur; else delete pal[id];
+    if (!Object.keys(pal).length) delete store.__palette;
+    applyPalette();
+    writeStore();
+  }
+  function setSeriesGradient(id, gradCfg) { setSeriesStyleField(id, 'gradient', gradCfg, false); }
+  function setSeriesPattern(id, patCfg) { setSeriesStyleField(id, 'pattern', patCfg, false); }
+  function setSeriesBorder(id, borderCfg) {
+    const hasAny = borderCfg && (borderCfg.color || borderCfg.width != null || borderCfg.radius != null);
+    setSeriesStyleField(id, 'border', hasAny ? borderCfg : null, !hasAny);
+  }
 
   /** Aplica una paleta del catálogo (js/lib/palettes.js) a TODAS las series
    *  configuradas de golpe. `id` es 'app:<paletteType>' (la paleta por
@@ -462,6 +656,14 @@ export function attachChartEditor(cfg) {
       if (!picks[i]) return;
       const cur = normalizeSeriesStyle(pal[s.id]);
       cur.color = picks[i];
+      // aplicar una paleta completa siempre da relleno sólido — un
+      // degradado/patrón que se quedara con las paradas del color anterior
+      // quedaría descolocado frente al nuevo color base (Paso 6: "sólido/
+      // degradado/patrón/borde" es la jerarquía de tipo de relleno, no algo
+      // que sobreviva sin más a cambiar la paleta entera). La opacidad y el
+      // borde SÍ se conservan: son preferencias de estilo independientes
+      // del tono elegido.
+      delete cur.fillType; delete cur.gradient; delete cur.pattern;
       pal[s.id] = cur;
     });
     store.__paletteChoice = id;
@@ -699,6 +901,326 @@ export function attachChartEditor(cfg) {
     return wrap;
   }
 
+  /** Aviso de choque de color (ya existía antes de la Fase 2) — extraído a
+   *  su propia función porque ahora lo consumen tanto el control sólido
+   *  como el degradado (sobre su parada dominante, ver Paso 6: "sigue
+   *  aplicando sobre el color representativo, no se desactiva para las
+   *  series con relleno no sólido"). */
+  function clashWarningFor(i, hex, currentHexes) {
+    const warn = document.createElement('p');
+    warn.className = 'ce-pal-warn';
+    const paint = (h) => {
+      warn.textContent = '';
+      if (!h) return;
+      if (!isValidHex(h)) { warn.textContent = '⚠ ' + T.paletteInvalidHex; return; }
+      const others = paletteSeries.map((s2, j) => (j === i ? null : currentHexes[j])).filter(Boolean);
+      const res = checkAgainstPalette(h, others);
+      if (res.verdict === 'PASS') return;
+      if (res.reason === 'clash') {
+        const otherLabel = (paletteSeries.find((s2, j) => currentHexes[j] === res.other) || {}).label || res.other;
+        warn.textContent = '⚠ ' + T.paletteWarnClash(otherLabel);
+      } else if (res.reason === 'contrast') {
+        warn.textContent = '⚠ ' + T.paletteWarnContrast;
+      }
+    };
+    paint(hex);
+    return { el: warn, paint };
+  }
+
+  /** Sólido (Paso 1, ya existía): color + campo hex, con vista previa en
+   *  vivo sin persistir hasta confirmar — igual que siempre, solo que
+   *  ahora vive en su propia función porque el resto de la fila cambia
+   *  según el tipo de relleno elegido. */
+  function renderSolidControls(s, i, currentHexes, paintWarn) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-pal-solid';
+    const hex = currentHexes[i];
+
+    const colorId = 'ce-pal-c-' + (++cePanelUid);
+    const inpColor = document.createElement('input');
+    inpColor.type = 'color'; inpColor.id = colorId;
+    inpColor.value = isValidHex(hex) ? hex : '#888888';
+    inpColor.setAttribute('aria-label', s.label + ' — ' + T.color);
+
+    const inpHex = document.createElement('input');
+    inpHex.type = 'text'; inpHex.className = 'ce-hexfield';
+    inpHex.value = (isValidHex(hex) ? hex : '').toUpperCase();
+    inpHex.setAttribute('aria-label', s.label + ' — ' + T.hex);
+    inpHex.placeholder = '#RRGGBB';
+
+    const preview = (h) => {
+      const ok = h === '' || isValidHex(h);
+      svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => { n.style.fill = ok ? h : ''; });
+      if (!seriesStyle(s.id).border) {
+        svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => { n.style.stroke = ok ? h : ''; });
+      }
+    };
+    const commit = (h) => { if (!h || isValidHex(h)) setSeriesColor(s.id, h || null); };
+
+    inpColor.addEventListener('input', () => { inpHex.value = inpColor.value.toUpperCase(); paintWarn(inpColor.value); preview(inpColor.value); });
+    inpColor.addEventListener('change', () => commit(inpColor.value));
+    inpHex.addEventListener('input', () => {
+      let v = inpHex.value.trim();
+      if (v && v[0] !== '#') v = '#' + v;
+      paintWarn(v);
+      if (isValidHex(v)) { inpColor.value = v; preview(v); }
+    });
+    inpHex.addEventListener('change', () => {
+      let v = inpHex.value.trim();
+      if (v && v[0] !== '#') v = '#' + v;
+      if (!v || isValidHex(v)) commit(v);
+    });
+    inpHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') inpHex.blur(); });
+
+    wrap.appendChild(inpColor);
+    wrap.appendChild(inpHex);
+    return wrap;
+  }
+
+  /** Degradado (Paso 3): 2-3 paradas + ángulo. Se siembra con
+   *  defaultGradient() la primera vez (ver setSeriesFillType) así que aquí
+   *  `style.gradient` ya existe siempre que fillType === 'gradient'. */
+  function renderGradientControls(s, style, paintWarn) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-pal-gradient';
+    const grad = style.gradient || defaultGradient(style.color);
+    const stops = grad.stops && grad.stops.length >= 2 ? grad.stops : defaultGradient(style.color).stops;
+    const commitGrad = (next) => setSeriesGradient(s.id, next);
+
+    const stopsRow = document.createElement('div');
+    stopsRow.className = 'ce-pal-grad-stops';
+    stops.forEach((st, idx) => {
+      const cInp = document.createElement('input');
+      cInp.type = 'color'; cInp.value = isValidHex(st.color) ? st.color : '#888888';
+      cInp.setAttribute('aria-label', s.label + ' — ' + T.paletteGradientStop(idx + 1));
+      cInp.addEventListener('input', () => { if (idx === 0) paintWarn(cInp.value); });
+      cInp.addEventListener('change', () => {
+        commitGrad({ ...grad, stops: stops.map((s2, j) => (j === idx ? { ...s2, color: cInp.value } : s2)) });
+      });
+      stopsRow.appendChild(cInp);
+    });
+    wrap.appendChild(stopsRow);
+
+    if (stops.length < 3) {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button'; addBtn.className = 'ql-btn ql-btn-ghost'; addBtn.textContent = T.paletteAddStop;
+      addBtn.addEventListener('click', () => {
+        commitGrad({ ...grad, stops: [stops[0], { color: stops[0].color, pos: 50 }, stops[stops.length - 1]] });
+      });
+      wrap.appendChild(addBtn);
+    } else {
+      const rmBtn = document.createElement('button');
+      rmBtn.type = 'button'; rmBtn.className = 'ql-btn ql-btn-ghost'; rmBtn.textContent = T.paletteRemoveStop;
+      rmBtn.addEventListener('click', () => commitGrad({ ...grad, stops: [stops[0], stops[stops.length - 1]] }));
+      wrap.appendChild(rmBtn);
+    }
+
+    const angleId = 'ce-pal-ga-' + (++cePanelUid);
+    const angleLab = document.createElement('label');
+    angleLab.setAttribute('for', angleId); angleLab.textContent = T.paletteGradientAngle;
+    const angleInp = document.createElement('input');
+    angleInp.type = 'number'; angleInp.id = angleId; angleInp.min = '0'; angleInp.max = '359'; angleInp.step = '15';
+    angleInp.value = String(grad.angle != null ? grad.angle : 90);
+    angleInp.addEventListener('change', () => {
+      let v = parseFloat(angleInp.value);
+      if (!Number.isFinite(v)) v = 0;
+      commitGrad({ ...grad, angle: ((v % 360) + 360) % 360 });
+    });
+    wrap.appendChild(angleLab);
+    wrap.appendChild(angleInp);
+
+    return wrap;
+  }
+
+  /** Patrón (Paso 4): rayado diagonal / puntos / cuadrícula, trazo + fondo
+   *  (transparente por defecto — un rayado de verdad, no un bloque de
+   *  color con líneas encima) + separación + grosor, y ángulo solo para el
+   *  rayado diagonal (los otros 2 tipos no lo usan). */
+  function renderPatternControls(s, style) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-pal-pattern';
+    const pat = style.pattern || defaultPattern(style.color);
+    const commitPat = (next) => setSeriesPattern(s.id, next);
+
+    const kindId = 'ce-pal-pk-' + (++cePanelUid);
+    const kindLab = document.createElement('label'); kindLab.setAttribute('for', kindId); kindLab.textContent = T.palettePatternKind;
+    const kindSel = document.createElement('select'); kindSel.id = kindId;
+    [['diagonal', T.palettePatternDiagonal], ['dots', T.palettePatternDots], ['grid', T.palettePatternGrid]].forEach(([val, label]) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = label;
+      if (val === (pat.kind || 'diagonal')) o.selected = true;
+      kindSel.appendChild(o);
+    });
+    kindSel.addEventListener('change', () => commitPat({ ...pat, kind: kindSel.value }));
+    wrap.appendChild(kindLab); wrap.appendChild(kindSel);
+
+    const fgInp = document.createElement('input');
+    fgInp.type = 'color'; fgInp.value = isValidHex(pat.fg) ? pat.fg : '#888888';
+    fgInp.setAttribute('aria-label', s.label + ' — ' + T.palettePatternFg);
+    fgInp.addEventListener('change', () => commitPat({ ...pat, fg: fgInp.value }));
+    wrap.appendChild(fgInp);
+
+    const bgTransparent = !pat.bg || pat.bg === 'transparent';
+    const bgInp = document.createElement('input');
+    bgInp.type = 'color'; bgInp.value = isValidHex(pat.bg) ? pat.bg : '#ffffff';
+    bgInp.disabled = bgTransparent;
+    bgInp.setAttribute('aria-label', s.label + ' — ' + T.palettePatternBg);
+    bgInp.addEventListener('change', () => { if (!bgChk.checked) commitPat({ ...pat, bg: bgInp.value }); });
+    const bgChkId = 'ce-pal-pbgc-' + (++cePanelUid);
+    const bgChk = document.createElement('input');
+    bgChk.type = 'checkbox'; bgChk.id = bgChkId; bgChk.checked = bgTransparent;
+    bgChk.addEventListener('change', () => {
+      bgInp.disabled = bgChk.checked;
+      commitPat({ ...pat, bg: bgChk.checked ? 'transparent' : bgInp.value });
+    });
+    const bgLab = document.createElement('label'); bgLab.setAttribute('for', bgChkId); bgLab.textContent = T.palettePatternTransparentBg;
+    wrap.appendChild(bgInp); wrap.appendChild(bgChk); wrap.appendChild(bgLab);
+
+    const numField = (labelText, val, min, max, step, onChange) => {
+      const span = document.createElement('span'); span.className = 'ce-pal-pat-num';
+      const id = 'ce-pal-pn-' + (++cePanelUid);
+      const lab = document.createElement('label'); lab.setAttribute('for', id); lab.textContent = labelText;
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.id = id; inp.min = String(min); inp.max = String(max); inp.step = String(step); inp.value = String(val);
+      inp.addEventListener('change', () => {
+        const v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) return;
+        onChange(Math.max(min, Math.min(max, v)));
+      });
+      span.appendChild(lab); span.appendChild(inp);
+      return span;
+    };
+    wrap.appendChild(numField(T.palettePatternSpacing, pat.spacing != null ? pat.spacing : 8, 3, 30, 1, (v) => commitPat({ ...pat, spacing: v })));
+    wrap.appendChild(numField(T.palettePatternStroke, pat.strokeWidth != null ? pat.strokeWidth : 2, 0.5, 8, 0.5, (v) => commitPat({ ...pat, strokeWidth: v })));
+    if ((pat.kind || 'diagonal') === 'diagonal') {
+      wrap.appendChild(numField(T.palettePatternAngle, pat.angle != null ? pat.angle : 45, 0, 179, 5, (v) => commitPat({ ...pat, angle: v })));
+    }
+
+    return wrap;
+  }
+
+  /** Opacidad (Paso 2) — un control por serie, independiente del tipo de
+   *  relleno (se aplica igual a sólido/degradado/patrón). */
+  function renderOpacityControl(s) {
+    const row = document.createElement('div');
+    row.className = 'ce-pal-opacity';
+    const curOpacity = seriesStyle(s.id).opacity;
+    const opId = 'ce-pal-op-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', opId); lab.textContent = T.paletteOpacity;
+    const opRange = document.createElement('input');
+    opRange.type = 'range'; opRange.id = opId; opRange.min = '0'; opRange.max = '100'; opRange.step = '5';
+    opRange.value = String(Math.round((curOpacity != null ? curOpacity : 1) * 100));
+    opRange.setAttribute('aria-label', s.label + ' — ' + T.paletteOpacity);
+    const opNum = document.createElement('span');
+    opNum.className = 'ce-pal-op-val';
+    opNum.textContent = opRange.value + '%';
+    opRange.addEventListener('input', () => { opNum.textContent = opRange.value + '%'; });
+    opRange.addEventListener('change', () => setSeriesOpacity(s.id, Math.max(0, Math.min(100, +opRange.value)) / 100));
+    row.appendChild(lab); row.appendChild(opRange); row.appendChild(opNum);
+    return row;
+  }
+
+  /** Borde independiente (Paso 5) — color/grosor/radio de esquina aparte
+   *  del relleno. `<details>` nativo (sin estado propio que mantener): se
+   *  abre solo si ya hay un borde configurado. El radio de esquina solo
+   *  tiene efecto visual en series dibujadas con <rect> (applyPalette lo
+   *  ignora en <path>/<circle> — Venn, puntos de dispersión…) pero el
+   *  control se muestra igual: no sabemos de antemano la forma de cada
+   *  serie sin auditar cada módulo, y dejarlo sin efecto ahí es inofensivo. */
+  function renderBorderControls(s, style) {
+    const det = document.createElement('details');
+    det.className = 'ce-pal-border';
+    if (style.border) det.open = true;
+    const sum = document.createElement('summary'); sum.textContent = T.paletteBorderTitle;
+    det.appendChild(sum);
+
+    const b = style.border || {};
+    const commitBorder = (next) => setSeriesBorder(s.id, next);
+    const body = document.createElement('div');
+    body.className = 'ce-pal-border-body';
+
+    const field = (labelText, inputEl) => {
+      const row = document.createElement('div'); row.className = 'ce-pal-border-row';
+      const lab = document.createElement('label'); lab.setAttribute('for', inputEl.id); lab.textContent = labelText;
+      row.appendChild(lab); row.appendChild(inputEl);
+      return row;
+    };
+
+    const cInp = document.createElement('input');
+    cInp.type = 'color'; cInp.id = 'ce-pal-bc-' + (++cePanelUid);
+    cInp.value = isValidHex(b.color) ? b.color : (isValidHex(style.color) ? style.color : '#000000');
+    cInp.addEventListener('change', () => commitBorder({ ...b, color: cInp.value }));
+    body.appendChild(field(T.paletteBorderColor, cInp));
+
+    const wInp = document.createElement('input');
+    wInp.type = 'number'; wInp.id = 'ce-pal-bw-' + (++cePanelUid);
+    wInp.min = '0'; wInp.max = '10'; wInp.step = '0.5'; wInp.value = String(b.width != null ? b.width : 1.5);
+    wInp.addEventListener('change', () => {
+      const v = parseFloat(wInp.value);
+      if (Number.isFinite(v)) commitBorder({ ...b, width: Math.max(0, Math.min(10, v)) });
+    });
+    body.appendChild(field(T.paletteBorderWidth, wInp));
+
+    const rInp = document.createElement('input');
+    rInp.type = 'number'; rInp.id = 'ce-pal-br-' + (++cePanelUid);
+    rInp.min = '0'; rInp.max = '30'; rInp.step = '1'; rInp.value = String(b.radius != null ? b.radius : 0);
+    rInp.addEventListener('change', () => {
+      const v = parseFloat(rInp.value);
+      if (Number.isFinite(v)) commitBorder({ ...b, radius: Math.max(0, Math.min(30, v)) });
+    });
+    body.appendChild(field(T.paletteBorderRadius, rInp));
+
+    det.appendChild(body);
+    return det;
+  }
+
+  /** Una fila completa por serie: cabecera (etiqueta + selector de tipo de
+   *  relleno) + controles según el tipo elegido + opacidad + borde +
+   *  aviso de choque de color (Paso 6: jerarquía sólido/degradado/patrón
+   *  mutuamente excluyente, opacidad y borde independientes de esa
+   *  elección). */
+  function renderSeriesRow(s, i, currentHexes) {
+    const style = seriesStyle(s.id);
+    const fillType = style.fillType || 'solid';
+
+    const block = document.createElement('div');
+    block.className = 'ce-pal-row-block';
+
+    const head = document.createElement('div');
+    head.className = 'ce-pal-row-head';
+    const lab = document.createElement('label');
+    lab.textContent = s.label;
+    const ftId = 'ce-pal-ft-' + (++cePanelUid);
+    lab.setAttribute('for', ftId);
+    head.appendChild(lab);
+
+    const ftSel = document.createElement('select');
+    ftSel.id = ftId;
+    [['solid', T.paletteFillSolid], ['gradient', T.paletteFillGradient], ['pattern', T.paletteFillPattern]].forEach(([val, label]) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = label;
+      if (val === fillType) o.selected = true;
+      ftSel.appendChild(o);
+    });
+    ftSel.addEventListener('change', () => setSeriesFillType(s.id, ftSel.value));
+    head.appendChild(ftSel);
+    block.appendChild(head);
+
+    const { el: warnEl, paint: paintWarn } = clashWarningFor(i, currentHexes[i], currentHexes);
+
+    const fillWrap = document.createElement('div');
+    fillWrap.className = 'ce-pal-row-fill';
+    if (fillType === 'gradient') fillWrap.appendChild(renderGradientControls(s, style, paintWarn));
+    else if (fillType === 'pattern') fillWrap.appendChild(renderPatternControls(s, style));
+    else fillWrap.appendChild(renderSolidControls(s, i, currentHexes, paintWarn));
+    block.appendChild(fillWrap);
+
+    block.appendChild(renderOpacityControl(s));
+    block.appendChild(renderBorderControls(s, style));
+    block.appendChild(warnEl);
+
+    return block;
+  }
+
   function renderPaletteSection() {
     const wrap = document.createElement('div');
     wrap.className = 'ce-palette';
@@ -709,93 +1231,7 @@ export function attachChartEditor(cfg) {
     const rows = document.createElement('div');
     rows.className = 'ce-pal-rows';
     const currentHexes = paletteSeries.map((s, i) => effectiveSeriesColor(s.id, i));
-    paletteSeries.forEach((s, i) => {
-      const row = document.createElement('div');
-      row.className = 'ce-pal-row';
-      const lab = document.createElement('label');
-      lab.textContent = s.label;
-      row.appendChild(lab);
-
-      const hex = currentHexes[i];
-      const colorId = 'ce-pal-c-' + (++cePanelUid);
-      const inpColor = document.createElement('input');
-      inpColor.type = 'color'; inpColor.id = colorId;
-      inpColor.value = isValidHex(hex) ? hex : '#888888';
-      lab.setAttribute('for', colorId);
-
-      const inpHex = document.createElement('input');
-      inpHex.type = 'text'; inpHex.className = 'ce-hexfield';
-      inpHex.value = (isValidHex(hex) ? hex : '').toUpperCase();
-      inpHex.setAttribute('aria-label', s.label + ' — ' + T.hex);
-      inpHex.placeholder = '#RRGGBB';
-
-      const warn = document.createElement('p');
-      warn.className = 'ce-pal-warn';
-
-      const showWarning = (h) => {
-        warn.textContent = '';
-        if (!h) return;
-        if (!isValidHex(h)) { warn.textContent = '⚠ ' + T.paletteInvalidHex; return; }
-        const others = paletteSeries.map((s2, j) => (j === i ? null : currentHexes[j])).filter(Boolean);
-        const res = checkAgainstPalette(h, others);
-        if (res.verdict === 'PASS') return;
-        if (res.reason === 'clash') {
-          const otherLabel = (paletteSeries.find((s2, j) => currentHexes[j] === res.other) || {}).label || res.other;
-          warn.textContent = '⚠ ' + T.paletteWarnClash(otherLabel);
-        } else if (res.reason === 'contrast') {
-          warn.textContent = '⚠ ' + T.paletteWarnContrast;
-        }
-      };
-      showWarning(hex);
-
-      // vista previa en vivo (solo DOM, sin persistir ni repintar la barra —
-      // así no se pierde el foco del campo de texto mientras se teclea);
-      // se persiste solo al confirmar (blur / Intro / soltar el selector nativo).
-      const preview = (h) => {
-        const ok = h === '' || isValidHex(h);
-        svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => { n.style.fill = ok ? h : ''; });
-        svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => { n.style.stroke = ok ? h : ''; });
-      };
-      const commit = (h) => { if (!h || isValidHex(h)) setSeriesColor(s.id, h || null); };
-
-      inpColor.addEventListener('input', () => { inpHex.value = inpColor.value.toUpperCase(); showWarning(inpColor.value); preview(inpColor.value); });
-      inpColor.addEventListener('change', () => commit(inpColor.value));
-      inpHex.addEventListener('input', () => {
-        let v = inpHex.value.trim();
-        if (v && v[0] !== '#') v = '#' + v;
-        showWarning(v);
-        if (isValidHex(v)) { inpColor.value = v; preview(v); }
-      });
-      inpHex.addEventListener('change', () => {
-        let v = inpHex.value.trim();
-        if (v && v[0] !== '#') v = '#' + v;
-        if (!v || isValidHex(v)) commit(v);
-      });
-      inpHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') inpHex.blur(); });
-
-      // opacidad (Paso 2 de qiimelab-prompt-editor-fase-2-paletas-relleno-
-      // series.md) — mismo nodo que el color (data-ce-series-fill/-stroke),
-      // un atributo CSS más (fill-opacity/stroke-opacity). 1 = sin
-      // personalizar (ver applyPalette/setSeriesOpacity).
-      const curOpacity = seriesStyle(s.id).opacity;
-      const opId = 'ce-pal-op-' + (++cePanelUid);
-      const opRange = document.createElement('input');
-      opRange.type = 'range'; opRange.id = opId; opRange.min = '0'; opRange.max = '100'; opRange.step = '5';
-      opRange.value = String(Math.round((curOpacity != null ? curOpacity : 1) * 100));
-      opRange.setAttribute('aria-label', s.label + ' — ' + T.paletteOpacity);
-      const opNum = document.createElement('span');
-      opNum.className = 'ce-pal-op-val';
-      opNum.textContent = opRange.value + '%';
-      opRange.addEventListener('input', () => { opNum.textContent = opRange.value + '%'; });
-      opRange.addEventListener('change', () => setSeriesOpacity(s.id, Math.max(0, Math.min(100, +opRange.value)) / 100));
-
-      row.appendChild(inpColor);
-      row.appendChild(inpHex);
-      row.appendChild(opRange);
-      row.appendChild(opNum);
-      rows.appendChild(row);
-      rows.appendChild(warn);
-    });
+    paletteSeries.forEach((s, i) => { rows.appendChild(renderSeriesRow(s, i, currentHexes)); });
     wrap.appendChild(rows);
     return wrap;
   }

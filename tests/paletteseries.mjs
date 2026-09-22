@@ -90,14 +90,14 @@ try {
   await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); b.click(); })()`);
   await sleep(500);
   const opacitySetup = await c.ev(`(() => {
-    const range = document.querySelector('.ce-pal-row input[type=range]');
+    const range = document.querySelector('.ce-pal-opacity input[type=range]');
     return range ? { present: true, defaultVal: range.value } : { present: false };
   })()`);
   check('el control de opacidad existe y arranca en 100% (sin personalizar tras recargar la ruta)',
     opacitySetup.present && opacitySetup.defaultVal === '100', JSON.stringify(opacitySetup));
 
   const opacityApplied = await c.ev(`(() => {
-    const range = document.querySelector('.ce-pal-row input[type=range]');
+    const range = document.querySelector('.ce-pal-opacity input[type=range]');
     range.value = '40';
     range.dispatchEvent(new Event('change', { bubbles: true }));
     const n = document.querySelector('[data-ce-series-fill="s0"]');
@@ -115,7 +115,7 @@ try {
 
   // volver a 100% debe limpiar la clave (valor neutro = "sin personalizar", ver setSeriesOpacity)
   const opacityBackTo100 = await c.ev(`(() => {
-    const range = document.querySelector('.ce-pal-row input[type=range]');
+    const range = document.querySelector('.ce-pal-opacity input[type=range]');
     range.value = '100';
     range.dispatchEvent(new Event('change', { bubbles: true }));
     const raw = localStorage.getItem('smart-175.chartStyle.taxaBarplot');
@@ -124,6 +124,141 @@ try {
   })()`);
   check('volver a 100% quita la clave opacity de localStorage y limpia fill-opacity inline',
     !opacityBackTo100.hasOpacityKey, JSON.stringify(opacityBackTo100));
+
+  // ---- Paso 3: degradado ----
+  console.log('\n-- Paso 3: degradado --');
+  const gradSetup = await c.ev(`(() => {
+    const sel = document.querySelector('.ce-pal-row-head select');
+    sel.value = 'gradient';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const n = document.querySelector('[data-ce-series-fill="s0"]');
+    const fill = getComputedStyle(n).fill;
+    const stops = document.querySelectorAll('.ce-pal-gradient input[type=color]');
+    return { fill, nStops: stops.length, isUrl: /^url\\(/.test(fill) };
+  })()`);
+  check('elegir "degradado" pinta la serie con url(#fig-grad-…) y siembra 2 paradas a partir del color actual',
+    gradSetup.isUrl && gradSetup.nStops === 2, JSON.stringify(gradSetup));
+
+  const defsCheck = await c.ev(`(() => {
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    const grad = svg.querySelector('defs linearGradient');
+    return grad ? { present: true, id: grad.id, nStops: grad.querySelectorAll('stop').length, firstStop: grad.querySelector('stop').getAttribute('stop-color') } : { present: false };
+  })()`);
+  check('el <defs><linearGradient> existe en el propio <svg>, namespaced por módulo (fig-grad-taxaBarplot-s0), con 2 <stop>',
+    defsCheck.present && /^fig-grad-taxaBarplot-s0$/.test(defsCheck.id) && defsCheck.nStops === 2, JSON.stringify(defsCheck));
+  check('la 1ª parada del degradado es el color Okabe-Ito ya elegido (#e69f00)', defsCheck.firstStop === '#e69f00', JSON.stringify(defsCheck));
+
+  const addStop = await c.ev(`(() => {
+    const btn = [...document.querySelectorAll('.ce-pal-gradient button')].find((b) => /parada|stop/i.test(b.textContent));
+    btn.click();
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    return { nStops: svg.querySelector('defs linearGradient').querySelectorAll('stop').length };
+  })()`);
+  check('"+ añadir parada intermedia" sube el degradado a 3 paradas', addStop.nStops === 3, JSON.stringify(addStop));
+
+  // ---- Paso 4: patrón ----
+  console.log('\n-- Paso 4: patrón --');
+  const patSetup = await c.ev(`(() => {
+    const sel = document.querySelector('.ce-pal-row-head select');
+    sel.value = 'pattern';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const n = document.querySelector('[data-ce-series-fill="s0"]');
+    const fill = getComputedStyle(n).fill;
+    const svg = n.closest('svg');
+    const pat = svg.querySelector('defs pattern');
+    return {
+      isUrl: /^url\\(/.test(fill),
+      gradGone: !svg.querySelector('defs linearGradient'), // el degradado huérfano se poda (pruneOwnDefs)
+      patPresent: !!pat,
+      patId: pat && pat.id,
+      transform: pat && pat.getAttribute('patternTransform'),
+      shapeTag: pat && pat.children[0] && pat.children[0].tagName.toLowerCase(),
+    };
+  })()`);
+  check('elegir "patrón" pinta con url(#fig-pat-…), crea el <pattern> con rotate() (rayado diagonal por defecto) y poda el <linearGradient> huérfano',
+    patSetup.isUrl && patSetup.gradGone && patSetup.patPresent && /^fig-pat-taxaBarplot-s0$/.test(patSetup.patId) &&
+    /^rotate\(/.test(patSetup.transform) && patSetup.shapeTag === 'line', JSON.stringify(patSetup));
+
+  const patKindSwitch = await c.ev(`(() => {
+    const kindSel = document.querySelector('.ce-pal-pattern select');
+    kindSel.value = 'dots';
+    kindSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    const pat = svg.querySelector('defs pattern');
+    return { shapeTag: pat.children[0] && pat.children[0].tagName.toLowerCase(), nPatterns: svg.querySelectorAll('defs pattern').length };
+  })()`);
+  check('cambiar a "puntos" redibuja el tile con un <circle> (mismo id de <pattern>, no uno nuevo)',
+    patKindSwitch.shapeTag === 'circle' && patKindSwitch.nPatterns === 1, JSON.stringify(patKindSwitch));
+
+  // ---- Paso 5: borde independiente ----
+  console.log('\n-- Paso 5: borde --');
+  // OJO: cada commit (evento 'change') dispara un re-render COMPLETO del
+  // panel (setSeriesBorder -> writeStore -> renderToolbar), igual que ya
+  // pasaba con el campo de color sólido de antes de la Fase 2 — así que
+  // cada campo hay que volver a buscarlo en el DOM DESPUÉS del anterior,
+  // como haría un usuario real clicando uno a uno (nunca reusar una
+  // referencia capturada antes del commit previo: quedaría "huérfana" y
+  // su próximo evento usaría un snapshot de estado ya desfasado).
+  await c.ev(`(() => { document.querySelector('.ce-pal-border').open = true; })()`);
+  await c.ev(`(() => {
+    const colorInp = document.querySelector('.ce-pal-border input[type=color]');
+    colorInp.value = '#123456';
+    colorInp.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await c.ev(`(() => {
+    document.querySelector('.ce-pal-border').open = true;
+    const w = document.querySelectorAll('.ce-pal-border input[type=number]')[0];
+    w.value = '3'; w.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  const borderSetup = await c.ev(`(() => {
+    document.querySelector('.ce-pal-border').open = true;
+    const r = document.querySelectorAll('.ce-pal-border input[type=number]')[1];
+    r.value = '8'; r.dispatchEvent(new Event('change', { bubbles: true }));
+    const n = document.querySelector('[data-ce-series-fill="s0"]');
+    const cs = getComputedStyle(n);
+    return { stroke: cs.stroke, strokeWidth: cs.strokeWidth, rx: cs.rx, tag: n.tagName.toLowerCase() };
+  })()`);
+  check('el borde independiente pinta stroke/stroke-width en el propio nodo de relleno (las barras no tenían stroke propio)',
+    borderSetup.stroke === 'rgb(18, 52, 86)' && borderSetup.strokeWidth === '3px', JSON.stringify(borderSetup));
+  check('el radio de esquina se aplica vía CSS rx (revertible sin tocar el atributo original del módulo)',
+    borderSetup.tag === 'rect' && borderSetup.rx === '8px', JSON.stringify(borderSetup));
+
+  const borderPersisted = await c.ev(`(() => {
+    const raw = localStorage.getItem('smart-175.chartStyle.taxaBarplot');
+    const s = JSON.parse(raw);
+    return s.__palette.s0.border;
+  })()`);
+  check('el borde persiste como campo independiente del relleno (fillType sigue siendo "pattern")',
+    borderPersisted && borderPersisted.color === '#123456' && borderPersisted.width === 3 && borderPersisted.radius === 8,
+    JSON.stringify(borderPersisted));
+
+  // ---- Paso 6: exportación sobrevive con degradado/patrón/borde ----
+  console.log('\n-- Paso 6: exportación --');
+  const exportCheck = await c.ev(`(async () => {
+    const mod = await import('/js/lib/figureExport.js');
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    const out = mod.serializeForExport(svg, { scheme: 'light', background: 'white' });
+    return {
+      hasPattern: /<pattern[^>]*id="fig-pat-taxaBarplot-s0"/.test(out.svg),
+      fillRefsLocal: /fill="url\\(#fig-pat-taxaBarplot-s0\\)"/.test(out.svg),
+      noVarLeft: !/var\\(--/.test(out.svg),
+      noColorMixLeft: !/color\\(srgb/.test(out.svg),
+    };
+  })()`);
+  check('el SVG exportado conserva el <pattern> y la referencia fill="url(#…)" en forma local (sin URL absoluta)',
+    exportCheck.hasPattern && exportCheck.fillRefsLocal, JSON.stringify(exportCheck));
+  check('el SVG exportado no deja var()/color(srgb) residual (mismo gate que figureexport.mjs)',
+    exportCheck.noVarLeft && exportCheck.noColorMixLeft, JSON.stringify(exportCheck));
+
+  // volver a sólido: el <pattern> huérfano debe desaparecer del <svg> en vivo
+  const backToSolid = await c.ev(`(() => {
+    const sel = document.querySelector('.ce-pal-row-head select');
+    sel.value = 'solid';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const svg = document.querySelector('[data-ce-series-fill="s0"]').closest('svg');
+    return { defsLeft: svg.querySelectorAll('defs pattern, defs linearGradient').length, fill: getComputedStyle(document.querySelector('[data-ce-series-fill="s0"]')).fill };
+  })()`);
+  check('volver a "sólido" poda el <pattern> huérfano y repinta con el color plano', backToSolid.defsLeft === 0, JSON.stringify(backToSolid));
 
   check('sin errores de consola', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {

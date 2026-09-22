@@ -133,6 +133,15 @@ export function patternTileSpec(pattern) {
   };
 }
 
+/** Prefijo común de todos los ids `<linearGradient>`/`<pattern>` de un
+ *  módulo — para poder barrer y borrar los "huérfanos" (series que ya no
+ *  están en modo degradado/patrón) al repintar, sin tocar los de otro
+ *  gráfico que comparta el mismo <svg> (informe.js clona varios). */
+export function defIdPrefix(kind, key) {
+  const prefix = kind === 'pattern' ? 'fig-pat-' : 'fig-grad-';
+  return prefix + String(key).replace(/[^a-zA-Z0-9_-]/g, '_') + '-';
+}
+
 /** Id determinista para el `<linearGradient>`/`<pattern>` de una serie —
  *  namespaced por `key` de attachChartEditor (clave del módulo) porque
  *  `js/modules/informe.js` clona el `<svg>` de varios módulos dentro de UNA
@@ -140,6 +149,5 @@ export function patternTileSpec(pattern) {
  *  cada uno chocarían de id y uno de los dos "robaría" el degradado del
  *  otro. */
 export function defId(kind, key, seriesId) {
-  const prefix = kind === 'pattern' ? 'fig-pat-' : 'fig-grad-';
-  return prefix + String(key).replace(/[^a-zA-Z0-9_-]/g, '_') + '-' + String(seriesId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return defIdPrefix(kind, key) + String(seriesId).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
