@@ -187,6 +187,57 @@ try {
     corrExport.noColorMix && corrExport.noVar && corrExport.hasGradient, JSON.stringify(corrExport));
 
   check('sin errores de consola tras correlograma', c.problems.length === 0, c.problems.join('; '));
+
+  // ================= differentialAbundance.js (divergente, invert-por-defecto) =================
+  console.log('\n-- differentialAbundance.js (heatmap log2FC) --');
+  await c.ev(`(async () => { const m = await import('/js/lib/exampleData.js'); await m.loadRealDifferentialAbundance(); })()`);
+  await sleep(1500);
+  await c.ev(`location.hash = '#/diferencial'`);
+  await sleep(1800);
+  await c.ev(`(() => { const b = [...document.querySelectorAll('.ql-tab')].find((x) => /mapa de calor|heatmap/i.test(x.textContent)); if (b) b.click(); })()`);
+  await sleep(500);
+  await openEditor();
+
+  const daSetup = await c.ev(`(() => {
+    const sec = document.querySelector('.ce-colorscale');
+    const cells = [...document.querySelectorAll('rect[data-tt]')];
+    return {
+      present: !!sec,
+      nCells: cells.length,
+      anyColorMix: cells.some((r) => (r.getAttribute('fill') || '').includes('color-mix')),
+      sampleFill: cells[0] && cells[0].getAttribute('fill'),
+    };
+  })()`);
+  check('la sección "Escala de color" aparece para el heatmap de log2FC y las celdas ya no usan color-mix()',
+    daSetup.present && daSetup.nCells > 0 && !daSetup.anyColorMix, JSON.stringify(daSetup));
+
+  const daPaletteChange = await c.ev(`(() => {
+    const before = document.querySelector('rect[data-tt]').getAttribute('fill');
+    const sel = [...document.querySelectorAll('.ce-cs-row select')][0];
+    sel.value = 'coolwarm';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const after = document.querySelector('rect[data-tt]').getAttribute('fill');
+    return { before, after };
+  })()`);
+  check('cambiar la paleta de la escala recolorea el heatmap de diferencial', daPaletteChange.before !== daPaletteChange.after, JSON.stringify(daPaletteChange));
+
+  const daExport = await c.ev(`(async () => {
+    const mod = await import('/js/lib/figureExport.js');
+    const svg = document.querySelector('rect[data-tt]').closest('svg');
+    const out = mod.serializeForExport(svg, { scheme: 'light', background: 'white' });
+    return { noColorMix: !/color-mix\\(/.test(out.svg), noVar: !/var\\(--/.test(out.svg), hasGradient: /<linearGradient[^>]*id="ql-cscale-differentialAbundance-heatmap"/.test(out.svg) };
+  })()`);
+  check('el SVG exportado de diferencial no tiene color-mix()/var() residual y conserva el <linearGradient> de leyenda',
+    daExport.noColorMix && daExport.noVar && daExport.hasGradient, JSON.stringify(daExport));
+
+  // el bug de "cierra el panel en cada repintado" (arreglado con
+  // cfg.startEditing) — comprobación directa: el editor DEBE seguir
+  // abierto tras el cambio de paleta de arriba, que disparó un paint()
+  // completo vía onColorScaleChange.
+  const stillEditing = await c.ev(`(() => !!document.querySelector('.ce-colorscale'))()`);
+  check('el panel "Personalizar" sigue abierto tras un cambio de escala (no se cierra solo — bug arreglado en Fase 3)', stillEditing);
+
+  check('sin errores de consola tras diferencial', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;
