@@ -59,6 +59,7 @@ import {
   PALETTES, paletteColorAt, palettesForType, resolvePaletteColors,
   paletteColorsOf, evenlySampleColors, PALETTE_TYPE_FAMILY,
 } from './palettes.js';
+import { normalizeSeriesStyle } from './paletteStyle.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 import { openPanel as openModalPanel } from './modal.js';
 import { escapeHtml } from './dom.js';
@@ -156,6 +157,7 @@ const I18N = {
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
         paletteAppDefault: 'por defecto', paletteApply: 'Aplicar', paletteChoose: 'Elegir paleta',
         paletteWarnSafeN: (n, max) => n + ' series superan las ' + max + ' que esta paleta distingue con seguridad bajo daltonismo',
+        paletteOpacity: 'Opacidad',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
@@ -175,6 +177,7 @@ const I18N = {
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
         paletteAppDefault: 'default', paletteApply: 'Apply', paletteChoose: 'Choose palette',
         paletteWarnSafeN: (n, max) => n + ' series exceed the ' + max + ' this palette safely tells apart under colour blindness',
+        paletteOpacity: 'Opacity',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
@@ -261,6 +264,8 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-pal-row label { flex:0 0 auto; min-width:90px; font-size:12px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ce-pal-row input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
 .ce-pal-row input[type=text] { flex:0 0 84px; }
+.ce-pal-row input[type=range] { flex:0 1 80px; min-width:50px; }
+.ce-pal-op-val { flex:none; width:34px; font-size:11px; color:var(--ink-muted); font-family:var(--font-mono); }
 .ce-pal-warn { font-size:11px; color:#8a5a00; flex:1 1 100%; margin:0; }
 .ce-geometry { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-geometry h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
@@ -370,10 +375,17 @@ export function attachChartEditor(cfg) {
   function st(id) { return (store[id] = store[id] || {}); }
 
   // ---- paleta de series de datos ----
-  // store.__palette = { seriesId: '#hex' } — solo las series con un color
-  // elegido a mano o por un botón de paleta; las demás siguen el var() por
-  // defecto del propio módulo (fill/stroke tal como lo dibujó).
+  // store.__palette = { seriesId: styleValue } — solo las series con algo
+  // personalizado a mano o por un botón de paleta; las demás siguen el
+  // var() por defecto del propio módulo (fill/stroke tal como lo dibujó).
+  // `styleValue` es un string hex (formato de antes de la Fase 2 —
+  // qiimelab-prompt-editor-fase-2-paletas-relleno-series.md Paso 2) o un
+  // objeto RALO `{ color?, opacity?, fillType?, gradient?, pattern?,
+  // border? }` — normalizeSeriesStyle() de js/lib/paletteStyle.js migra el
+  // primer formato al segundo al leer, así que TODO el código de aquí en
+  // adelante solo trata con el objeto, nunca con el string suelto.
   function paletteOverrides() { return store.__palette || {}; }
+  function seriesStyle(id) { return normalizeSeriesStyle(paletteOverrides()[id]); }
 
   /** Color efectivo actual de una serie: el override si existe, si no el
    *  que ya está dibujado en el propio SVG (resuelto por el navegador, así
@@ -381,8 +393,8 @@ export function attachChartEditor(cfg) {
    *  degradado continuo, que no taggean nodos) el que le tocaría por orden
    *  dentro de la paleta activa — solo como referencia para el aviso de choque. */
   function effectiveSeriesColor(id, idx) {
-    const ov = paletteOverrides()[id];
-    if (ov) return ov;
+    const style = seriesStyle(id);
+    if (style.color) return style.color;
     const node = svg.querySelector('[data-ce-series-fill="' + id + '"], [data-ce-series-stroke="' + id + '"]');
     if (node) {
       const prop = node.hasAttribute('data-ce-series-fill') ? 'fill' : 'stroke';
@@ -391,24 +403,46 @@ export function attachChartEditor(cfg) {
     return paletteColorAt(paletteType, idx, { max: paletteMax }) || '#888888';
   }
 
-  /** Aplica (o revierte, si no hay override) el color de cada serie
-   *  configurada a los nodos ya dibujados — sin repintar el gráfico. */
+  /** Aplica (o revierte, si no hay override) el color y la opacidad de cada
+   *  serie configurada a los nodos ya dibujados — sin repintar el gráfico.
+   *  Opacidad 1 (o ausente) se trata como "sin personalizar": se limpia el
+   *  estilo inline y el nodo vuelve a su fill-opacity/stroke-opacity propios
+   *  (p. ej. las cajas de groupBoxplot.js dibujan fill-opacity:0.16 fijo —
+   *  tocar el color de una serie no debe borrar eso de regalo). */
   function applyPalette() {
-    const ov = paletteOverrides();
     paletteSeries.forEach((s) => {
-      const hex = ov[s.id] || '';
-      svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => { n.style.fill = hex; });
-      svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => { n.style.stroke = hex; });
+      const style = seriesStyle(s.id);
+      const fillValue = style.color || '';
+      const opacityStr = style.opacity != null ? String(style.opacity) : '';
+      svg.querySelectorAll('[data-ce-series-fill="' + s.id + '"]').forEach((n) => {
+        n.style.fill = fillValue;
+        n.style.fillOpacity = opacityStr;
+      });
+      svg.querySelectorAll('[data-ce-series-stroke="' + s.id + '"]').forEach((n) => {
+        n.style.stroke = fillValue;
+        n.style.strokeOpacity = opacityStr;
+      });
     });
   }
 
-  function setSeriesColor(id, hex) {
+  /** Escribe un campo del estilo ralo de una serie (color/opacity/…) y
+   *  limpia la entrada entera si se queda vacía — mismo criterio que ya
+   *  regía cuando `store.__palette[id]` era un string suelto: "sin
+   *  personalizar" no debe dejar basura en localStorage. */
+  function setSeriesStyleField(id, field, value, isNoop) {
     const pal = (store.__palette = store.__palette || {});
-    if (hex) pal[id] = hex; else delete pal[id];
+    const cur = normalizeSeriesStyle(pal[id]);
+    if (value != null && !isNoop) cur[field] = value; else delete cur[field];
+    if (Object.keys(cur).length) pal[id] = cur; else delete pal[id];
     if (!Object.keys(pal).length) delete store.__palette;
     applyPalette();
     writeStore();
   }
+
+  function setSeriesColor(id, hex) { setSeriesStyleField(id, 'color', hex, !hex); }
+  /** opacity=1 (o null) se trata como valor neutro/no personalizado — ver
+   *  el porqué en el comentario de applyPalette(). */
+  function setSeriesOpacity(id, opacity) { setSeriesStyleField(id, 'opacity', opacity, opacity == null || opacity === 1); }
 
   /** Aplica una paleta del catálogo (js/lib/palettes.js) a TODAS las series
    *  configuradas de golpe. `id` es 'app:<paletteType>' (la paleta por
@@ -424,7 +458,12 @@ export function attachChartEditor(cfg) {
     const picks = isQualitative
       ? paletteSeries.map((s, i) => resolvePaletteColors(id, i, { max: paletteMax }))
       : evenlySampleColors(paletteColorsOf(id, { max: paletteMax }), paletteSeries.length);
-    paletteSeries.forEach((s, i) => { if (picks[i]) pal[s.id] = picks[i]; });
+    paletteSeries.forEach((s, i) => {
+      if (!picks[i]) return;
+      const cur = normalizeSeriesStyle(pal[s.id]);
+      cur.color = picks[i];
+      pal[s.id] = cur;
+    });
     store.__paletteChoice = id;
     applyPalette();
     writeStore();
@@ -734,8 +773,26 @@ export function attachChartEditor(cfg) {
       });
       inpHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') inpHex.blur(); });
 
+      // opacidad (Paso 2 de qiimelab-prompt-editor-fase-2-paletas-relleno-
+      // series.md) — mismo nodo que el color (data-ce-series-fill/-stroke),
+      // un atributo CSS más (fill-opacity/stroke-opacity). 1 = sin
+      // personalizar (ver applyPalette/setSeriesOpacity).
+      const curOpacity = seriesStyle(s.id).opacity;
+      const opId = 'ce-pal-op-' + (++cePanelUid);
+      const opRange = document.createElement('input');
+      opRange.type = 'range'; opRange.id = opId; opRange.min = '0'; opRange.max = '100'; opRange.step = '5';
+      opRange.value = String(Math.round((curOpacity != null ? curOpacity : 1) * 100));
+      opRange.setAttribute('aria-label', s.label + ' — ' + T.paletteOpacity);
+      const opNum = document.createElement('span');
+      opNum.className = 'ce-pal-op-val';
+      opNum.textContent = opRange.value + '%';
+      opRange.addEventListener('input', () => { opNum.textContent = opRange.value + '%'; });
+      opRange.addEventListener('change', () => setSeriesOpacity(s.id, Math.max(0, Math.min(100, +opRange.value)) / 100));
+
       row.appendChild(inpColor);
       row.appendChild(inpHex);
+      row.appendChild(opRange);
+      row.appendChild(opNum);
       rows.appendChild(row);
       rows.appendChild(warn);
     });

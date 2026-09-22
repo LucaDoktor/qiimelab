@@ -25,6 +25,7 @@ const SUITE = [
   { name: 'primertemplate', file: 'primertemplate.mjs', kind: 'estático' },
   { name: 'primercoverage', file: 'primercoverage.mjs', kind: 'estático' },
   { name: 'palettes', file: 'palettes.mjs', kind: 'estático' },
+  { name: 'palettestyle', file: 'palettestyle.mjs', kind: 'estático' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
   { name: 'phylonni', file: 'phylonni.mjs', kind: 'estático' },

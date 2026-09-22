@@ -75,14 +75,55 @@ try {
     const s = raw ? JSON.parse(raw) : null;
     return s ? { choice: s.__paletteChoice, s0: s.__palette && s.__palette.s0 } : null;
   })()`);
-  check('la elección de paleta y el color por serie persisten en localStorage',
-    persistedChoice && persistedChoice.choice === 'okabe-ito' && persistedChoice.s0 === '#e69f00', JSON.stringify(persistedChoice));
+  check('la elección de paleta y el color por serie (formato objeto, Paso 2) persisten en localStorage',
+    persistedChoice && persistedChoice.choice === 'okabe-ito' && persistedChoice.s0 && persistedChoice.s0.color === '#e69f00',
+    JSON.stringify(persistedChoice));
 
   // recarga: el color aplicado debe seguir ahí
   await c.ev(`location.hash = '#/alfa'`); await sleep(500);
   await c.ev(`location.hash = '#/barplots'`); await sleep(1500);
   const afterReload = await c.ev(`(() => { const n = document.querySelector('[data-ce-series-fill="s0"]'); return n ? getComputedStyle(n).fill : null; })()`);
   check('el color aplicado sobrevive a salir y volver a la ruta', afterReload === 'rgb(230, 159, 0)', afterReload);
+
+  // ---- Paso 2: opacidad de serie ----
+  console.log('\n-- Paso 2: opacidad --');
+  await c.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => /Personalizar|Customise/.test(x.textContent)); b.click(); })()`);
+  await sleep(500);
+  const opacitySetup = await c.ev(`(() => {
+    const range = document.querySelector('.ce-pal-row input[type=range]');
+    return range ? { present: true, defaultVal: range.value } : { present: false };
+  })()`);
+  check('el control de opacidad existe y arranca en 100% (sin personalizar tras recargar la ruta)',
+    opacitySetup.present && opacitySetup.defaultVal === '100', JSON.stringify(opacitySetup));
+
+  const opacityApplied = await c.ev(`(() => {
+    const range = document.querySelector('.ce-pal-row input[type=range]');
+    range.value = '40';
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+    const n = document.querySelector('[data-ce-series-fill="s0"]');
+    return { fillOpacity: getComputedStyle(n).fillOpacity };
+  })()`);
+  check('mover el slider a 40% escribe fill-opacity:0.4 en el nodo', opacityApplied.fillOpacity === '0.4', JSON.stringify(opacityApplied));
+
+  const opacityPersisted = await c.ev(`(() => {
+    const raw = localStorage.getItem('smart-175.chartStyle.taxaBarplot');
+    const s = JSON.parse(raw);
+    return { opacity: s.__palette.s0.opacity, colorStillThere: s.__palette.s0.color };
+  })()`);
+  check('la opacidad persiste SIN pisar el color ya elegido (mismo objeto de estilo)',
+    opacityPersisted.opacity === 0.4 && opacityPersisted.colorStillThere === '#e69f00', JSON.stringify(opacityPersisted));
+
+  // volver a 100% debe limpiar la clave (valor neutro = "sin personalizar", ver setSeriesOpacity)
+  const opacityBackTo100 = await c.ev(`(() => {
+    const range = document.querySelector('.ce-pal-row input[type=range]');
+    range.value = '100';
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+    const raw = localStorage.getItem('smart-175.chartStyle.taxaBarplot');
+    const s = JSON.parse(raw);
+    return { hasOpacityKey: 'opacity' in (s.__palette.s0 || {}), fillOpacity: getComputedStyle(document.querySelector('[data-ce-series-fill="s0"]')).fillOpacity };
+  })()`);
+  check('volver a 100% quita la clave opacity de localStorage y limpia fill-opacity inline',
+    !opacityBackTo100.hasOpacityKey, JSON.stringify(opacityBackTo100));
 
   check('sin errores de consola', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {
