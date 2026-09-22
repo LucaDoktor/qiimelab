@@ -18,7 +18,8 @@ import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
 import { matchSampleId } from '../lib/sampleMatch.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
-import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
+import { attachChartEditor, getPaletteOverrides, getStatsOptions } from '../lib/chartEditor.js';
+import { formatPStyled } from '../lib/pFormat.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
@@ -100,12 +101,27 @@ function corrFill(r) {
   const pole = r >= 0 ? (ov.pos || 'var(--corr-pos)') : (ov.neg || 'var(--corr-neg)');
   return 'color-mix(in srgb, ' + pole + ' ' + pct + '%, ' + zero + ')';
 }
+// Estrellas para las TABLAS (matriz y red) — siempre estrellas, sin badge
+// "ns" para las no significativas (silencioso como antes). Delega en el
+// formateador de p de la Fase 0 en vez de reimplementar el mapeo de
+// umbrales (Paso 5 de qiimelab-prompt-editor-fase-1-anotaciones-
+// estadisticas.md): cambia el carácter '∗'→'*' y el umbral '<'→'≤'
+// respecto a la versión anterior, alineado con el resto de la app
+// (mannWhitneyU/dunnTest en groupBoxplot.js ya usan este mismo umbral).
 function stars(p) {
-  if (!isFinite(p)) return '';
-  if (p < 0.001) return '∗∗∗';
-  if (p < 0.01) return '∗∗';
-  if (p < 0.05) return '∗';
-  return '';
+  return formatPStyled(p, { style: 'gp', mode: 'stars', ns: '' });
+}
+
+/** Anotación de la CELDA del mapa de calor — configurable (asteriscos/p
+ *  exacto/ambos, estilo Prism, umbral) vía las opciones persistidas del
+ *  editor de gráficos (mismo store.__stats que groupBoxplot.js). Por
+ *  defecto (nada personalizado) el umbral 0.05 ya oculta las no
+ *  significativas, así que "ns" nunca se ve salvo que el usuario suba el
+ *  umbral a propósito. */
+function cellAnnotation(p, statsOpts) {
+  const threshold = statsOpts.threshold != null ? statsOpts.threshold : 0.05;
+  if (!isFinite(p) || p > threshold) return '';
+  return formatPStyled(p, { style: statsOpts.style || 'gp', mode: statsOpts.mode || 'stars' });
 }
 
 export function render(container) {
@@ -394,6 +410,7 @@ export function render(container) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const isBubbles = matrixStyle === 'bubbles';
+    const statsOpts = getStatsOptions('correlogram');
     for (let i = 0; i < k; i++) {
       for (let j = 0; j < k; j++) {
         const res = results[i][j];
@@ -418,17 +435,20 @@ export function render(container) {
             }));
           }
         } else if (!isDiag) {
-          const st = stars(res.p);
-          if (st) {
+          const ann = cellAnnotation(res.p, statsOpts);
+          if (ann) {
             const strong = isFinite(res.r) && Math.abs(res.r) > 0.5;
+            // modo p-exacto/ambos da un texto más largo que solo estrellas —
+            // encoge la fuente en vez de desbordar la celda.
+            const fontSize = Math.min(13, cell * 0.42, ann.length > 4 ? (cell * 2.6) / ann.length : Infinity);
             const tx = svgEl('text', {
               x: x + (cell - 1.5) / 2, y: y + (cell - 1.5) / 2 + 3.5,
               class: 'ql-cell-value',
-              'text-anchor': 'middle', 'font-size': Math.min(13, cell * 0.42),
+              'text-anchor': 'middle', 'font-size': fontSize,
               'font-weight': 700, fill: strong ? 'var(--surface)' : 'var(--ink)',
               'font-family': 'var(--font-mono)', 'pointer-events': 'none',
             });
-            tx.textContent = st;
+            tx.textContent = ann;
             svg.appendChild(tx);
           }
         }
@@ -535,6 +555,12 @@ export function render(container) {
       // usan data-ce-series-fill (2 colores planos) y el editor las recolorea
       // en vivo sin repintar — igual que el resto de gráficos categóricos.
       ...(isBubbles ? {} : { onChange: () => paint() }),
+      // solo el mapa de calor anota la celda con p (las burbujas usan
+      // tamaño+color, sin texto) — mismo panel de significación que
+      // groupBoxplot.js, sin el selector de método de ajuste (aquí cada
+      // celda es una correlación independiente, no hay comparación múltiple
+      // que corregir).
+      ...(isBubbles ? {} : { statsControls: { hasMultiGroup: false }, onStatsChange: () => paint() }),
       onReset: () => paint(),
     });
 
