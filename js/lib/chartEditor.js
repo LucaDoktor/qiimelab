@@ -120,6 +120,19 @@ export function getStatsOptions(key) {
   return readChartStyleRaw(key).__stats || {};
 }
 
+/** Las opciones de escala de color continua (paleta, dominio, punto medio,
+ *  pasos discretos, invertir) persistidas para `key` — Paso 3 de
+ *  qiimelab-prompt-editor-fase-3-heatmaps-escalas-continuas.md. Función
+ *  pura, sin DOM: los 3 consumidores (betaDiversity/correlogram/
+ *  differentialAbundance heatmap) la leen ANTES de construir su
+ *  `makeColorScale()` (js/lib/colorScale.js), mismo patrón que
+ *  getStatsOptions/getPaletteOverrides. Ralo: solo trae las claves que el
+ *  usuario tocó; los valores por defecto (paleta de la app, dominio real de
+ *  los datos, punto medio 0) los decide cada módulo, no aquí. */
+export function getColorScaleOptions(key) {
+  return readChartStyleRaw(key).__colorScale || {};
+}
+
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
   ['var(--font-display)', 'Serif (IBM Plex)'],
@@ -176,7 +189,10 @@ const I18N = {
         dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua',
         statsTitle: 'Significación estadística', statsMode: 'Mostrar', statsModeStars: 'Solo asteriscos',
         statsModeExact: 'Solo p exacto', statsModeBoth: 'Asteriscos + p', statsStyle: 'Estilo',
-        statsThreshold: 'Umbral de significación', statsMethod: 'Ajuste de p (varias comparaciones)' },
+        statsThreshold: 'Umbral de significación', statsMethod: 'Ajuste de p (varias comparaciones)',
+        colorScaleTitle: 'Escala de color', csPalette: 'Paleta', csDomain: 'Dominio (mín–máx)',
+        csDomainMin: 'Mínimo del dominio', csDomainMax: 'Máximo del dominio', csResetDomain: 'Restablecer',
+        csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -204,7 +220,10 @@ const I18N = {
         dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed',
         statsTitle: 'Statistical significance', statsMode: 'Show', statsModeStars: 'Stars only',
         statsModeExact: 'Exact p only', statsModeBoth: 'Stars + p', statsStyle: 'Style',
-        statsThreshold: 'Significance threshold', statsMethod: 'p adjustment (multiple comparisons)' },
+        statsThreshold: 'Significance threshold', statsMethod: 'p adjustment (multiple comparisons)',
+        colorScaleTitle: 'Colour scale', csPalette: 'Palette', csDomain: 'Domain (min–max)',
+        csDomainMin: 'Domain minimum', csDomainMax: 'Domain maximum', csResetDomain: 'Reset',
+        csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -315,6 +334,16 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-stats-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
 .ce-stats-row select { flex:1; min-width:0; }
 .ce-stats-row input[type=number] { width:72px; flex:none; }
+.ce-colorscale { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-colorscale h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-cs-rows { display:flex; flex-direction:column; gap:8px; max-width:420px; }
+.ce-cs-row { display:flex; align-items:center; gap:8px; }
+.ce-cs-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
+.ce-cs-row select { flex:1; min-width:0; }
+.ce-cs-row input[type=number] { width:72px; flex:none; }
+.ce-cs-domain { display:flex; align-items:center; gap:6px; flex:1; flex-wrap:wrap; }
+.ce-cs-domain button { border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-2); border-radius:6px; padding:4px 8px; cursor:pointer; font-size:11.5px; }
+.ce-cs-domain button:hover { border-color:var(--accent); color:var(--ink); }
 .ce-figstyle { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-figstyle h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
 .ce-figstyle-rows { display:flex; flex-direction:column; gap:8px; max-width:480px; }
@@ -363,6 +392,25 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  * @param {Function} [cfg.onStatsChange]  se llama tras persistir un cambio
  *        en las opciones de estadística — el módulo debe repintar entero
  *        (recalcula qué pares son significativos), mismo patrón que `onReset`.
+ * @param {object} [cfg.colorScale]  { type: 'sequential'|'divergent',
+ *        domain: [min,max] (el rango REAL de los datos en este pintado, para
+ *        el botón "restablecer" y como valor por defecto), defaultPaletteId?
+ *        (id de js/lib/palettes.js — 'app:sequential'/'app:divergent' si se
+ *        omite), defaultMidpoint? (solo divergent, 0 si se omite) } — activa
+ *        la sección "Escala de color" (Paso 3 de qiimelab-prompt-editor-
+ *        fase-3-heatmaps-escalas-continuas.md), para los 3 heatmaps con
+ *        degradado continuo (beta/correlograma/diferencial). El módulo debe
+ *        leer `getColorScaleOptions(key)` ANTES de construir su
+ *        `makeColorScale()` (js/lib/colorScale.js) — mismo patrón que
+ *        `getStatsOptions`/`getPaletteOverrides`.
+ * @param {Function} [cfg.onColorScaleChange]  se llama tras persistir un
+ *        cambio de escala — el módulo repinta entero (cambia el color de
+ *        CADA celda, a diferencia del motor --fig-* que nunca repinta).
+ * @param {boolean} [cfg.startEditing]  arranca ya en modo "Personalizar" —
+ *        para cuando `onReset`/`onColorScaleChange`/etc. destruyen y vuelven
+ *        a crear la instancia entera: pasar `editorAnterior.isEditing()`
+ *        aquí para no cerrar el panel en cada repintado disparado desde
+ *        dentro del propio editor.
  */
 export function attachChartEditor(cfg) {
   injectStyles();
@@ -372,13 +420,23 @@ export function attachChartEditor(cfg) {
   const paletteMax = cfg.paletteMax; // tope de tonos simultáneos (scatter/red: 3-4, no los 8)
   const geometrySliders = cfg.geometrySliders || []; // [{ id, label, min, max, step, value, unit?, isPercent? }]
   const statsControls = cfg.statsControls || null; // { hasMultiGroup } | null (sección desactivada)
+  const colorScaleCfg = cfg.colorScale || null; // { type, domain, defaultPaletteId?, defaultMidpoint? } | null
   const lang = cfg.lang || 'es';
   const T = tr(lang);
   const LSKEY = 'smart-175.chartStyle.' + key;
   const LEGACY_LSKEY = 'qiimelab.chartStyle.' + key;
 
   let store = readStore();
-  let editing = false;
+  // startEditing: para módulos cuyo paint() destruye y vuelve a crear el
+  // editor en cada repintado (el patrón `if (editor) editor.destroy();
+  // editor = attachChartEditor(...)` que usan los 3 heatmaps de la Fase 3 y
+  // varias otras vistas para onReset) — sin esto, cada cambio que dispara un
+  // repintado completo (cambiar la escala de color, "Restablecer"…) cierra
+  // el panel "Personalizar" de golpe porque la NUEVA instancia siempre
+  // arrancaba con editing=false, perdiendo el estado de la anterior. El
+  // módulo debe leer `editor.isEditing()` ANTES de destruir la instancia
+  // vieja y pasarlo aquí.
+  let editing = !!cfg.startEditing;
   let selectedId = null;
   let panel = null;
   let cePanelUid = 0; // ids para enlazar <label for> ↔ control dentro del panel
@@ -730,6 +788,8 @@ export function attachChartEditor(cfg) {
     if (editing && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
 
     if (editing && statsControls) toolbar.appendChild(renderStatsSection());
+
+    if (editing && colorScaleCfg) toolbar.appendChild(renderColorScaleSection());
   }
 
   function renderTitlesSection() {
@@ -1379,6 +1439,123 @@ export function attachChartEditor(cfg) {
     return wrap;
   }
 
+  // ---- escala de color continua (Paso 3 de qiimelab-prompt-editor-fase-3-
+  // heatmaps-escalas-continuas.md) — igual que estadística: un cambio aquí
+  // obliga a RECALCULAR el color de cada celda con js/lib/colorScale.js
+  // (repintado completo, justificado a diferencia del motor --fig-*, que
+  // nunca repinta), así que se resuelve entero en cfg.onColorScaleChange.
+  function colorScaleOverrides() { return store.__colorScale || {}; }
+
+  function setColorScaleValue(id, val) {
+    const s = (store.__colorScale = store.__colorScale || {});
+    if (val === '' || val === undefined || val === null) delete s[id]; else s[id] = val;
+    if (!Object.keys(s).length) delete store.__colorScale;
+    writeStore();
+    if (cfg.onColorScaleChange) try { cfg.onColorScaleChange(store.__colorScale || {}); } catch (e) { /* noop */ }
+  }
+
+  function colorScaleRow(labelText, controlEl) {
+    const row = document.createElement('div');
+    row.className = 'ce-cs-row';
+    const id = 'ce-cs-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', id);
+    lab.textContent = labelText;
+    row.appendChild(lab);
+    controlEl.id = id;
+    row.appendChild(controlEl);
+    return row;
+  }
+
+  function renderColorScaleSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-colorscale';
+    wrap.innerHTML = '<h5>' + T.colorScaleTitle + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-cs-rows';
+    const s = colorScaleOverrides();
+    const csType = colorScaleCfg.type === 'divergent' ? 'divergent' : 'sequential';
+    const defaultPaletteId = colorScaleCfg.defaultPaletteId || ('app:' + csType);
+    const currentPaletteId = s.paletteId || defaultPaletteId;
+
+    // paleta — reutiliza el catálogo/desplegable de la Fase 2
+    // (palettesForType) con la lista COMPLETA de paradas de cada paleta
+    // (no solo 2-3 polos): colorScale.js interpola tantas paradas como
+    // traiga la paleta elegida, así que una de 11 (viridis, RdBu…) se
+    // aprovecha entera, no solo su primer/último tono.
+    const paletteSel = document.createElement('select');
+    palettesForType(csType).forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.isDefault ? (csType === 'divergent' ? T.paletteDivergent : T.paletteSequential) + ' — ' + T.paletteAppDefault : p.name;
+      if (p.id === currentPaletteId) o.selected = true;
+      paletteSel.appendChild(o);
+    });
+    paletteSel.addEventListener('change', () => setColorScaleValue('paletteId', paletteSel.value === defaultPaletteId ? '' : paletteSel.value));
+    rows.appendChild(colorScaleRow(T.csPalette, paletteSel));
+
+    // dominio min/max — por defecto el rango real de los datos que trae
+    // `colorScaleCfg.domain` (recalculado por el módulo en cada pintado);
+    // "restablecer" borra el override entero de una vez, no min y max por
+    // separado (evita quedarse con solo uno de los dos personalizado sin
+    // querer).
+    const [dataMin, dataMax] = colorScaleCfg.domain || [0, 1];
+    const domainWrap = document.createElement('div');
+    domainWrap.className = 'ce-cs-domain';
+    const minInp = document.createElement('input');
+    minInp.type = 'number'; minInp.step = 'any'; minInp.value = s.domainMin != null ? s.domainMin : dataMin;
+    minInp.setAttribute('aria-label', T.csDomainMin);
+    minInp.addEventListener('change', () => { const v = parseFloat(minInp.value); if (Number.isFinite(v)) setColorScaleValue('domainMin', v); });
+    const maxInp = document.createElement('input');
+    maxInp.type = 'number'; maxInp.step = 'any'; maxInp.value = s.domainMax != null ? s.domainMax : dataMax;
+    maxInp.setAttribute('aria-label', T.csDomainMax);
+    maxInp.addEventListener('change', () => { const v = parseFloat(maxInp.value); if (Number.isFinite(v)) setColorScaleValue('domainMax', v); });
+    domainWrap.appendChild(minInp);
+    domainWrap.appendChild(maxInp);
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.textContent = T.csResetDomain;
+    resetBtn.addEventListener('click', () => {
+      const s2 = (store.__colorScale = store.__colorScale || {});
+      delete s2.domainMin; delete s2.domainMax;
+      if (!Object.keys(s2).length) delete store.__colorScale;
+      writeStore();
+      if (cfg.onColorScaleChange) try { cfg.onColorScaleChange(store.__colorScale || {}); } catch (e) { /* noop */ }
+    });
+    domainWrap.appendChild(resetBtn);
+    rows.appendChild(colorScaleRow(T.csDomain, domainWrap));
+
+    if (csType === 'divergent') {
+      const midInp = document.createElement('input');
+      midInp.type = 'number'; midInp.step = 'any';
+      const defMid = colorScaleCfg.defaultMidpoint != null ? colorScaleCfg.defaultMidpoint : 0;
+      midInp.value = s.midpoint != null ? s.midpoint : defMid;
+      midInp.addEventListener('change', () => {
+        const v = parseFloat(midInp.value);
+        if (Number.isFinite(v)) setColorScaleValue('midpoint', v === defMid ? '' : v);
+      });
+      rows.appendChild(colorScaleRow(T.csMidpoint, midInp));
+    }
+
+    const stepsInp = document.createElement('input');
+    stepsInp.type = 'number'; stepsInp.min = '0'; stepsInp.max = '20'; stepsInp.step = '1';
+    stepsInp.value = s.steps != null ? s.steps : 0;
+    stepsInp.addEventListener('change', () => {
+      const v = parseInt(stepsInp.value, 10);
+      if (!Number.isFinite(v)) return;
+      setColorScaleValue('steps', Math.max(0, Math.min(20, v)) || '');
+    });
+    rows.appendChild(colorScaleRow(T.csSteps, stepsInp));
+
+    const invertChk = document.createElement('input');
+    invertChk.type = 'checkbox'; invertChk.checked = !!s.invert;
+    invertChk.addEventListener('change', () => setColorScaleValue('invert', invertChk.checked ? true : ''));
+    rows.appendChild(colorScaleRow(T.csInvert, invertChk));
+
+    wrap.appendChild(rows);
+    return wrap;
+  }
+
   // ---- estilo de figura (motor de variables CSS de rol --fig-*) ----
   // Puro CSS custom properties sobre el propio <svg>: no repinta nada, así
   // que a diferencia de la paleta de series o la geometría no necesita
@@ -1994,6 +2171,7 @@ export function attachChartEditor(cfg) {
   }
 
   // ---- init ----
+  if (editing) svg.classList.add('ce-editing'); // startEditing: ver más arriba
   renderToolbar();
   sync();
 
@@ -2003,6 +2181,7 @@ export function attachChartEditor(cfg) {
     download: downloadSvg,
     downloadPng,
     isDirty: () => Object.keys(store).length > 0,
+    isEditing: () => editing,
     destroy() {
       if (fsHandle) fsHandle.close(); // devuelve el <svg>/toolbar a casa antes de que el módulo limpie su contenedor
       clearTimeout(debTimer);

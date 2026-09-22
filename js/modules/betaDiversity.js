@@ -7,8 +7,9 @@ import { rda, cca } from '../lib/constrainedOrdination.js';
 import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor, getPaletteOverrides } from '../lib/chartEditor.js';
-import { CATEGORICAL_SCATTER_MAX } from '../lib/palettes.js';
+import { attachChartEditor, getColorScaleOptions } from '../lib/chartEditor.js';
+import { CATEGORICAL_SCATTER_MAX, paletteColorsOf } from '../lib/palettes.js';
+import { makeColorScale } from '../lib/colorScale.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
@@ -80,6 +81,9 @@ export function render(container) {
   let rot3dX = -0.4, rot3dY = 0.6; // ángulos de rotación (radianes) de la nube 3D, persisten entre repintados
   let pcoaSizeCol = null;        // columna numérica de metadatos usada como tamaño en 'bubbles'
   let editor = null;
+  let wasEditing = false; // ver cfg.startEditing en chartEditor.js — capturado en paint() antes de
+                           // destruir el editor, leído por renderHeatmap/renderConstrained/renderPcoa
+                           // (funciones hermanas de paint(), no anidadas) al recrearlo
   let permGroupCol = null;
   let permN = 999;
   let permResult = null;   // cache del último cálculo {key, res}
@@ -95,6 +99,10 @@ export function render(container) {
   let clusterGen = 0;     // token: descarta resultados de un worker ya obsoleto
 
   function paint() {
+    // ver cfg.startEditing en chartEditor.js: sin esto, cada repintado
+    // disparado DESDE DENTRO del propio editor (escala de color,
+    // "Restablecer"…) cerraría el panel "Personalizar" de golpe.
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
@@ -548,7 +556,7 @@ export function render(container) {
     }
 
     editor = attachChartEditor({
-      key: 'betaConstrained', svg, mount: chartPanel, filename: rdaMethod + '-biplot', lang: getLang(),
+      key: 'betaConstrained', svg, mount: chartPanel, filename: rdaMethod + '-biplot', lang: getLang(), startEditing: wasEditing,
       elements: [
         { id: 'title', create: { text: t('beta.rdaFigTitle', { method: mName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
@@ -732,19 +740,7 @@ export function render(container) {
     svg.style.maxWidth = 'none';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-    // degradado continuo (color-mix por celda, no una serie discreta): la
-    // paleta se lee ANTES de calcular colores y hay que repintar para
-    // aplicarla — a diferencia de las demás figuras, que se recolorean sin
-    // repintar. Ver js/lib/chartEditor.js getPaletteOverrides().
-    const gradOv = getPaletteOverrides('betaDiversity');
-    const nearColor = gradOv.near || 'var(--surface)';
-    const farColor = gradOv.far || 'var(--depleted)';
-
     const defs = svgEl('defs', {});
-    const grad = svgEl('linearGradient', { id: 'ql-beta-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-    grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': nearColor }));
-    grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': farColor }));
-    defs.appendChild(grad);
     svg.appendChild(defs);
 
     function xOf(label) { return marginL + order.indexOf(label) * cellSize + cellSize / 2; }
@@ -763,13 +759,28 @@ export function render(container) {
       }
     }
 
+    // escala de color continua compartida (Paso 2-3 de qiimelab-prompt-
+    // editor-fase-3-heatmaps-escalas-continuas.md) — sustituye al
+    // color-mix() por celda: resuelve directo a #rrggbb, interpolando en
+    // OKLab (js/lib/colorScale.js), y expone min/max/paleta/nº de pasos/
+    // invertir desde el panel "Escala de color" del editor.
+    const csOv = getColorScaleOptions('betaDiversity');
+    const csDomain = [
+      csOv.domainMin != null ? csOv.domainMin : 0,
+      csOv.domainMax != null ? csOv.domainMax : maxDist,
+    ];
+    const colorScale = makeColorScale({
+      type: 'sequential', domain: csDomain,
+      range: paletteColorsOf(csOv.paletteId || 'app:sequential'),
+      steps: csOv.steps, invert: csOv.invert,
+    });
+
     order.forEach((rowId, ri) => {
       order.forEach((colId, ci) => {
         const v = data.matrix[idxOf[rowId]][idxOf[colId]];
-        const frac = Math.max(0, Math.min(1, v / maxDist));
         const rect = svgEl('rect', {
           x: marginL + ci * cellSize, y: marginT + ri * cellSize, width: cellSize - 1, height: cellSize - 1,
-          fill: 'color-mix(in srgb, ' + farColor + ' ' + Math.round(frac * 100) + '%, ' + nearColor + ')',
+          fill: colorScale.scale(v) || 'var(--surface)',
           'data-ri': ri, 'data-ci': ci,
         });
         svg.appendChild(rect);
@@ -803,26 +814,32 @@ export function render(container) {
     yTitle.textContent = t('beta.axisSamples');
     svg.appendChild(yTitle);
 
+    const legendGradId = 'ql-cscale-betaDiversity';
+    const legGrad = svgEl('linearGradient', { id: legendGradId, x1: '0', y1: '0', x2: '1', y2: '0' });
+    colorScale.legendStops.forEach((st) => {
+      legGrad.appendChild(svgEl('stop', { offset: st.offset + '%', 'stop-color': st.color }));
+    });
+    defs.appendChild(legGrad);
+
     const legG = svgEl('g', { 'data-ce': 'legend' });
     const barW = Math.min(160, gridSize * 0.6);
-    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-beta-scale)', stroke: 'var(--baseline)' }));
-    const l0 = svgEl('text', { x: 0, y: 26, class: 'ql-tick-label' }); l0.textContent = t('beta.legendSimilar');
-    const l1 = svgEl('text', { x: barW, y: 26, class: 'ql-tick-label', 'text-anchor': 'end' }); l1.textContent = t('beta.legendDistinct');
+    legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#' + legendGradId + ')', stroke: 'var(--baseline)' }));
+    const l0 = svgEl('text', { x: 0, y: 26, class: 'ql-tick-label' }); l0.textContent = csDomain[0].toFixed(3) + ' · ' + t('beta.legendSimilar');
+    const l1 = svgEl('text', { x: barW, y: 26, class: 'ql-tick-label', 'text-anchor': 'end' }); l1.textContent = csDomain[1].toFixed(3) + ' · ' + t('beta.legendDistinct');
     legG.appendChild(l0); legG.appendChild(l1);
     legG.setAttribute('transform', 'translate(' + marginL + ',' + (marginT + gridSize + 22) + ')');
     svg.appendChild(legG);
 
     editor = attachChartEditor({
-      key: 'betaDiversity', svg, mount: chartPanel, filename: t('beta.title') + '-' + metric, lang: getLang(),
+      key: 'betaDiversity', svg, mount: chartPanel, filename: t('beta.title') + '-' + metric, lang: getLang(), startEditing: wasEditing,
       elements: [
         { id: 'title', create: { text: metric, x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
-      paletteSeries: [{ id: 'near', label: t('beta.legendSimilar') }, { id: 'far', label: t('beta.legendDistinct') }],
-      paletteType: 'sequentialPoles',
+      colorScale: { type: 'sequential', domain: [0, maxDist] },
       onReset: () => paint(),
-      onChange: () => paint(), // degradado continuo: repinta para recalcular color-mix por celda
+      onColorScaleChange: () => paint(),
     });
 
     const scrollDiv = document.createElement('div');
@@ -1099,7 +1116,7 @@ export function render(container) {
     }
 
     editor = attachChartEditor({
-      key: isBubbles ? 'betaPcoaBubbles' : 'betaPcoa', svg, mount: chartPanel, filename: 'pcoa-' + ord.metricName, lang: getLang(),
+      key: isBubbles ? 'betaPcoaBubbles' : 'betaPcoa', svg, mount: chartPanel, filename: 'pcoa-' + ord.metricName, lang: getLang(), startEditing: wasEditing,
       elements: [
         { id: 'title', create: { text: t('beta.pcoaFigTitle', { metric: ord.metricName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
@@ -1242,7 +1259,7 @@ export function render(container) {
       });
 
       editor = attachChartEditor({
-        key: 'betaPcoa3d', svg, mount: chartPanel, filename: 'pcoa3d-' + ord.metricName, lang: getLang(),
+        key: 'betaPcoa3d', svg, mount: chartPanel, filename: 'pcoa3d-' + ord.metricName, lang: getLang(), startEditing: wasEditing,
         elements: [
           { id: 'title', create: { text: t('beta.pcoa3dFigTitle', { metric: ord.metricName }), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
