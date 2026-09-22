@@ -1,7 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor, openChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getFigureGeometry } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
@@ -25,6 +25,7 @@ export const TOP_N_DEFAULT = 15, TOP_N_MIN = 5, TOP_N_MAX = 50;
 export const MIN_ABUND_DEFAULT = 1, MIN_ABUND_MIN = 0, MIN_ABUND_MAX = 10;
 export const OTHER_COLOR = '#d3d3d3';
 export const OTHER_COL_RE = /^(others?|otros?|resto)$/i;
+const ALLUVIAL_CE_KEY = 'taxaBarplot-alluvial'; // misma key que usa attachChartEditor más abajo
 
 export function shortTaxonName(fullTax) {
   if (!fullTax) return t('barplots.unclassified') || 'Sin clasificar';
@@ -32,33 +33,6 @@ export function shortTaxonName(fullTax) {
   const last = parts[parts.length - 1] || fullTax;
   const cleaned = String(last).replace(/^[a-z]__/i, '');
   return cleaned || t('barplots.unclassified') || 'Sin clasificar';
-}
-
-const CAT_HEX_FALLBACKS = {
-  '--cat-1': '#2a78d6',
-  '--cat-2': '#d97706',
-  '--cat-3': '#10b981',
-  '--cat-4': '#ef4444',
-  '--cat-5': '#8b5cf6',
-  '--cat-6': '#ec4899',
-  '--cat-7': '#06b6d4',
-  '--cat-8': '#6b7280',
-};
-
-function resolveVarHex(cv) {
-  if (typeof window !== 'undefined' && window.getComputedStyle) {
-    try {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(cv).trim();
-      if (raw && raw.startsWith('#')) return raw;
-      if (raw && raw.startsWith('rgb')) {
-        const rgb = raw.match(/\d+/g);
-        if (rgb && rgb.length >= 3) {
-          return '#' + rgb.slice(0, 3).map((x) => parseInt(x, 10).toString(16).padStart(2, '0')).join('');
-        }
-      }
-    } catch (e) {}
-  }
-  return CAT_HEX_FALLBACKS[cv] || '#2a78d6';
 }
 
 /**
@@ -353,15 +327,27 @@ export function render(container) {
   let bmView = 'single';       // 'single' (un método, el de siempre) | 'consensus' (panel taxón × método)
   let bmConsSort = { key: 'count', dir: 'desc' };
   let editor = null;
-  let alluvialNodeWidth = 20;
-  let alluvialNodeGap = 2;
-  let alluvialLinkOpacity = 0.4;
+  // Geometría del aluvial: persistida vía attachChartEditor (cfg.geometrySliders,
+  // key ALLUVIAL_CE_KEY) desde el 22 sep 2026 — antes vivía solo en memoria en el
+  // modal openChartEditor (ya retirado, ver nota de arquitectura en chartEditor.js),
+  // así que se perdía al salir de la vista. Se siembra aquí con lo último guardado.
+  const savedAlluvialGeom = getFigureGeometry(ALLUVIAL_CE_KEY);
+  let alluvialNodeWidth = savedAlluvialGeom.nodeWidth ?? 20;
+  let alluvialNodeGap = savedAlluvialGeom.nodeGap ?? 2;
+  let alluvialLinkOpacity = savedAlluvialGeom.linkOpacity ?? 0.4;
+  // chartFontFamily/Is Bold/IsItalic/FontSize, seriesColorOverrides y
+  // customChartTitle/X/YTitle: quedaron sin escritor tras retirar el modal
+  // openChartEditor del aluvial (22 sep 2026) — se leen más abajo pero ya
+  // nunca cambian de su valor por defecto. El control de fuente global de la
+  // figura vuelve con el motor de variables CSS --fig-* (Fase 0, Paso 2);
+  // el de título/color por serie ya lo cubre el attachChartEditor estándar
+  // de esta misma vista (Títulos de la figura / Paleta). No se borran estas
+  // variables en este commit para no tocar cada punto de lectura de golpe.
   let chartFontFamily = 'var(--font-body)';
   let chartIsBold = false;
   let chartIsItalic = false;
   let chartFontSize = 13;
   let seriesColorOverrides = {};
-  let openTaxaChartEditor = () => {};
 
   function paint() {
     if (editor) { editor.destroy(); editor = null; }
@@ -425,19 +411,11 @@ export function render(container) {
       (view === 'barplot' && plotStyle === 'bubbles') ? t('barplots.bubbleNote') : t('barplots.chartNote'));
     chartHeader.appendChild(noteP);
 
-    const settingsBtn = document.createElement('button');
-    settingsBtn.type = 'button';
-    settingsBtn.className = 'ql-btn ql-btn-sm ql-btn-settings';
-    settingsBtn.title = t('barplots.settingsBtnTitle');
-    settingsBtn.setAttribute('aria-label', t('barplots.settingsBtnTitle'));
-    settingsBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> <span>' + t('barplots.settingsBtn') + '</span>';
-    if (view !== 'alluvial') {
-      settingsBtn.style.display = 'none';
-    }
-    settingsBtn.addEventListener('click', () => {
-      openTaxaChartEditor();
-    });
-    chartHeader.appendChild(settingsBtn);
+    // Antes había aquí un botón "⚙ Ajustes" propio del aluvial que abría el
+    // modal openChartEditor (geometría/tipografía/colores). Retirado el 22
+    // sep 2026: el aluvial usa ahora el mismo botón "Personalizar" del
+    // attachChartEditor estándar de esta vista (más abajo), con una sección
+    // "Geometría" nueva — ver nota de arquitectura en chartEditor.js.
     chartPanel.appendChild(chartHeader);
 
     const chartWrap = document.createElement('div');
@@ -971,104 +949,18 @@ export function render(container) {
         }
       }
 
-      openTaxaChartEditor = () => {
-        const configOptions = {
-          title: t('chartEditor.title') || 'Ajustes de la figura',
-          typography: {
-            fontFamily: chartFontFamily,
-            isBold: chartIsBold,
-            isItalic: chartIsItalic,
-            fontSize: chartFontSize,
-          },
-          colors: {
-            series: series.map((s) => ({
-              id: s.key,
-              label: s.label,
-              color: (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? resolveVarHex(s.colorVar) : '#2a78d6')),
-            })),
-            linkOpacity: alluvialLinkOpacity,
-          },
-          geometry: {
-            sliders: [
-              {
-                id: 'nodeWidth',
-                label: t('chartEditor.nodeWidth') || 'Ancho de los nodos/barras',
-                min: 6,
-                max: 60,
-                step: 2,
-                value: alluvialNodeWidth,
-                unit: 'px',
-              },
-              {
-                id: 'nodeGap',
-                label: t('chartEditor.nodeGap') || 'Separación entre nodos',
-                min: 0,
-                max: 15,
-                step: 1,
-                value: alluvialNodeGap,
-                unit: 'px',
-              },
-              {
-                id: 'linkOpacity',
-                label: t('chartEditor.linkOpacity') || 'Opacidad de los flujos',
-                min: 0.1,
-                max: 0.95,
-                step: 0.05,
-                value: alluvialLinkOpacity,
-                isPercent: true,
-              },
-            ],
-          },
-        };
-
-        openChartEditor(svg, configOptions, (action, payload) => {
-          if (action === 'nodeWidth') {
-            alluvialNodeWidth = Number(payload);
-          } else if (action === 'nodeGap') {
-            alluvialNodeGap = Number(payload);
-          } else if (action === 'linkOpacity') {
-            alluvialLinkOpacity = Number(payload);
-          } else if (action === 'fontFamily') {
-            chartFontFamily = String(payload);
-          } else if (action === 'isBold') {
-            chartIsBold = Boolean(payload);
-          } else if (action === 'isItalic') {
-            chartIsItalic = Boolean(payload);
-          } else if (action === 'fontSize') {
-            chartFontSize = Number(payload);
-          } else if (action === 'seriesColor') {
-            if (payload && payload.id) {
-              seriesColorOverrides[payload.id] = payload.color;
-            }
-          } else if (action === 'title') {
-            customChartTitle = String(payload);
-          } else if (action === 'xtitle') {
-            customXTitle = String(payload);
-          } else if (action === 'ytitle') {
-            customYTitle = String(payload);
-          } else if (action === 'reset') {
-            alluvialNodeWidth = 20;
-            alluvialNodeGap = 2;
-            alluvialLinkOpacity = 0.4;
-            chartFontFamily = 'var(--font-body)';
-            chartIsBold = false;
-            chartIsItalic = false;
-            chartFontSize = 13;
-            seriesColorOverrides = {};
-            customChartTitle = null;
-            customXTitle = null;
-            customYTitle = null;
-          }
-          drawAlluvialSvg();
-        });
-      };
-
       drawAlluvialSvg();
 
-      // Editor de gráfico
+      // Editor de gráfico — mismo attachChartEditor estándar que el resto de
+      // vistas (título/ejes/leyenda arrastrables, paleta por serie), más una
+      // sección "Geometría" para lo que aquí sí necesita recalcular el layout
+      // del flujo (ancho de nodo, separación, opacidad). Antes esto último
+      // vivía en un modal aparte (openChartEditor, retirado 22 sep 2026 — ver
+      // nota de arquitectura en chartEditor.js); unificarlo aquí también lo
+      // hace persistente entre sesiones, cosa que el modal no hacía.
       if (editor) editor.destroy();
       editor = attachChartEditor({
-        key: 'taxaBarplot-alluvial', svg, mount: chartPanel, filename: t('barplots.alluvialFigTitle'), lang: getLang(),
+        key: ALLUVIAL_CE_KEY, svg, mount: chartPanel, filename: t('barplots.alluvialFigTitle'), lang: getLang(),
         elements: [
           { id: 'title', create: { text: t('barplots.alluvialFigTitle'), x: W / 2, y: 24, anchor: 'middle', cls: 'ce-title ql-chart-main-title' } },
           { id: 'xtitle', selector: '[data-ce="xtitle"]' },
@@ -1080,7 +972,23 @@ export function render(container) {
           label: (series.find((s) => s.colorVar === cv) || {}).label || t('barplots.paletteSlotN', { n: i + 1 }),
         })),
         paletteType: 'categorical',
-        onReset: () => paint(),
+        geometrySliders: [
+          { id: 'nodeWidth', label: t('chartEditor.nodeWidth') || 'Ancho de los nodos/barras', min: 6, max: 60, step: 2, value: alluvialNodeWidth, unit: 'px' },
+          { id: 'nodeGap', label: t('chartEditor.nodeGap') || 'Separación entre nodos', min: 0, max: 15, step: 1, value: alluvialNodeGap, unit: 'px' },
+          { id: 'linkOpacity', label: t('chartEditor.linkOpacity') || 'Opacidad de los flujos', min: 0.1, max: 0.95, step: 0.05, value: alluvialLinkOpacity, isPercent: true },
+        ],
+        onGeometryChange: (id, val) => {
+          if (id === 'nodeWidth') alluvialNodeWidth = Number(val);
+          else if (id === 'nodeGap') alluvialNodeGap = Number(val);
+          else if (id === 'linkOpacity') alluvialLinkOpacity = Number(val);
+          drawAlluvialSvg();
+        },
+        onReset: () => {
+          alluvialNodeWidth = 20;
+          alluvialNodeGap = 2;
+          alluvialLinkOpacity = 0.4;
+          paint();
+        },
       });
 
       // Tabla de abundancia relativa media por grupo

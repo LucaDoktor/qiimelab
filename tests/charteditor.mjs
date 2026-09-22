@@ -683,19 +683,28 @@ console.log('\n--- 3. Integración en el Diagrama Aluvial (js/modules/taxa.js y 
   check('el cambio geométrico se refleja en las curvas de enlace Bézier',
     layoutDefault.links[0].d !== layoutWide.links[0].d);
 
-  // Verificar que el SVG generado en taxaBarplot tiene el botón de ajustes
+  // El aluvial migró del modal openChartEditor (botón "⚙ Ajustes" aparte) a
+  // attachChartEditor + cfg.geometrySliders el 22 sep 2026 — ver nota de
+  // arquitectura al principio de js/lib/chartEditor.js y qiimelab-prompt-
+  // editor-fase-0-fundamentos.md Paso 1. Unifica con el resto de ~28 vistas
+  // (mismo botón "Personalizar" para todo) y de paso hace persistente la
+  // geometría entre sesiones, cosa que el modal no hacía.
   const taxaBarplotContent = await import('node:fs').then((fs) =>
     fs.readFileSync(new URL('../js/modules/taxaBarplot.js', import.meta.url), 'utf8')
   );
 
-  check('taxaBarplot.js incluye botón de ajustes con icono de engranaje',
-    taxaBarplotContent.includes('ql-btn-settings') && taxaBarplotContent.includes('settingsBtnTitle'));
-  check('taxaBarplot.js invoca openChartEditor en openTaxaChartEditor',
-    taxaBarplotContent.includes('openChartEditor(svg, configOptions'));
+  check('taxaBarplot.js NO tiene ya el botón de ajustes aparte (unificado en "Personalizar")',
+    !taxaBarplotContent.includes('ql-btn-settings') && !taxaBarplotContent.includes('openTaxaChartEditor'));
+  check('taxaBarplot.js migró el aluvial a attachChartEditor con geometrySliders',
+    taxaBarplotContent.includes('geometrySliders:') && taxaBarplotContent.includes('onGeometryChange:'));
+  check('taxaBarplot.js ya no invoca el openChartEditor legacy',
+    !taxaBarplotContent.includes('openChartEditor(svg'));
   check('taxaBarplot.js actualiza geometría en tiempo real (alluvialNodeWidth, alluvialNodeGap, alluvialLinkOpacity)',
-    taxaBarplotContent.includes('alluvialNodeWidth = Number(payload)') &&
-    taxaBarplotContent.includes('alluvialNodeGap = Number(payload)') &&
-    taxaBarplotContent.includes('alluvialLinkOpacity = Number(payload)'));
+    taxaBarplotContent.includes("id === 'nodeWidth') alluvialNodeWidth = Number(val)") &&
+    taxaBarplotContent.includes("id === 'nodeGap') alluvialNodeGap = Number(val)") &&
+    taxaBarplotContent.includes("id === 'linkOpacity') alluvialLinkOpacity = Number(val)"));
+  check('taxaBarplot.js siembra la geometría persistida con getFigureGeometry antes del primer pintado',
+    taxaBarplotContent.includes('getFigureGeometry(ALLUVIAL_CE_KEY)'));
 }
 
 console.log('\n--- 4. Motor de exportación vectorial (SVG) y rasterizado (PNG 300 dpi) ---');
