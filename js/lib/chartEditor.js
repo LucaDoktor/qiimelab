@@ -16,8 +16,18 @@
 //    que a diferencia de la paleta o la geometría no hace falta cfg por
 //    módulo: aparece en las ~28 vistas en cuanto usan las clases de rol
 //    (.ql-gridline/.ql-baseline-line/.ql-tick-label/.ql-axis-label).
-//  - "Descargar SVG": exporta la figura tal cual se ve, con los estilos
-//    inline resueltos (sin depender de la hoja de estilos de la app).
+//  - "Descargar SVG/PNG/TIFF" (attachChartEditor): pasan por
+//    js/lib/figureExport.js (Paso 3 de qiimelab-prompt-editor-fase-0-
+//    fundamentos.md) — resuelven SIEMPRE en esquema claro (legible con
+//    independencia del tema activo) y sin var()/color() residual (el bug de
+//    color-mix() en mapas de calor/degradados). PNG/TIFF llevan dpi real
+//    embebido (300 por defecto). `openChartEditor` (legacy, ver más abajo)
+//    sigue con el pipeline antiguo (serializeSvg/exportSvg/exportPng): no
+//    se le ha portado el arreglo por no ganar casos de uso nuevos.
+//
+//  - "Descargar SVG" (openChartEditor, legacy): exporta la figura tal cual
+//    se ve, con los estilos inline resueltos (sin depender de la hoja de
+//    estilos de la app).
 //
 //  - Paleta de color para las SERIES de datos (no solo el texto): botones de
 //    paleta completa (categórica/secuencial/divergente) + una fila por serie
@@ -49,6 +59,7 @@ import { PALETTES, paletteColorAt } from './palettes.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 import { openPanel as openModalPanel } from './modal.js';
 import { escapeHtml } from './dom.js';
+import { serializeForExport, exportFigure } from './figureExport.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const STYLE_ID = 'ce-styles';
@@ -118,7 +129,7 @@ const FIG_STYLE_VARS = [
 ];
 
 const I18N = {
-  es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG',
+  es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG', downloadTiff: 'Descargar TIFF',
         hint: 'Arrastra los textos (o enfócalos con el tabulador y muévelos con las flechas). Haz clic o pulsa Intro para cambiar su estilo.',
         lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala en SVG o PNG.',
         text: 'Texto', color: 'Color', hex: 'Hex', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar',
@@ -132,7 +143,7 @@ const I18N = {
         geometryTitle: 'Geometría',
         figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
         dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua' },
-  en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
+  en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
         text: 'Text', color: 'Colour', hex: 'Hex', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close',
@@ -393,6 +404,10 @@ export function attachChartEditor(cfg) {
     const bPng = mkBtn(CE_ICONS.download, T.downloadPng, downloadPng);
     bPng.className = 'ql-btn';
     toolbar.appendChild(bPng);
+
+    const bTiff = mkBtn(CE_ICONS.download, T.downloadTiff, downloadTiff);
+    bTiff.className = 'ql-btn';
+    toolbar.appendChild(bTiff);
 
     if (Object.keys(store).length) {
       const bReset = mkBtn(CE_ICONS.reset, T.reset, resetAll);
@@ -1227,18 +1242,48 @@ export function attachChartEditor(cfg) {
     renderToolbar();
   }
 
-  // ---- exportar SVG y PNG de alta resolución ----
+  // ---- exportar SVG/PNG/TIFF vía js/lib/figureExport.js (Paso 3 de
+  // qiimelab-prompt-editor-fase-0-fundamentos.md): siempre en esquema claro
+  // y sin var()/color() residual, con independencia del tema activo. SVG es
+  // síncrono (solo serialización DOM); PNG/TIFF son async (decodifican la
+  // figura en un <canvas> antes de poder leer sus bytes).
+  function downloadFilename(ext) { return sanitizeFilename(filename, 'smart175_figura') + '.' + ext; }
+
+  function triggerDownload(data, mime, name) {
+    try {
+      const blob = new Blob([data], { type: mime });
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function' && typeof document !== 'undefined') {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.style.display = 'none';
+        if (document.body) document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } }, 4000);
+      }
+    } catch (e) { /* entorno restringido / headless */ }
+  }
+
   function serialize() {
-    return serializeSvg(svg);
+    return serializeForExport(svg, { scheme: 'light', background: 'white' }).svg;
   }
 
   function downloadSvg() {
-    const res = exportSvg(svg, filename);
-    return res.str;
+    const str = serialize();
+    triggerDownload(str, 'image/svg+xml;charset=utf-8', downloadFilename('svg'));
+    return str;
   }
 
-  function downloadPng() {
-    return exportPng(svg, filename, 4);
+  async function downloadPng() {
+    const res = await exportFigure(svg, { formats: ['png'], scheme: 'light', background: 'white', dpi: 300 });
+    triggerDownload(res.png, 'image/png', downloadFilename('png'));
+    return res;
+  }
+
+  async function downloadTiff() {
+    const res = await exportFigure(svg, { formats: ['tiff'], scheme: 'light', background: 'white', dpi: 300 });
+    triggerDownload(res.tiff, 'image/tiff', downloadFilename('tiff'));
+    return res;
   }
 
   function toHex(color) {

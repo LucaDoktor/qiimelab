@@ -214,6 +214,13 @@ function createMockDOM() {
           el._drawImages = el._drawImages || [];
           el._drawImages.push({ img, dx, dy, dw, dh });
         },
+        // getImageData: usado por exportFigure(..., {formats:['tiff']}) en
+        // figureExport.js para leer los píxeles a codificar. El mock no
+        // rasteriza nada de verdad, así que basta un buffer del tamaño
+        // correcto (todo ceros) para que encodeTiff no reciba undefined.
+        getImageData(x, y, w, h) {
+          return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+        },
       };
       el.getContext = (type) => (type === '2d' ? ctx : null);
       el.toDataURL = (type) => `data:${type || 'image/png'};base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==`;
@@ -820,9 +827,11 @@ console.log('\n--- 4. Motor de exportación vectorial (SVG) y rasterizado (PNG 3
   const allTbBtns = mountTb.querySelectorAll('button');
   const btnSvgTb = Array.from(allTbBtns).find((b) => b.textContent && b.textContent.includes('Descargar SVG'));
   const btnPngTb = Array.from(allTbBtns).find((b) => b.textContent && b.textContent.includes('Descargar PNG'));
+  const btnTiffTb = Array.from(allTbBtns).find((b) => b.textContent && b.textContent.includes('Descargar TIFF'));
 
   check('attachChartEditor incluye botón "Descargar SVG"', Boolean(btnSvgTb));
   check('attachChartEditor incluye botón "Descargar PNG"', Boolean(btnPngTb));
+  check('attachChartEditor incluye botón "Descargar TIFF" (Paso 3 de Fase 0)', Boolean(btnTiffTb));
 
   if (btnSvgTb) {
     doc._downloads = [];
@@ -840,6 +849,15 @@ console.log('\n--- 4. Motor de exportación vectorial (SVG) y rasterizado (PNG 3
     const dl = doc._downloads[doc._downloads.length - 1];
     check('clic en "Descargar PNG" en toolbar dispara descarga con filename especificado',
       dl && dl.download === 'smart175_test_tb.png');
+  }
+
+  if (btnTiffTb) {
+    doc._downloads = [];
+    btnTiffTb.dispatchEvent('click');
+    await new Promise((r) => setTimeout(r, 20));
+    const dl = doc._downloads[doc._downloads.length - 1];
+    check('clic en "Descargar TIFF" en toolbar dispara descarga con filename especificado',
+      dl && dl.download === 'smart175_test_tb.tiff');
   }
 
   editorTb.destroy();
