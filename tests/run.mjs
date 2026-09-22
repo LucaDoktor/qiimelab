@@ -30,6 +30,7 @@ const SUITE = [
   { name: 'colorscalepanel', file: 'colorscalepanel.mjs', kind: 'navegador' },
   { name: 'colorscaleperf', file: 'colorscaleperf.mjs', kind: 'navegador' },
   { name: 'figureoptions', file: 'figureoptions.mjs', kind: 'navegador' },
+  { name: 'sequenceqc-editor', file: 'sequenceqc-editor.mjs', kind: 'navegador' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
   { name: 'phylonni', file: 'phylonni.mjs', kind: 'estático' },

@@ -4,10 +4,11 @@
 // su texto explicativo y un veredicto tipo semáforo (--good/--warning/--critical).
 
 import { state, subscribe, registerFile, addSequenceQC, removeFile } from '../state.js';
-import { t } from '../lib/i18n.js';
+import { t, getLang } from '../lib/i18n.js';
 import { analyzeFastq } from '../lib/fastq.js';
 import { loadRealSequenceQC, exampleDownloadBlock } from '../lib/exampleData.js';
 import { svgEl, escapeHtml } from '../lib/dom.js';
+import { attachChartEditor } from '../lib/chartEditor.js';
 
 const CAT = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
 const FASTQ_RE = /\.(fastq|fq)(\.gz)?$/i;
@@ -190,7 +191,23 @@ function chartHost(parent, w, h) {
   return svg;
 }
 
-function drawPerPosQuality(parent, r) {
+// Editor de gráficos (5.1 de qiimelab-prompt-editor-fase-5-especificos-por-
+// tipo.md) — las 3 vistas ya usaban `svgEl` y las clases de rol compartidas
+// (ql-gridline/ql-tick-label/ql-axis-label), solo faltaba enganchar
+// attachChartEditor; sin `onReset` explícito: estos gráficos no tienen
+// elementos arrastrables propios ni estado de redibujado externo, así que
+// el fallback interno de chartEditor.js (limpiar `store` + `sync()`, que ya
+// revierte data-ce-series-fill a su color por defecto) es suficiente — no
+// hay un paint() de módulo al que volver a llamar desde aquí (estas 3
+// funciones viven fuera de render(), son puro dibujo sin estado).
+function attachQcEditor(svg, mount, key, xtitleEl) {
+  attachChartEditor({
+    key, svg, mount, filename: key, lang: getLang(),
+    elements: xtitleEl ? [{ id: 'xtitle', selector: '[data-ce="xtitle"]' }] : [],
+  });
+}
+
+function drawPerPosQuality(parent, r, key) {
   const n = r.perPos.position.length;
   const step = Math.max(2.2, Math.min(9, 820 / n));
   const mL = 46, mR = 16, mT = 14, mB = 34;
@@ -247,9 +264,10 @@ function drawPerPosQuality(parent, r) {
     '<span class="ql-legend-item"><span class="ql-legend-swatch ql-sq" style="background:var(--critical);opacity:.3"></span>' + t('qc.perPosQ.bandBad') + '</span>' +
     '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(--cat-2)"></span>' + t('qc.perPosQ.colMean') + '</span>';
   parent.appendChild(legend);
+  attachQcEditor(svg, parent, key, false);
 }
 
-function drawLines(parent, { n, xValues, series, yMax, yLabel, xLabel, pct }) {
+function drawLines(parent, { n, xValues, series, yMax, yLabel, xLabel, pct }, key) {
   const step = Math.max(1.6, Math.min(9, 820 / n));
   const mL = 48, mR = 16, mT = 14, mB = 34;
   const W = mL + mR + n * step, H = 240;
@@ -264,9 +282,12 @@ function drawLines(parent, { n, xValues, series, yMax, yLabel, xLabel, pct }) {
     const tk = svgEl('text', { x: mL - 6, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
     tk.textContent = pct ? v.toFixed(0) + '%' : v.toFixed(0); svg.appendChild(tk);
   }
-  series.forEach((s) => {
-    const pts = s.values.map((v, i) => (mL + i * step + step / 2) + ',' + yOf(v)).join(' ');
-    svg.appendChild(svgEl('polyline', { points: pts, fill: 'none', stroke: 'var(' + s.colorVar + ')', 'stroke-width': 1.7, opacity: 0.95 }));
+  series.forEach((s, i) => {
+    const pts = s.values.map((v, j) => (mL + j * step + step / 2) + ',' + yOf(v)).join(' ');
+    svg.appendChild(svgEl('polyline', {
+      points: pts, fill: 'none', stroke: 'var(' + s.colorVar + ')', 'stroke-width': 1.7, opacity: 0.95,
+      'data-ce-series-stroke': 's' + i,
+    }));
   });
   const every = Math.ceil(n / 12);
   for (let i = 0; i < n; i += every) {
@@ -274,18 +295,28 @@ function drawLines(parent, { n, xValues, series, yMax, yLabel, xLabel, pct }) {
     const tk = svgEl('text', { x, y: H - 12, class: 'ql-tick-label', 'text-anchor': 'middle' });
     tk.textContent = xValues ? xValues[i] : (i + 1); svg.appendChild(tk);
   }
+  let hasXtitle = false;
   if (xLabel) {
-    const xt = svgEl('text', { x: mL + n * step / 2, y: H - 1, class: 'ql-axis-label', 'text-anchor': 'middle' });
+    const xt = svgEl('text', { x: mL + n * step / 2, y: H - 1, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
     xt.textContent = xLabel; svg.appendChild(xt);
+    hasXtitle = true;
   }
   const legend = document.createElement('div');
   legend.className = 'ql-legend';
   legend.style.marginTop = '10px';
   legend.innerHTML = series.map((s) => '<span class="ql-legend-item"><span class="ql-legend-swatch" style="background:var(' + s.colorVar + ')"></span>' + escapeHtml(s.name) + '</span>').join('');
   parent.appendChild(legend);
+  attachChartEditor({
+    key, svg, mount: parent, filename: key, lang: getLang(),
+    elements: hasXtitle ? [{ id: 'xtitle', selector: '[data-ce="xtitle"]' }] : [],
+    ...(series.length > 1 ? {
+      paletteSeries: series.map((s, i) => ({ id: 's' + i, label: s.name })),
+      paletteType: 'categorical',
+    } : {}),
+  });
 }
 
-function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }) {
+function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }, key) {
   const nb = bars.length;
   const W = Math.max(520, Math.min(920, 40 + nb * 46)), H = 250;
   const mL = 48, mR = 16, mT = 14, mB = rotate ? 56 : 34;
@@ -303,7 +334,10 @@ function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }) {
   }
   bars.forEach((b, i) => {
     const x = mL + i * bw;
-    svg.appendChild(svgEl('rect', { x: x + bw * 0.15, y: yOf(b.value), width: bw * 0.7, height: Math.max(0, yOf(0) - yOf(b.value)), fill: 'var(' + (b.colorVar || colorVar || '--cat-1') + ')', rx: 2 }));
+    svg.appendChild(svgEl('rect', {
+      x: x + bw * 0.15, y: yOf(b.value), width: bw * 0.7, height: Math.max(0, yOf(0) - yOf(b.value)),
+      fill: 'var(' + (b.colorVar || colorVar || '--cat-1') + ')', rx: 2, 'data-ce-series-fill': 's0',
+    }));
     const tk = svgEl('text', { x: x + bw / 2, y: H - (rotate ? 40 : 12), class: 'ql-tick-label', 'text-anchor': rotate ? 'end' : 'middle' });
     tk.textContent = b.label;
     if (rotate) tk.setAttribute('transform', 'rotate(-45 ' + (x + bw / 2) + ' ' + (H - 40) + ')');
@@ -313,10 +347,18 @@ function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }) {
     const pts = overlay.map((o, i) => (mL + i * bw + bw / 2) + ',' + yOf(o.value)).join(' ');
     svg.appendChild(svgEl('polyline', { points: pts, fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3' }));
   }
+  let hasXtitle = false;
   if (xLabel) {
-    const xt = svgEl('text', { x: mL + innerW / 2, y: H - 1, class: 'ql-axis-label', 'text-anchor': 'middle' });
+    const xt = svgEl('text', { x: mL + innerW / 2, y: H - 1, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
     xt.textContent = xLabel; svg.appendChild(xt);
+    hasXtitle = true;
   }
+  attachChartEditor({
+    key, svg, mount: parent, filename: key, lang: getLang(),
+    elements: hasXtitle ? [{ id: 'xtitle', selector: '[data-ce="xtitle"]' }] : [],
+    paletteSeries: [{ id: 's0', label: t('qc.chartBarColor') }],
+    paletteType: 'categorical',
+  });
 }
 
 function detailsTable(parent, headerCells, rows) {
@@ -368,8 +410,9 @@ function metricCard(container, { titleKey, verdict, explainKey, interpretKey, ve
 // ---------------------------------------------------------------------------
 //  informe completo de un archivo
 // ---------------------------------------------------------------------------
-function renderReport(container, r) {
+function renderReport(container, r, fileName) {
   const overall = worst(vPerPosQ(r), vSeqQ(r), vNContent(r), vGC(r), vDup(r), vAdapter(r), vOverrep(r));
+  const qk = (metric) => 'qc-' + safeId(fileName || 'file') + '-' + metric; // clave de attachChartEditor por archivo+métrica
 
   // aviso de submuestra
   const note = document.createElement('div');
@@ -444,7 +487,7 @@ function renderReport(container, r) {
       explainKey: 'qc.perPosQ.explain', interpretKey: 'qc.perPosQ.interpret',
       verdictTextKey: 'qc.perPosQ.verdict' + VK[vPerPosQ(r)],
     });
-    drawPerPosQuality(body, r);
+    drawPerPosQuality(body, r, qk('perpos'));
     detailsTable(body,
       [t('qc.perPosQ.colPos'), t('qc.perPosQ.colQ25'), t('qc.perPosQ.colMedian'), t('qc.perPosQ.colQ75'), t('qc.perPosQ.colMean')],
       r.perPos.position.map((p, i) => [p, r.perPos.p25[i], r.perPos.median[i], r.perPos.p75[i], r.perPos.mean[i].toFixed(1)]));
@@ -458,7 +501,7 @@ function renderReport(container, r) {
       verdictTextKey: 'qc.seqQ.verdict' + VK[vSeqQ(r)],
     });
     const bars = r.seqQual.filter((x) => x.q >= 2).map((x) => ({ label: String(x.q), value: x.count }));
-    drawBars(body, { bars, colorVar: '--cat-1', xLabel: t('qc.seqQ.colQ') });
+    drawBars(body, { bars, colorVar: '--cat-1', xLabel: t('qc.seqQ.colQ') }, qk('seqq'));
     detailsTable(body, [t('qc.seqQ.colQ'), t('qc.seqQ.colCount')], r.seqQual.map((x) => [x.q, fmtInt(x.count)]));
   }
 
@@ -477,7 +520,7 @@ function renderReport(container, r) {
         { name: 'G', colorVar: '--cat-3', values: r.perPos.baseG.map((v) => v * 100) },
         { name: 'T', colorVar: '--cat-4', values: r.perPos.baseT.map((v) => v * 100) },
       ],
-    });
+    }, qk('basecontent'));
     detailsTable(body, [t('qc.baseContent.colPos'), '%A', '%C', '%G', '%T'],
       r.perPos.position.map((p, i) => [p, (r.perPos.baseA[i] * 100).toFixed(1), (r.perPos.baseC[i] * 100).toFixed(1), (r.perPos.baseG[i] * 100).toFixed(1), (r.perPos.baseT[i] * 100).toFixed(1)]));
   }
@@ -493,7 +536,7 @@ function renderReport(container, r) {
     drawLines(body, {
       n: r.perPos.position.length, xValues: r.perPos.position, yMax: nMax, pct: true, xLabel: t('qc.nContent.title'),
       series: [{ name: '%N', colorVar: '--cat-5', values: r.perPos.baseN.map((v) => v * 100) }],
-    });
+    }, qk('ncontent'));
   }
 
   // 6. distribución de %GC
@@ -504,7 +547,7 @@ function renderReport(container, r) {
       verdictTextKey: 'qc.gcDist.verdict' + VK[vGC(r)],
     });
     const bars = r.gc.map((x) => ({ label: x.gc % 10 === 0 ? String(x.gc) : '', value: x.count }));
-    drawBars(body, { bars, colorVar: '--cat-3', overlay: r.gc.map((x) => ({ value: x.theoretical })), xLabel: t('qc.gcDist.colGC') });
+    drawBars(body, { bars, colorVar: '--cat-3', overlay: r.gc.map((x) => ({ value: x.theoretical })), xLabel: t('qc.gcDist.colGC') }, qk('gcdist'));
     detailsTable(body, [t('qc.gcDist.colGC'), t('qc.gcDist.colObs'), t('qc.gcDist.colTheo')],
       r.gc.filter((x) => x.count > 0 || x.theoretical > 0.5).map((x) => [x.gc, fmtInt(x.count), x.theoretical.toFixed(0)]));
   }
@@ -516,7 +559,7 @@ function renderReport(container, r) {
       explainKey: 'qc.lengthDist.explain', interpretKey: 'qc.lengthDist.interpret',
       verdictTextKey: 'qc.lengthDist.verdict' + VK[vLength(r)],
     });
-    drawBars(body, { bars: r.lengthDist.map((x) => ({ label: String(x.len), value: x.count })), colorVar: '--cat-6', xLabel: t('qc.lengthDist.colLen') });
+    drawBars(body, { bars: r.lengthDist.map((x) => ({ label: String(x.len), value: x.count })), colorVar: '--cat-6', xLabel: t('qc.lengthDist.colLen') }, qk('lengthdist'));
     detailsTable(body, [t('qc.lengthDist.colLen'), t('qc.lengthDist.colCount')], r.lengthDist.map((x) => [x.len, fmtInt(x.count)]));
   }
 
@@ -529,7 +572,7 @@ function renderReport(container, r) {
       verdictTextKey: 'qc.duplication.verdict' + VK[dv], verdictParams: { pct: r.duplication.pctDuplicated.toFixed(1) },
       noteKey: 'qc.duplication.ampliconNote',
     });
-    drawBars(body, { bars: r.duplication.levels.map((x) => ({ label: x.label, value: x.pctReads })), colorVar: '--cat-7', xLabel: t('qc.duplication.colLevel'), rotate: true });
+    drawBars(body, { bars: r.duplication.levels.map((x) => ({ label: x.label, value: x.pctReads })), colorVar: '--cat-7', xLabel: t('qc.duplication.colLevel'), rotate: true }, qk('duplication'));
     const rem = document.createElement('p');
     rem.className = 'ql-field-help';
     rem.style.marginTop = '8px';
@@ -595,7 +638,7 @@ function renderReport(container, r) {
       drawLines(body, {
         n: r.adapter.position.length, xValues: r.adapter.position, yMax: Math.max(2, Math.ceil(r.adapter.maxPct * 1.2)), pct: true, xLabel: t('qc.adapter.colPos'),
         series: r.adapter.series.map((s, i) => ({ name: s.name, colorVar: CAT[i % CAT.length], values: s.values })),
-      });
+      }, qk('adapter'));
     }
   }
 }
@@ -925,7 +968,7 @@ export function render(container) {
     }
 
     if (cur.report) {
-      renderReport(container, cur.report);
+      renderReport(container, cur.report, cur.name);
     } else if (errors.has(cur.name)) {
       const c = document.createElement('div');
       c.className = 'ql-card ql-panel';
