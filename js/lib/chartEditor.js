@@ -25,6 +25,19 @@
 //    calor, matriz de correlación) que sí necesitan repintar al cambiar.
 //
 // Sin dependencias, sin build step. No toca datos ni escalas.
+//
+// DECISIÓN DE ARQUITECTURA (22 sep 2026, ver Claude outputs/estudio-editor-
+// graficas-nivel-biorender.md sección 2 y qiimelab-prompt-editor-fase-0-
+// fundamentos.md Paso 1): este archivo tenía dos vías de edición no
+// unificadas. `attachChartEditor` (abajo) es ahora la ÚNICA vía — la usan
+// las ~28 vistas de gráfico de la app. `openChartEditor` (modal aparte con
+// pestañas geometría/tipografía/colores, más abajo en el archivo) queda
+// documentado como LEGACY: se retiró su único uso (el diagrama aluvial de
+// taxaBarplot.js) en favor de `attachChartEditor` + `cfg.geometrySliders`
+// (nueva sección "Geometría" del panel, mismo patrón que la paleta y los
+// títulos). No se ha borrado el código de `openChartEditor` todavía —
+// queda como referencia/red de seguridad un tiempo — pero no debe ganar
+// ningún caso de uso nuevo; cualquier control nuevo va en `attachChartEditor`.
 
 import { PALETTES, paletteColorAt } from './palettes.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
@@ -52,6 +65,14 @@ export function getPaletteOverrides(key) {
   return readChartStyleRaw(key).__palette || {};
 }
 
+/** Los valores de geometría persistidos para `key` — { sliderId: number }.
+ *  Función pura, sin DOM: para que un módulo pueda leer (p. ej. el ancho de
+ *  nodo o la opacidad de flujo elegidos por el usuario) ANTES de calcular su
+ *  layout inicial, igual que `getPaletteOverrides` para el color. */
+export function getFigureGeometry(key) {
+  return readChartStyleRaw(key).__geometry || {};
+}
+
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
   ['var(--font-display)', 'Serif (IBM Plex)'],
@@ -72,7 +93,8 @@ const I18N = {
         paletteWarnContrast: 'poco contraste sobre el fondo de la figura',
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
-        titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y' },
+        titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
+        geometryTitle: 'Geometría' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -83,7 +105,8 @@ const I18N = {
         paletteWarnContrast: 'low contrast against the figure background',
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
-        titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title' },
+        titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
+        geometryTitle: 'Geometry' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -159,6 +182,14 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-pal-row input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
 .ce-pal-row input[type=text] { flex:0 0 84px; }
 .ce-pal-warn { font-size:11px; color:#8a5a00; flex:1 1 100%; margin:0; }
+.ce-geometry { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-geometry h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-geom-rows { display:flex; flex-direction:column; gap:8px; max-width:420px; }
+.ce-geom-row { display:flex; align-items:center; gap:8px; }
+.ce-geom-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
+.ce-geom-row .ql-inputrow { display:flex; align-items:center; gap:8px; flex:1; }
+.ce-geom-row input[type=range] { flex:1; min-width:0; }
+.ce-geom-row input[type=number] { width:64px; flex:none; }
 .ce-fs-stage { display:flex; flex-direction:column; gap:14px; }
 .ce-fs-svgwrap { flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; overflow:auto; background:var(--page); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; }
 .ce-fs-svgwrap svg.ce-fs-svg { width:100% !important; height:auto !important; max-height:calc(100vh - 260px); }
@@ -179,6 +210,16 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  *        - kind:     'text' (def.) | 'group' (aplica estilo a los <text> descendientes)
  * @param {string} [cfg.lang]
  * @param {Function} [cfg.onChange]  se llama tras cualquier cambio persistido
+ * @param {Array}  [cfg.geometrySliders]  [{ id, label, min, max, step, value,
+ *        unit?, isPercent? }] — parámetros estructurales que SÍ necesitan
+ *        recalcular geometría (p. ej. ancho de nodo de un aluvial) y por
+ *        tanto no pueden ser una simple variable CSS. `value` es el valor
+ *        por defecto si no hay nada persistido; leer el efectivo con
+ *        `getFigureGeometry(key)` antes del primer pintado. Cada cambio se
+ *        persiste en `store.__geometry[id]` y dispara `cfg.onGeometryChange`.
+ * @param {Function} [cfg.onGeometryChange]  (id, value) — el módulo debe
+ *        repintar con el nuevo valor (mismo patrón que `onReset`/`onChange`,
+ *        pero con el dato: no hay forma de inferirlo solo del DOM).
  */
 export function attachChartEditor(cfg) {
   injectStyles();
@@ -186,6 +227,7 @@ export function attachChartEditor(cfg) {
   const paletteSeries = cfg.paletteSeries || []; // [{ id, label }] — series de datos recoloreables
   const paletteType = cfg.paletteType || 'categorical'; // qué botones de paleta ofrecer
   const paletteMax = cfg.paletteMax; // tope de tonos simultáneos (scatter/red: 3-4, no los 8)
+  const geometrySliders = cfg.geometrySliders || []; // [{ id, label, min, max, step, value, unit?, isPercent? }]
   const lang = cfg.lang || 'es';
   const T = tr(lang);
   const LSKEY = 'smart-175.chartStyle.' + key;
@@ -314,6 +356,8 @@ export function attachChartEditor(cfg) {
     }
 
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
+
+    if (editing && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
   }
 
   function renderTitlesSection() {
@@ -503,6 +547,70 @@ export function attachChartEditor(cfg) {
     wrap.appendChild(rows);
     return wrap;
   }
+
+  // ---- geometría (parámetros estructurales que necesitan repintar) ----
+  function geometryOverrides() { return store.__geometry || {}; }
+
+  function setGeometryValue(id, val) {
+    const geo = (store.__geometry = store.__geometry || {});
+    geo[id] = val;
+    writeStoreDebounced();
+    if (cfg.onGeometryChange) try { cfg.onGeometryChange(id, val); } catch (e) { /* noop */ }
+  }
+
+  function renderGeometrySection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-geometry';
+    wrap.innerHTML = '<h5>' + (T.geometryTitle || 'Geometría') + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-geom-rows';
+    const geo = geometryOverrides();
+
+    geometrySliders.forEach((sl) => {
+      const current = geo[sl.id] !== undefined ? geo[sl.id] : sl.value;
+      const toDisplay = (v) => (sl.isPercent ? Math.round(v * 100) : v);
+      const fromDisplay = (v) => (sl.isPercent ? v / 100 : v);
+      const min = toDisplay(sl.min), max = toDisplay(sl.max), step = toDisplay(sl.step);
+      const unit = sl.isPercent ? '%' : (sl.unit || '');
+
+      const row = document.createElement('div');
+      row.className = 'ce-geom-row';
+      const rowId = 'ce-geom-' + (++cePanelUid);
+      const lab = document.createElement('label');
+      lab.setAttribute('for', rowId);
+      lab.textContent = sl.label + (unit ? ' (' + unit + ')' : '');
+      row.appendChild(lab);
+
+      const inputRow = document.createElement('div');
+      inputRow.className = 'ql-inputrow';
+      const rangeInp = document.createElement('input');
+      rangeInp.type = 'range'; rangeInp.id = rowId;
+      rangeInp.min = min; rangeInp.max = max; rangeInp.step = step; rangeInp.value = toDisplay(current);
+      const numInp = document.createElement('input');
+      numInp.type = 'number'; numInp.className = 'tabular';
+      numInp.min = min; numInp.max = max; numInp.step = step; numInp.value = toDisplay(current);
+
+      const onSliderChange = (raw) => {
+        const num = parseFloat(raw);
+        if (Number.isNaN(num)) return;
+        const clamped = Math.max(min, Math.min(max, num));
+        rangeInp.value = clamped; numInp.value = clamped;
+        setGeometryValue(sl.id, fromDisplay(clamped));
+      };
+      rangeInp.addEventListener('input', () => onSliderChange(rangeInp.value));
+      numInp.addEventListener('change', () => onSliderChange(numInp.value));
+
+      inputRow.appendChild(rangeInp);
+      inputRow.appendChild(numInp);
+      row.appendChild(inputRow);
+      rows.appendChild(row);
+    });
+
+    wrap.appendChild(rows);
+    return wrap;
+  }
+
   function mkBtn(icon, label, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1249,6 +1357,13 @@ export function exportPng(svgEl, filename = 'smart175_figura', scale = 4) {
  * @param {Object} [configOptions] - Parámetros de configuración iniciales
  * @param {Function} [onUpdate] - Callback en tiempo real (currentConfig, changedKey, changedValue)
  * @returns {{ dialog: HTMLDialogElement, close: () => void }}
+ */
+/**
+ * @deprecated Vía de edición legacy — ver la nota de arquitectura al
+ * principio del archivo (22 sep 2026). Sin uso en el repo desde que el
+ * diagrama aluvial de taxaBarplot.js migró a `attachChartEditor` +
+ * `cfg.geometrySliders`. No añadir casos de uso nuevos; se conserva el
+ * código por ahora como red de seguridad, no como API recomendada.
  */
 export function openChartEditor(chartRef, configOptions = {}, onUpdate = () => {}) {
   // 1. Cerrar cualquier diálogo de edición previo para evitar duplicados
