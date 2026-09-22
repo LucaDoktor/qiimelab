@@ -117,6 +117,34 @@ try {
   check('el SVG exportado de beta no tiene color-mix()/var() residual y conserva el <linearGradient> de leyenda',
     exportCheck.noColorMix && exportCheck.noVar && exportCheck.hasGradient, JSON.stringify(exportCheck));
 
+  // ---- Paso 4: controles de celda ----
+  // orden de checkboxes en .ce-colorscale (tipo secuencial, sin fila de
+  // punto medio): [0]=invertir, [1]=valor en celda, [2]=borde de celda.
+  const betaShowVal = await c.ev(`(() => {
+    const before = document.querySelectorAll('text.ql-cell-value').length;
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    const showValChk = chks[1];
+    showValChk.checked = true;
+    showValChk.dispatchEvent(new Event('change', { bubbles: true }));
+    const after = document.querySelectorAll('text.ql-cell-value').length;
+    return { before, after };
+  })()`);
+  check('beta: activar "valor en celda" dibuja el número de distancia (no existía antes de la Fase 3)',
+    betaShowVal.before === 0 && betaShowVal.after > 0, JSON.stringify(betaShowVal));
+
+  const betaBorder = await c.ev(`(() => {
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    const borderChk = chks[2];
+    borderChk.checked = true;
+    borderChk.dispatchEvent(new Event('change', { bubbles: true }));
+    const colorInp = document.querySelector('.ce-colorscale input[type=color]');
+    colorInp.value = '#00ff00';
+    colorInp.dispatchEvent(new Event('change', { bubbles: true }));
+    const rect = document.querySelector('rect[data-ri="0"][data-ci="0"]');
+    return { stroke: getComputedStyle(rect).stroke };
+  })()`);
+  check('beta: activar "borde de celda" pinta un stroke visible en las celdas', betaBorder.stroke === 'rgb(0, 255, 0)', JSON.stringify(betaBorder));
+
   check('sin errores de consola tras beta', c.problems.length === 0, c.problems.join('; '));
 
   // ================= correlogram.js (divergente, diagonal fuera de la escala) =================
@@ -186,6 +214,31 @@ try {
   check('el SVG exportado de correlograma no tiene color-mix()/var() residual (incl. --corr-diag resuelto) y conserva el <linearGradient> de leyenda',
     corrExport.noColorMix && corrExport.noVar && corrExport.hasGradient, JSON.stringify(corrExport));
 
+  // ---- Paso 4: controles de celda (orden de checkboxes: [0]=invertir,
+  // [1]=valor en celda, [2]=borde — mismo orden que beta, ver arriba) ----
+  const corrShowVal = await c.ev(`(() => {
+    const before = document.querySelectorAll('text.ql-cell-value').length;
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    chks[1].checked = false;
+    chks[1].dispatchEvent(new Event('change', { bubbles: true }));
+    const after = document.querySelectorAll('text.ql-cell-value').length;
+    return { before, after };
+  })()`);
+  check('correlograma: desactivar "valor en celda" oculta las estrellas/p que antes eran incondicionales',
+    corrShowVal.after === 0, JSON.stringify(corrShowVal));
+
+  const corrBorder = await c.ev(`(() => {
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    chks[2].checked = true;
+    chks[2].dispatchEvent(new Event('change', { bubbles: true }));
+    const colorInp = document.querySelector('.ce-colorscale input[type=color]');
+    colorInp.value = '#00ff00';
+    colorInp.dispatchEvent(new Event('change', { bubbles: true }));
+    const rect = document.querySelector('rect[data-i][data-j]');
+    return { stroke: getComputedStyle(rect).stroke };
+  })()`);
+  check('correlograma: activar "borde de celda" pinta un stroke visible en las celdas de datos', corrBorder.stroke === 'rgb(0, 255, 0)', JSON.stringify(corrBorder));
+
   check('sin errores de consola tras correlograma', c.problems.length === 0, c.problems.join('; '));
 
   // ================= differentialAbundance.js (divergente, invert-por-defecto) =================
@@ -236,6 +289,30 @@ try {
   // completo vía onColorScaleChange.
   const stillEditing = await c.ev(`(() => !!document.querySelector('.ce-colorscale'))()`);
   check('el panel "Personalizar" sigue abierto tras un cambio de escala (no se cierra solo — bug arreglado en Fase 3)', stillEditing);
+
+  // ---- Paso 4: controles de celda ----
+  const daShowVal = await c.ev(`(() => {
+    const before = document.querySelectorAll('text.ql-cell-value').length;
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    chks[1].checked = false;
+    chks[1].dispatchEvent(new Event('change', { bubbles: true }));
+    const after = document.querySelectorAll('text.ql-cell-value').length;
+    return { before, after };
+  })()`);
+  check('diferencial: desactivar "valor en celda" oculta el número de log2FC que antes era incondicional',
+    daShowVal.before > 0 && daShowVal.after === 0, JSON.stringify(daShowVal));
+
+  const daBorder = await c.ev(`(() => {
+    const chks = [...document.querySelectorAll('.ce-colorscale input[type=checkbox]')];
+    chks[2].checked = true;
+    chks[2].dispatchEvent(new Event('change', { bubbles: true }));
+    const colorInp = document.querySelector('.ce-colorscale input[type=color]');
+    colorInp.value = '#00ff00';
+    colorInp.dispatchEvent(new Event('change', { bubbles: true }));
+    const rect = document.querySelector('rect[data-tt]');
+    return { stroke: getComputedStyle(rect).stroke };
+  })()`);
+  check('diferencial: activar "borde de celda" pinta un stroke visible en las celdas', daBorder.stroke === 'rgb(0, 255, 0)', JSON.stringify(daBorder));
 
   check('sin errores de consola tras diferencial', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {

@@ -864,6 +864,12 @@ export function render(container) {
       maxAbs = maxAbs || 1;
       const colorScale = heatColorScale(maxAbs);
       const lfcFill = (v) => (v == null || !isFinite(v) ? 'var(--page)' : (colorScale.scale(v) || 'var(--page)'));
+      // controles de celda (Paso 4): "valor en celda" hace toggle del
+      // número de log2FC que antes era incondicional (por defecto sigue
+      // apareciendo). "Borde de celda": nuevo.
+      const heatCsOv = getColorScaleOptions('differentialAbundance-heatmap');
+      const showValue = heatCsOv.showValue !== false;
+      const cellBorder = heatCsOv.cellBorder || null;
 
       activeTooltip = (el) => {
         const [ri, ci] = el.dataset.tt.split(':').map(Number);
@@ -880,10 +886,11 @@ export function render(container) {
           const x = mL + ci * cellW;
           const rect = svgEl('rect', {
             x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v), opacity: dim ? 0.3 : 1,
+            ...(cellBorder ? { stroke: cellBorder.color, 'stroke-width': cellBorder.width } : {}),
             'data-tt': ri + ':' + ci, 'data-cx': x + cellW / 2, 'data-cy': y + rowH / 2,
           });
           g.appendChild(rect);
-          if (v != null && isFinite(v) && cellW >= 40 && rowH >= 15) {
+          if (showValue && v != null && isFinite(v) && cellW >= 40 && rowH >= 15) {
             const strong = Math.abs(v) / maxAbs > 0.55;
             const tx = svgEl('text', { x: x + (cellW - 2) / 2, y: y + rowH / 2 + 3, class: 'ql-cell-value', 'text-anchor': 'middle', 'font-size': Math.min(11, rowH * 0.5).toFixed(1), fill: strong ? 'var(--surface)' : 'var(--ink)', 'font-family': 'var(--font-mono)', 'pointer-events': 'none', opacity: dim ? 0.4 : 1 });
             tx.textContent = v.toFixed(1);

@@ -775,15 +775,40 @@ export function render(container) {
       steps: csOv.steps, invert: csOv.invert,
     });
 
+    // controles de celda (Paso 4): "valor en celda" — beta no dibujaba
+    // ningún número antes de la Fase 3, se ofrece como opción (por defecto
+    // apagada, ver defaultShowValue en attachChartEditor más abajo).
+    // "Borde de celda" — inexistente hasta ahora en las 3 vistas.
+    const showValue = csOv.showValue === true;
+    const cellBorder = csOv.cellBorder || null;
     order.forEach((rowId, ri) => {
       order.forEach((colId, ci) => {
         const v = data.matrix[idxOf[rowId]][idxOf[colId]];
+        const x = marginL + ci * cellSize, y = marginT + ri * cellSize;
         const rect = svgEl('rect', {
-          x: marginL + ci * cellSize, y: marginT + ri * cellSize, width: cellSize - 1, height: cellSize - 1,
+          x, y, width: cellSize - 1, height: cellSize - 1,
           fill: colorScale.scale(v) || 'var(--surface)',
+          ...(cellBorder ? { stroke: cellBorder.color, 'stroke-width': cellBorder.width } : {}),
           'data-ri': ri, 'data-ci': ci,
         });
         svg.appendChild(rect);
+        if (showValue && cellSize >= 12) {
+          // mismo criterio de contraste que correlogram.js/
+          // differentialAbundance.js: texto claro sobre el extremo "fuerte"
+          // de la rampa (aquí, más lejos/distinto), oscuro sobre el resto —
+          // heurística por magnitud, no por luminancia real del color ya
+          // pintado (ídem en los otros 2 módulos).
+          const span = colorScale.domain[1] - colorScale.domain[0];
+          const frac = span === 0 ? 0 : Math.abs((v - colorScale.domain[0]) / span);
+          const strong = frac > 0.55;
+          const tx = svgEl('text', {
+            x: x + (cellSize - 1) / 2, y: y + (cellSize - 1) / 2 + 3.5, class: 'ql-cell-value',
+            'text-anchor': 'middle', 'font-size': Math.min(11, cellSize * 0.4),
+            fill: strong ? 'var(--surface)' : 'var(--ink)', 'font-family': 'var(--font-mono)', 'pointer-events': 'none',
+          });
+          tx.textContent = v.toFixed(2);
+          svg.appendChild(tx);
+        }
       });
     });
     delegateHover(svg, 'rect[data-ri]', {
@@ -837,7 +862,7 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
-      colorScale: { type: 'sequential', domain: [0, maxDist] },
+      colorScale: { type: 'sequential', domain: [0, maxDist], defaultShowValue: false },
       onReset: () => paint(),
       onColorScaleChange: () => paint(),
     });

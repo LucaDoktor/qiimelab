@@ -424,6 +424,13 @@ export function render(container) {
       range: paletteColorsOf(csOv.paletteId || 'app:divergent'),
       steps: csOv.steps, invert: csOv.invert,
     });
+    // controles de celda (Paso 4): "valor en celda" hace toggle de la
+    // anotación de estrellas/p que antes era incondicional (por defecto
+    // sigue apareciendo, ver defaultShowValue ausente = true). "Borde de
+    // celda": nuevo, solo aplica al modo mapa de calor (bubbles ya tiene su
+    // propio borde fijo var(--gridline) entre celdas).
+    const showValue = csOv.showValue !== false;
+    const cellBorder = !isBubbles ? (csOv.cellBorder || null) : null;
     for (let i = 0; i < k; i++) {
       for (let j = 0; j < k; j++) {
         const res = results[i][j];
@@ -432,7 +439,8 @@ export function render(container) {
         const rect = svgEl('rect', {
           x, y, width: cell - 1.5, height: cell - 1.5, rx: 2,
           fill: isDiag ? 'var(--corr-diag)' : (isBubbles ? 'var(--surface)' : (colorScale.scale(res.r) || 'var(--corr-zero)')),
-          stroke: (isBubbles && !isDiag) ? 'var(--gridline)' : undefined,
+          stroke: (isBubbles && !isDiag) ? 'var(--gridline)' : (cellBorder ? cellBorder.color : undefined),
+          'stroke-width': cellBorder ? cellBorder.width : undefined,
           ...(isDiag ? {} : { 'data-i': i, 'data-j': j }),
         });
         svg.appendChild(rect);
@@ -447,7 +455,7 @@ export function render(container) {
               'data-ce-series-fill': res.r >= 0 ? 'pos' : 'neg', 'pointer-events': 'none',
             }));
           }
-        } else if (!isDiag) {
+        } else if (!isDiag && showValue) {
           const ann = cellAnnotation(res.p, statsOpts);
           if (ann) {
             const strong = isFinite(res.r) && Math.abs(res.r) > 0.5;

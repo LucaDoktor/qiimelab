@@ -192,7 +192,8 @@ const I18N = {
         statsThreshold: 'Umbral de significación', statsMethod: 'Ajuste de p (varias comparaciones)',
         colorScaleTitle: 'Escala de color', csPalette: 'Paleta', csDomain: 'Dominio (mín–máx)',
         csDomainMin: 'Mínimo del dominio', csDomainMax: 'Máximo del dominio', csResetDomain: 'Restablecer',
-        csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala' },
+        csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala',
+        csShowValue: 'Valor en celda', csCellBorder: 'Borde de celda' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -223,7 +224,8 @@ const I18N = {
         statsThreshold: 'Significance threshold', statsMethod: 'p adjustment (multiple comparisons)',
         colorScaleTitle: 'Colour scale', csPalette: 'Palette', csDomain: 'Domain (min–max)',
         csDomainMin: 'Domain minimum', csDomainMax: 'Domain maximum', csResetDomain: 'Reset',
-        csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale' },
+        csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale',
+        csShowValue: 'Value in cell', csCellBorder: 'Cell border' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -396,7 +398,10 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  *        domain: [min,max] (el rango REAL de los datos en este pintado, para
  *        el botón "restablecer" y como valor por defecto), defaultPaletteId?
  *        (id de js/lib/palettes.js — 'app:sequential'/'app:divergent' si se
- *        omite), defaultMidpoint? (solo divergent, 0 si se omite) } — activa
+ *        omite), defaultMidpoint? (solo divergent, 0 si se omite),
+ *        defaultShowValue? (Paso 4: si el módulo ya dibuja el valor en cada
+ *        celda sin necesidad de tocar nada — correlograma/diferencial lo
+ *        dejan implícito true; beta lo pone a false) } — activa
  *        la sección "Escala de color" (Paso 3 de qiimelab-prompt-editor-
  *        fase-3-heatmaps-escalas-continuas.md), para los 3 heatmaps con
  *        degradado continuo (beta/correlograma/diferencial). El módulo debe
@@ -1551,6 +1556,50 @@ export function attachChartEditor(cfg) {
     invertChk.type = 'checkbox'; invertChk.checked = !!s.invert;
     invertChk.addEventListener('change', () => setColorScaleValue('invert', invertChk.checked ? true : ''));
     rows.appendChild(colorScaleRow(T.csInvert, invertChk));
+
+    // ---- controles de celda (Paso 4 de qiimelab-prompt-editor-fase-3-
+    // heatmaps-escalas-continuas.md) — universales para los 3 heatmaps,
+    // aunque el valor por defecto de "valor en celda" lo decide cada
+    // módulo (`colorScaleCfg.defaultShowValue`: correlograma/diferencial ya
+    // lo dibujaban siempre, así que su valor por defecto es true; beta no
+    // lo dibujaba, así que el suyo es false — el prompt pide "mostrar/
+    // ocultar" en los 3, no "añadir solo a beta").
+    const defShowVal = colorScaleCfg.defaultShowValue !== false;
+    const showValChk = document.createElement('input');
+    showValChk.type = 'checkbox';
+    showValChk.checked = s.showValue != null ? s.showValue : defShowVal;
+    showValChk.addEventListener('change', () => setColorScaleValue('showValue', showValChk.checked === defShowVal ? '' : showValChk.checked));
+    rows.appendChild(colorScaleRow(T.csShowValue, showValChk));
+
+    const cb = s.cellBorder || null;
+    const borderWrap = document.createElement('div');
+    borderWrap.className = 'ce-cs-domain'; // mismo layout de fila con varios controles
+    const borderChk = document.createElement('input');
+    borderChk.type = 'checkbox'; borderChk.checked = !!cb;
+    borderChk.setAttribute('aria-label', T.csCellBorder);
+    const bColorInp = document.createElement('input');
+    bColorInp.type = 'color'; bColorInp.value = isValidHex(cb && cb.color) ? cb.color : '#000000';
+    bColorInp.disabled = !borderChk.checked;
+    bColorInp.setAttribute('aria-label', T.paletteBorderColor);
+    const bWidthInp = document.createElement('input');
+    bWidthInp.type = 'number'; bWidthInp.min = '0.5'; bWidthInp.max = '6'; bWidthInp.step = '0.5';
+    bWidthInp.value = cb && cb.width != null ? cb.width : 1;
+    bWidthInp.disabled = !borderChk.checked;
+    bWidthInp.setAttribute('aria-label', T.paletteBorderWidth);
+    const commitBorder = () => {
+      bColorInp.disabled = !borderChk.checked;
+      bWidthInp.disabled = !borderChk.checked;
+      if (!borderChk.checked) { setColorScaleValue('cellBorder', ''); return; }
+      const w = parseFloat(bWidthInp.value);
+      setColorScaleValue('cellBorder', { color: bColorInp.value, width: Number.isFinite(w) ? Math.max(0.5, Math.min(6, w)) : 1 });
+    };
+    borderChk.addEventListener('change', commitBorder);
+    bColorInp.addEventListener('change', commitBorder);
+    bWidthInp.addEventListener('change', commitBorder);
+    borderWrap.appendChild(borderChk);
+    borderWrap.appendChild(bColorInp);
+    borderWrap.appendChild(bWidthInp);
+    rows.appendChild(colorScaleRow(T.csCellBorder, borderWrap));
 
     wrap.appendChild(rows);
     return wrap;
