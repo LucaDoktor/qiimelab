@@ -2,7 +2,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP, rarefactionCurve } from '../lib/stats.js';
 import { rarefactionBatchAsync } from '../lib/heavyStats.js';
-import { drawGroupBoxplot, drawGroupStripPlot, groupColor } from '../lib/groupBoxplot.js';
+import { drawGroupBoxplot, drawGroupStripPlot, groupColor, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { matchSampleId, makeGroupResolver } from '../lib/sampleMatch.js';
 import {
   collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS, countVectors,
@@ -29,6 +29,9 @@ export function render(container) {
   let view = 'boxplot'; // 'boxplot' | 'rarefaction'
   let plotStyle = 'box'; // 'box' | 'jitter' — solo dentro de view === 'boxplot'
   let editor = null;
+  let wasEditing = false; // ver cfg.startEditing en chartEditor.js — capturado en paint() antes de
+                           // destruir el editor, leído por renderRarefaction/drawChart (funciones
+                           // hermanas de paint(), no anidadas) al recrearlo
   // Las curvas de rarefacción de muchas muestras corren en un Web Worker
   // (js/lib/heavyStats.js); cacheamos el resultado para que ni el repaint tras
   // el worker ni un cambio de columna de agrupación las recalculen.
@@ -37,6 +40,10 @@ export function render(container) {
   let rareDepth = null; // profundidad de submuestreo elegida a mano; null hasta que el usuario la toque o cambie el dataset
 
   function paint() {
+    // ver cfg.startEditing en chartEditor.js: sin esto, cualquier repintado
+    // disparado DESDE DENTRO del propio editor (Estructura, Estadística…)
+    // cerraría el panel "Personalizar" de golpe.
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
@@ -223,7 +230,7 @@ export function render(container) {
     const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
     const drawFn = plotStyle === 'jitter' ? drawGroupStripPlot : drawGroupBoxplot;
     const ceKey = plotStyle === 'jitter' ? 'alphaDiversity-jitter' : 'alphaDiversity';
-    const { kw, ceElements, paletteSeries, statsControls } = drawFn({
+    const { kw, ceElements, paletteSeries, statsControls, figureOptions, legendPositions } = drawFn({
       svg, chartWrap, tooltip, groupNames, groupData, key: ceKey,
       title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
       valueDecimals: decimals,
@@ -247,7 +254,10 @@ export function render(container) {
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
       statsControls, onStatsChange: () => paint(),
+      figureOptions, onFigureOptionsChange: () => paint(),
+      legendPositions: (legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     // tabla
@@ -605,6 +615,7 @@ export function render(container) {
       paletteSeries: groupNames.map((g, i) => ({ id: 's' + i, label: g })),
       paletteType: 'categorical',
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     // ---- panel de muestras excluidas a la profundidad elegida ----

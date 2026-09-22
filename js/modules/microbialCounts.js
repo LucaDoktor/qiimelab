@@ -14,7 +14,7 @@ import {
   addMicrobialCountSeries, updateMicrobialCountSeries, removeMicrobialCountSeries,
 } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { groupColor, drawGroupStripPlot } from '../lib/groupBoxplot.js';
+import { groupColor, drawGroupStripPlot, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { ingestFile } from '../lib/ingest.js';
@@ -47,6 +47,9 @@ export function render(container) {
                                     // qiimelab-prompt-editor-fase-1-anotaciones-estadisticas.md
   let sort = { key: 'group', dir: 'asc' };
   let editors = []; // uno por bloque — con "agrupar por" puede haber varios a la vez
+  let wasEditingAny = false; // ver cfg.startEditing en chartEditor.js — si CUALQUIER bloque
+                              // estaba en modo "Personalizar" antes de repintar, todos los
+                              // bloques recreados vuelven a arrancar ya en ese modo
   const addVarState = new Map(); // seriesId -> { open, mode:'manual'|'file', name, joinCol, editingCol, msg }
 
   async function addFromFile(file, msgEl) {
@@ -85,6 +88,7 @@ export function render(container) {
   }
 
   function paint() {
+    wasEditingAny = editors.some((e) => e.isEditing && e.isEditing());
     editors.forEach((e) => e.destroy()); editors = [];
     container.innerHTML = '';
 
@@ -710,7 +714,7 @@ export function render(container) {
     const yTitle = t('recuentos.yAxis', { unit: s.mapping.alreadyLog ? (summary.valueName || t('recuentos.value')) : ('log₁₀ ' + (summary.valueName || t('recuentos.value'))) });
     const blockTitle = (s.label || t('recuentos.title')) + (level ? ' — ' + level : '');
 
-    const { ceElements, paletteSeries } = drawGroupStripPlot({
+    const { ceElements, paletteSeries, figureOptions, legendPositions } = drawGroupStripPlot({
       svg, chartWrap, tooltip, groupNames, groupData,
       title: blockTitle, xTitle: summary.groupColNames.join(' × ') || t('recuentos.group'),
       yTitle, valueLabel: yTitle, valueDecimals: 3,
@@ -722,7 +726,10 @@ export function render(container) {
       filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : '') + '-jitter', lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
+      figureOptions, onFigureOptionsChange: () => paint(),
+      legendPositions: (legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
       onReset: () => paint(),
+      startEditing: wasEditingAny,
     }));
   }
 
@@ -877,6 +884,7 @@ export function render(container) {
       paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g.key })),
       paletteType: 'categorical',
       onReset: () => paint(),
+      startEditing: wasEditingAny,
     }));
   }
 

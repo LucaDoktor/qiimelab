@@ -940,8 +940,17 @@ svg.ql-svg { width: 100%; height: auto; display: block; overflow: visible; }
 /* Líneas de la figura: DOS roles y nada más.
    --gridline = rejilla de fondo, suave, peso 1.
    --baseline = ejes / estructura / bigotes, con más peso (1.25). */
-.ql-gridline { stroke: var(--fig-grid-color, var(--gridline)); stroke-width: var(--fig-grid-width, 1); stroke-dasharray: var(--fig-grid-dash, none); }
+.ql-gridline { stroke: var(--fig-grid-color, var(--gridline)); stroke-width: var(--fig-grid-width, 1); stroke-dasharray: var(--fig-grid-dash, none); opacity: var(--fig-grid-opacity, 1); }
 .ql-baseline-line { stroke: var(--fig-axis-color, var(--baseline)); stroke-width: var(--fig-axis-width, 1.25); }
+/* Ocultar/mostrar la leyenda (Paso 4 G6 de qiimelab-prompt-editor-fase-4-
+   ejes-rejilla-leyenda-lienzo.md): variable de rol, no repinta — igual que
+   el resto del motor --fig-* de la Fase 0. */
+svg.ql-svg [data-ce="legend"] { opacity: var(--fig-legend-opacity, 1); }
+/* Marco/fondo del panel de trazado (G3) — invisibles por defecto (el rect
+   solo existe si el módulo lo dibuja, con radio 0 de por medio no cambia
+   nada visualmente hasta que el usuario active color/grosor). */
+.ql-panel-border { fill: none; stroke: var(--fig-panel-border-color, transparent); stroke-width: var(--fig-panel-border-width, 0); }
+.ql-panel-bg { fill: var(--fig-panel-bg-color, transparent); stroke: none; }
 .ql-threshold-line { stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.9; }
 /* Variante "elegida por el usuario" (vs. la de referencia automática arriba):
    sólida y con --accent, para un control interactivo (p.ej. profundidad de

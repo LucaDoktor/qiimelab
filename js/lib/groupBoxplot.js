@@ -10,7 +10,7 @@ import { mannWhitneyU, dunnTest } from './pairwiseStats.js';
 import { svgEl } from './dom.js';
 import { showTooltip, hideTooltip } from './tooltip.js';
 import { drawSignificanceBrackets, countBracketRows } from './statAnnotations.js';
-import { getStatsOptions } from './chartEditor.js';
+import { getStatsOptions, getFigureOptions } from './chartEditor.js';
 
 // paleta categórica por grupo — la misma en boxplot, curvas de rarefacción, etc.
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -25,6 +25,19 @@ export function mulberry32(a) {
     t2 = (t2 + Math.imul(t2 ^ (t2 >>> 7), 61 | t2)) ^ t2;
     return ((t2 ^ (t2 >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/** Etiqueta localizada (es/en, resto cae a es — mismo criterio que el resto
+ *  de la app) de una posición predefinida de leyenda (Paso 4/G6). Este
+ *  archivo no importa js/lib/i18n.js (es una librería de dibujo compartida,
+ *  no un módulo de página), así que las 3 palabras que hacen falta viven
+ *  aquí mismo en vez de forzar una dependencia nueva para tan poco texto. */
+export function legendPositionLabel(id, lang) {
+  const dict = {
+    es: { bottom: 'Abajo', top: 'Arriba', right: 'Derecha' },
+    en: { bottom: 'Bottom', top: 'Top', right: 'Right' },
+  };
+  return (dict[lang] || dict.es)[id] || id;
 }
 
 /** Comparaciones por pares: Mann-Whitney directo con exactamente 2 grupos
@@ -42,6 +55,27 @@ function computeSignificancePairs(groupNames, groupData, method) {
     return dt.comparisons.map((c) => ({ i: groupNames.indexOf(c.a), j: groupNames.indexOf(c.b), p: c.adj[method] }));
   }
   return [];
+}
+
+/** Orden de categorías (Paso 2/G4 de qiimelab-prompt-editor-fase-4-ejes-
+ *  rejilla-leyenda-lienzo.md) — 'original' (por defecto, tal como llega
+ *  `groupNames`), alfabético A-Z/Z-A, o por la MEDIANA del grupo ascendente/
+ *  descendente (no la media: mismo criterio robusto a outliers que ya usa
+ *  el resto del boxplot). Devuelve un array NUEVO, no reordena in situ. */
+function applyCategoryOrder(groupNames, groupData, orderMode) {
+  if (!orderMode || orderMode === 'original') return groupNames;
+  const medianOf = (g) => {
+    const v = groupData[g].slice().sort((a, b) => a - b);
+    const n = v.length;
+    if (!n) return NaN;
+    return n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+  };
+  const arr = groupNames.slice();
+  if (orderMode === 'alpha-asc') arr.sort((a, b) => String(a).localeCompare(String(b)));
+  else if (orderMode === 'alpha-desc') arr.sort((a, b) => String(b).localeCompare(String(a)));
+  else if (orderMode === 'value-asc') arr.sort((a, b) => medianOf(a) - medianOf(b));
+  else if (orderMode === 'value-desc') arr.sort((a, b) => medianOf(b) - medianOf(a));
+  return arr;
 }
 
 /** Kruskal-Wallis omnibus (se sigue mostrando en el cuadro de estadística de
@@ -93,10 +127,13 @@ function computeGroupStats(groupNames, groupData, key) {
  */
 export function drawGroupBoxplot(o) {
   const {
-    svg, chartWrap, tooltip, groupNames, groupData,
+    svg, chartWrap, tooltip, groupData,
     title, xTitle, yTitle, valueLabel,
   } = o;
   const decimals = o.valueDecimals != null ? o.valueDecimals : 3;
+  // Paso 2/G4 de qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-lienzo.md
+  const structOpts = getFigureOptions(o.key);
+  const groupNames = applyCategoryOrder(o.groupNames, groupData, structOpts.categoryOrder);
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
@@ -116,15 +153,24 @@ export function drawGroupBoxplot(o) {
   groupNames.forEach((g) => groupData[g].forEach((v) => perSample.push(v)));
   const vMin = Math.min(...perSample), vMax = Math.max(...perSample);
   const pad = (vMax - vMin) * 0.15 || 1;
-  const yMin = vMin - pad, yMax = vMax + pad;
+  // G4: min/max manual del panel "Estructura" — sobrescribe el rango
+  // auto-calculado con margen, no lo compone con él (si el usuario fija un
+  // mínimo, es EL mínimo, no "el mínimo de los datos con más margen encima").
+  const yMin = structOpts.axisMin != null ? structOpts.axisMin : vMin - pad;
+  const yMax = structOpts.axisMax != null ? structOpts.axisMax : vMax + pad;
   const yScale = (v) => marginT + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
 
-  // gridlines
+  // gridlines (mayor + G5 menor opcional, un punto medio entre cada par de
+  // mayores — más tenue vía opacidad, sin necesitar una clase de rol nueva)
   const ticks = 5;
   for (let i = 0; i <= ticks; i++) {
     const v = yMin + (i / ticks) * (yMax - yMin);
     const y = yScale(v);
     svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+    if (structOpts.gridMinor && i < ticks) {
+      const yMid = yScale(v + (yMax - yMin) / ticks / 2);
+      svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: yMid, y2: yMid, class: 'ql-gridline', opacity: 0.45 }));
+    }
     const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
     tk.textContent = v.toFixed(2);
     svg.appendChild(tk);
@@ -215,7 +261,8 @@ export function drawGroupBoxplot(o) {
     lt.textContent = String(g) + ' (n=' + groupData[g].length + ')';
     legG.appendChild(lt);
   });
-  legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 16) + ')');
+  const legNaturalX = marginL, legNaturalY = xLabelBase + 16;
+  legG.setAttribute('transform', 'translate(' + legNaturalX + ',' + legNaturalY + ')');
   svg.appendChild(legG);
 
   const ceElements = [
@@ -228,7 +275,31 @@ export function drawGroupBoxplot(o) {
   // una serie por grupo — para el selector de paleta del editor de gráficos
   const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
 
-  return { kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 } };
+  return {
+    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 },
+    // Paso 4/G4-G5-G6 (qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-
+    // lienzo.md): el módulo que llama solo tiene que repartir esto en su
+    // attachChartEditor({ ...figureOptions, legendPositions: ... }) — no
+    // hace falta más código en cada uno de los 4 consumidores.
+    figureOptions: { axis: { domain: [vMin - pad, vMax + pad] }, categoryOrder: true, gridMinor: true },
+    legendPositions: legendPresetPositions(legNaturalX, legNaturalY, { marginL, marginT, marginR, innerH, W, colW }),
+  };
+}
+
+/** 3 posiciones predefinidas de leyenda (Paso 4/G6) relativas a la posición
+ *  NATURAL en la que cada draw* ya la coloca (abajo del eje X) — 'bottom'
+ *  siempre es {dx:0,dy:0} (la posición de siempre), 'top'/'right' se
+ *  calculan a partir del layout real de ESTE pintado concreto (no valores
+ *  fijos) para que encajen razonablemente con cualquier tamaño de gráfico. */
+function legendPresetPositions(naturalX, naturalY, geo) {
+  const topY = 34; // justo debajo del título (y=24)
+  const rightX = Math.max(geo.marginL, geo.W - geo.marginR - geo.colW);
+  const midY = geo.marginT + geo.innerH / 2 - 20;
+  return [
+    { id: 'bottom', dx: 0, dy: 0 },
+    { id: 'top', dx: 0, dy: topY - naturalY },
+    { id: 'right', dx: rightX - naturalX, dy: midY - naturalY },
+  ];
 }
 
 /**
@@ -247,10 +318,12 @@ export function drawGroupBoxplot(o) {
  */
 export function drawGroupStripPlot(o) {
   const {
-    svg, chartWrap, tooltip, groupNames, groupData,
+    svg, chartWrap, tooltip, groupData,
     title, xTitle, yTitle, valueLabel,
   } = o;
   const decimals = o.valueDecimals != null ? o.valueDecimals : 3;
+  const structOpts = getFigureOptions(o.key);
+  const groupNames = applyCategoryOrder(o.groupNames, groupData, structOpts.categoryOrder);
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
@@ -270,7 +343,8 @@ export function drawGroupStripPlot(o) {
   groupNames.forEach((g) => groupData[g].forEach((v) => perSample.push(v)));
   const vMin = Math.min(...perSample), vMax = Math.max(...perSample);
   const pad = (vMax - vMin) * 0.15 || 1;
-  const yMin = vMin - pad, yMax = vMax + pad;
+  const yMin = structOpts.axisMin != null ? structOpts.axisMin : vMin - pad;
+  const yMax = structOpts.axisMax != null ? structOpts.axisMax : vMax + pad;
   const yScale = (v) => marginT + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
 
   const ticks = 5;
@@ -278,6 +352,10 @@ export function drawGroupStripPlot(o) {
     const v = yMin + (i / ticks) * (yMax - yMin);
     const y = yScale(v);
     svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: y, y2: y, class: 'ql-gridline' }));
+    if (structOpts.gridMinor && i < ticks) {
+      const yMid = yScale(v + (yMax - yMin) / ticks / 2);
+      svg.appendChild(svgEl('line', { x1: marginL, x2: W - marginR, y1: yMid, y2: yMid, class: 'ql-gridline', opacity: 0.45 }));
+    }
     const tk = svgEl('text', { x: marginL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
     tk.textContent = v.toFixed(2);
     svg.appendChild(tk);
@@ -353,7 +431,8 @@ export function drawGroupStripPlot(o) {
     lt.textContent = String(g) + ' (n=' + groupData[g].length + ')';
     legG.appendChild(lt);
   });
-  legG.setAttribute('transform', 'translate(' + marginL + ',' + (xLabelBase + 16) + ')');
+  const legNaturalX = marginL, legNaturalY = xLabelBase + 16;
+  legG.setAttribute('transform', 'translate(' + legNaturalX + ',' + legNaturalY + ')');
   svg.appendChild(legG);
 
   const ceElements = [
@@ -365,5 +444,9 @@ export function drawGroupStripPlot(o) {
   ];
   const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
 
-  return { kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 } };
+  return {
+    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 },
+    figureOptions: { axis: { domain: [vMin - pad, vMax + pad] }, categoryOrder: true, gridMinor: true },
+    legendPositions: legendPresetPositions(legNaturalX, legNaturalY, { marginL, marginT, marginR, innerH, W, colW }),
+  };
 }

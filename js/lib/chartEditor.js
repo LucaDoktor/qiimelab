@@ -89,6 +89,20 @@ export function getPaletteOverrides(key) {
   return readChartStyleRaw(key).__palette || {};
 }
 
+/** Las opciones estructurales (Fase 4: eje G4, rejilla menor G5, leyenda
+ *  G6, lienzo G3 — qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-
+ *  lienzo.md Paso 1) persistidas para `key` —
+ *  `{ axisMin?, axisMax?, axisLog?, tickFormat?, categoryOrder?, gridMinor?,
+ *  legendSwatchSize?, marginExtra?: {top,right,bottom,left} }`. Función
+ *  pura, sin DOM: el módulo la lee al principio del pintado (mismo punto
+ *  donde ya lee `groupData`/`series`) y ajusta la geometría ANTES de
+ *  dibujar — mismo patrón que getPaletteOverrides/getColorScaleOptions.
+ *  Ralo: valores ausentes = sin personalizar, el valor por defecto lo
+ *  decide quien llama, no esta función. */
+export function getFigureOptions(key) {
+  return readChartStyleRaw(key).__structure || {};
+}
+
 /** Los valores de geometría persistidos para `key` — { sliderId: number }.
  *  Función pura, sin DOM: para que un módulo pueda leer (p. ej. el ancho de
  *  nodo o la opacidad de flujo elegidos por el usuario) ANTES de calcular su
@@ -159,6 +173,15 @@ const FIG_STYLE_VARS = [
   { id: 'axisTitleColor', css: '--fig-axis-title-color', kind: 'color', role: '.ql-axis-label', prop: 'fill' },
   { id: 'axisTitleSize', css: '--fig-axis-title-size', kind: 'number', role: '.ql-axis-label', prop: 'fontSize', min: 9, max: 18, step: 1, unit: 'px' },
   { id: 'font', css: '--fig-font', kind: 'font' },
+  // Fase 4 (qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-lienzo.md):
+  // G5 mostrar/ocultar rejilla, G6 ocultar leyenda, G3 marco/fondo del
+  // panel — las 3 son solo variables CSS de rol (nunca repintan), igual
+  // que el resto de este motor; el color/grosor de rejilla/eje ya estaba.
+  { id: 'gridVisible', css: '--fig-grid-opacity', kind: 'toggle' },
+  { id: 'legendVisible', css: '--fig-legend-opacity', kind: 'toggle' },
+  { id: 'panelBorderColor', css: '--fig-panel-border-color', kind: 'color', role: '.ql-panel-border', prop: 'stroke' },
+  { id: 'panelBorderWidth', css: '--fig-panel-border-width', kind: 'number', role: '.ql-panel-border', prop: 'strokeWidth', min: 0, max: 4, step: 0.5 },
+  { id: 'panelBgColor', css: '--fig-panel-bg-color', kind: 'color', role: '.ql-panel-bg', prop: 'fill' },
 ];
 
 const I18N = {
@@ -186,6 +209,8 @@ const I18N = {
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
         figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
+        gridVisibleLabel: 'Mostrar rejilla', legendVisibleLabel: 'Mostrar leyenda',
+        panelBorderLabel: 'Marco del panel', panelBgLabel: 'Fondo del panel', legendPosition: 'Posición',
         dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua',
         statsTitle: 'Significación estadística', statsMode: 'Mostrar', statsModeStars: 'Solo asteriscos',
         statsModeExact: 'Solo p exacto', statsModeBoth: 'Asteriscos + p', statsStyle: 'Estilo',
@@ -193,7 +218,12 @@ const I18N = {
         colorScaleTitle: 'Escala de color', csPalette: 'Paleta', csDomain: 'Dominio (mín–máx)',
         csDomainMin: 'Mínimo del dominio', csDomainMax: 'Máximo del dominio', csResetDomain: 'Restablecer',
         csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala',
-        csShowValue: 'Valor en celda', csCellBorder: 'Borde de celda' },
+        csShowValue: 'Valor en celda', csCellBorder: 'Borde de celda',
+        structureTitle: 'Estructura', axisDomain: 'Rango del eje', axisLog: 'Escala logarítmica',
+        categoryOrderLabel: 'Orden de categorías', orderOriginal: 'Original', orderAlphaAsc: 'Alfabético A-Z',
+        orderAlphaDesc: 'Alfabético Z-A', orderValueAsc: 'Por valor (ascendente)', orderValueDesc: 'Por valor (descendente)',
+        gridMinorLabel: 'Rejilla menor', marginsLabel: 'Márgenes (±px)',
+        marginSide: (side) => ({ top: 'Margen superior', right: 'Margen derecho', bottom: 'Margen inferior', left: 'Margen izquierdo' }[side] || side) },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -218,6 +248,8 @@ const I18N = {
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
         figureStyleTitle: 'Figure style', gridLabel: 'Gridlines', axisLabel: 'Axis', tickLabel: 'Tick labels', axisTitleLabel: 'Axis titles',
+        gridVisibleLabel: 'Show gridlines', legendVisibleLabel: 'Show legend',
+        panelBorderLabel: 'Panel border', panelBgLabel: 'Panel background', legendPosition: 'Position',
         dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed',
         statsTitle: 'Statistical significance', statsMode: 'Show', statsModeStars: 'Stars only',
         statsModeExact: 'Exact p only', statsModeBoth: 'Stars + p', statsStyle: 'Style',
@@ -225,7 +257,12 @@ const I18N = {
         colorScaleTitle: 'Colour scale', csPalette: 'Palette', csDomain: 'Domain (min–max)',
         csDomainMin: 'Domain minimum', csDomainMax: 'Domain maximum', csResetDomain: 'Reset',
         csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale',
-        csShowValue: 'Value in cell', csCellBorder: 'Cell border' },
+        csShowValue: 'Value in cell', csCellBorder: 'Cell border',
+        structureTitle: 'Structure', axisDomain: 'Axis range', axisLog: 'Logarithmic scale',
+        categoryOrderLabel: 'Category order', orderOriginal: 'Original', orderAlphaAsc: 'Alphabetical A-Z',
+        orderAlphaDesc: 'Alphabetical Z-A', orderValueAsc: 'By value (ascending)', orderValueDesc: 'By value (descending)',
+        gridMinorLabel: 'Minor gridlines', marginsLabel: 'Margins (±px)',
+        marginSide: (side) => ({ top: 'Top margin', right: 'Right margin', bottom: 'Bottom margin', left: 'Left margin' }[side] || side) },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -416,6 +453,21 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  *        a crear la instancia entera: pasar `editorAnterior.isEditing()`
  *        aquí para no cerrar el panel en cada repintado disparado desde
  *        dentro del propio editor.
+ * @param {object} [cfg.figureOptions]  Fase 4 (qiimelab-prompt-editor-fase-
+ *        4-ejes-rejilla-leyenda-lienzo.md), activa la sección "Estructura":
+ *        { axis: false|{domain:[min,max], log?:boolean}, categoryOrder:
+ *        false|true, gridMinor: false|true, margins:
+ *        false|{base:{top,right,bottom,left}} }. El módulo lee
+ *        `getFigureOptions(key)` ANTES de calcular su layout (igual que
+ *        `getStatsOptions`/`getPaletteOverrides`).
+ * @param {Function} [cfg.onFigureOptionsChange]  se llama tras persistir un
+ *        cambio estructural — el módulo repinta entero (cambia orden/
+ *        rango/márgenes, no solo estilo).
+ * @param {Array} [cfg.legendPositions]  [{id, label, dx, dy}] posiciones
+ *        predefinidas para el elemento 'legend' (Paso 4 G6) — aparecen como
+ *        botones en su panel de estilo, además de poder seguir
+ *        arrastrándose libremente. `dx`/`dy` son ABSOLUTOS (mismo sistema
+ *        que ya usa el arrastre), no relativos a la posición actual.
  */
 export function attachChartEditor(cfg) {
   injectStyles();
@@ -426,6 +478,13 @@ export function attachChartEditor(cfg) {
   const geometrySliders = cfg.geometrySliders || []; // [{ id, label, min, max, step, value, unit?, isPercent? }]
   const statsControls = cfg.statsControls || null; // { hasMultiGroup } | null (sección desactivada)
   const colorScaleCfg = cfg.colorScale || null; // { type, domain, defaultPaletteId?, defaultMidpoint? } | null
+  // Fase 4 (qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-lienzo.md):
+  // { axis: false|{domain:[min,max], log?:bool}, categoryOrder: false|true,
+  //   gridMinor: false|true, margins: false|true } — cada clave activa (o
+  //   no) su propia subsección; el módulo lee getFigureOptions(key) al
+  //   pintar y decide qué hacer con cada campo, aquí solo se activa/
+  //   desactiva la UI correspondiente.
+  const figureOptionsCfg = cfg.figureOptions || null;
   const lang = cfg.lang || 'es';
   const T = tr(lang);
   const LSKEY = 'smart-175.chartStyle.' + key;
@@ -795,6 +854,8 @@ export function attachChartEditor(cfg) {
     if (editing && statsControls) toolbar.appendChild(renderStatsSection());
 
     if (editing && colorScaleCfg) toolbar.appendChild(renderColorScaleSection());
+
+    if (editing && figureOptionsCfg) toolbar.appendChild(renderStructureSection());
   }
 
   function renderTitlesSection() {
@@ -1605,6 +1666,129 @@ export function attachChartEditor(cfg) {
     return wrap;
   }
 
+  // ---- estructura del gráfico (Fase 4: eje G4, orden de categorías G4,
+  // rejilla menor G5, márgenes G3 — qiimelab-prompt-editor-fase-4-ejes-
+  // rejilla-leyenda-lienzo.md) — a diferencia del motor --fig-* (Fase 0,
+  // nunca repinta) estos SÍ cambian geometría/orden de los datos, así que
+  // se resuelven en cfg.onFigureOptionsChange (mismo patrón que
+  // onStatsChange/onColorScaleChange: el módulo vuelve a pintar entero).
+  function structureOverrides() { return store.__structure || {}; }
+
+  function setStructureValue(id, val) {
+    const s = (store.__structure = store.__structure || {});
+    if (val === '' || val === undefined || val === null) delete s[id]; else s[id] = val;
+    if (!Object.keys(s).length) delete store.__structure;
+    writeStore();
+    if (cfg.onFigureOptionsChange) try { cfg.onFigureOptionsChange(store.__structure || {}); } catch (e) { /* noop */ }
+  }
+
+  function structureRow(labelText, controlEl) {
+    const row = document.createElement('div');
+    row.className = 'ce-cs-row'; // mismo layout que la sección de escala de color
+    const id = 'ce-struct-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', id);
+    lab.textContent = labelText;
+    row.appendChild(lab);
+    controlEl.id = id;
+    row.appendChild(controlEl);
+    return row;
+  }
+
+  function renderStructureSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-colorscale'; // reutiliza el mismo estilo de sección que "Escala de color"
+    wrap.innerHTML = '<h5>' + T.structureTitle + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-cs-rows';
+    const s = structureOverrides();
+
+    if (figureOptionsCfg.axis) {
+      const [dMin, dMax] = figureOptionsCfg.axis.domain || [0, 1];
+      const domainWrap = document.createElement('div');
+      domainWrap.className = 'ce-cs-domain';
+      const minInp = document.createElement('input');
+      minInp.type = 'number'; minInp.step = 'any'; minInp.value = s.axisMin != null ? s.axisMin : dMin;
+      minInp.setAttribute('aria-label', T.csDomainMin);
+      minInp.addEventListener('change', () => { const v = parseFloat(minInp.value); if (Number.isFinite(v)) setStructureValue('axisMin', v); });
+      const maxInp = document.createElement('input');
+      maxInp.type = 'number'; maxInp.step = 'any'; maxInp.value = s.axisMax != null ? s.axisMax : dMax;
+      maxInp.setAttribute('aria-label', T.csDomainMax);
+      maxInp.addEventListener('change', () => { const v = parseFloat(maxInp.value); if (Number.isFinite(v)) setStructureValue('axisMax', v); });
+      domainWrap.appendChild(minInp);
+      domainWrap.appendChild(maxInp);
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.textContent = T.csResetDomain;
+      resetBtn.addEventListener('click', () => {
+        const s2 = (store.__structure = store.__structure || {});
+        delete s2.axisMin; delete s2.axisMax;
+        if (!Object.keys(s2).length) delete store.__structure;
+        writeStore();
+        if (cfg.onFigureOptionsChange) try { cfg.onFigureOptionsChange(store.__structure || {}); } catch (e) { /* noop */ }
+      });
+      domainWrap.appendChild(resetBtn);
+      rows.appendChild(structureRow(T.axisDomain, domainWrap));
+
+      if (figureOptionsCfg.axis.log) {
+        const logChk = document.createElement('input');
+        logChk.type = 'checkbox'; logChk.checked = !!s.axisLog;
+        logChk.addEventListener('change', () => setStructureValue('axisLog', logChk.checked ? true : ''));
+        rows.appendChild(structureRow(T.axisLog, logChk));
+      }
+    }
+
+    if (figureOptionsCfg.categoryOrder) {
+      const sel = document.createElement('select');
+      [
+        ['original', T.orderOriginal], ['alpha-asc', T.orderAlphaAsc], ['alpha-desc', T.orderAlphaDesc],
+        ['value-asc', T.orderValueAsc], ['value-desc', T.orderValueDesc],
+      ].forEach(([val, label]) => {
+        const o = document.createElement('option'); o.value = val; o.textContent = label;
+        if ((s.categoryOrder || 'original') === val) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => setStructureValue('categoryOrder', sel.value === 'original' ? '' : sel.value));
+      rows.appendChild(structureRow(T.categoryOrderLabel, sel));
+    }
+
+    if (figureOptionsCfg.gridMinor) {
+      const chk = document.createElement('input');
+      chk.type = 'checkbox'; chk.checked = !!s.gridMinor;
+      chk.addEventListener('change', () => setStructureValue('gridMinor', chk.checked ? true : ''));
+      rows.appendChild(structureRow(T.gridMinorLabel, chk));
+    }
+
+    if (figureOptionsCfg.margins) {
+      const base = figureOptionsCfg.margins.base || { top: 0, right: 0, bottom: 0, left: 0 };
+      const m = s.marginExtra || {};
+      const marginWrap = document.createElement('div');
+      marginWrap.className = 'ce-cs-domain';
+      ['top', 'right', 'bottom', 'left'].forEach((side) => {
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.step = '1'; inp.min = '-' + base[side]; inp.max = '200';
+        inp.value = m[side] != null ? m[side] : 0;
+        inp.setAttribute('aria-label', T.marginSide(side));
+        inp.addEventListener('change', () => {
+          const v = parseFloat(inp.value);
+          if (!Number.isFinite(v)) return;
+          const m2 = { ...(structureOverrides().marginExtra || {}) };
+          if (v === 0) delete m2[side]; else m2[side] = v;
+          setStructureValue('marginExtra', Object.keys(m2).length ? m2 : '');
+        });
+        marginWrap.appendChild(inp);
+      });
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.textContent = T.csResetDomain;
+      resetBtn.addEventListener('click', () => setStructureValue('marginExtra', ''));
+      marginWrap.appendChild(resetBtn);
+      rows.appendChild(structureRow(T.marginsLabel, marginWrap));
+    }
+
+    wrap.appendChild(rows);
+    return wrap;
+  }
+
   // ---- estilo de figura (motor de variables CSS de rol --fig-*) ----
   // Puro CSS custom properties sobre el propio <svg>: no repinta nada, así
   // que a diferencia de la paleta de series o la geometría no necesita
@@ -1639,6 +1823,7 @@ export function attachChartEditor(cfg) {
       return node ? getComputedStyle(node).fontFamily : '';
     }
     if (f.kind === 'dash') return 'none';
+    if (f.kind === 'toggle') return true; // visible por defecto — 0 = oculto, el único valor que se persiste
     const node = f.role ? svg.querySelector(f.role) : null;
     if (!node) return f.kind === 'color' ? '#000000' : (f.min ?? 0);
     const cs = getComputedStyle(node);
@@ -1649,6 +1834,14 @@ export function attachChartEditor(cfg) {
   function figStyleControl(id, ov, ariaLabel) {
     const f = FIG_STYLE_VARS.find((v) => v.id === id);
     const def = figStyleDefault(f);
+    if (f.kind === 'toggle') {
+      const inp = document.createElement('input');
+      inp.type = 'checkbox';
+      inp.checked = ov[id] !== 0;
+      inp.setAttribute('aria-label', ariaLabel);
+      inp.addEventListener('change', () => setFigureStyleValue(id, inp.checked ? '' : 0));
+      return inp;
+    }
     if (f.kind === 'color') {
       const current = ov[id] || def;
       const inp = document.createElement('input');
@@ -1733,12 +1926,37 @@ export function attachChartEditor(cfg) {
 
     rows.appendChild(figStyleFontRow(ov));
     rows.appendChild(figStyleGroupRow(T.gridLabel, ['gridColor', 'gridWidth', 'gridDash'], ov));
+    rows.appendChild(figStyleSingleRow(T.gridVisibleLabel, 'gridVisible', ov));
     rows.appendChild(figStyleGroupRow(T.axisLabel, ['axisColor', 'axisWidth'], ov));
     rows.appendChild(figStyleGroupRow(T.tickLabel, ['tickColor', 'tickSize'], ov));
     rows.appendChild(figStyleGroupRow(T.axisTitleLabel, ['axisTitleColor', 'axisTitleSize'], ov));
+    rows.appendChild(figStyleSingleRow(T.legendVisibleLabel, 'legendVisible', ov));
+    rows.appendChild(figStyleGroupRow(T.panelBorderLabel, ['panelBorderColor', 'panelBorderWidth'], ov));
+    rows.appendChild(figStyleSingleRow(T.panelBgLabel, 'panelBgColor', ov));
 
     wrap.appendChild(rows);
     return wrap;
+  }
+
+  /** Fila con un único control (toggle/color suelto) — mismo layout que
+   *  figStyleGroupRow, pero sin varios controles agrupados bajo una misma
+   *  etiqueta. Paso 4 (G5/G6/G3): mostrar/ocultar rejilla, ocultar leyenda,
+   *  fondo del panel. */
+  function figStyleSingleRow(label, id, ov) {
+    const row = document.createElement('div');
+    row.className = 'ce-figstyle-row';
+    const rowId = 'ce-figstyle-' + id + '-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', rowId);
+    lab.textContent = label;
+    row.appendChild(lab);
+    const controls = document.createElement('div');
+    controls.className = 'ce-figstyle-controls';
+    const ctl = figStyleControl(id, ov, label);
+    ctl.id = rowId;
+    controls.appendChild(ctl);
+    row.appendChild(controls);
+    return row;
   }
 
   function mkBtn(icon, label, onClick) {
@@ -2067,6 +2285,29 @@ export function attachChartEditor(cfg) {
     togWrap.appendChild(bB); togWrap.appendChild(bI);
     rTog.appendChild(togWrap);
     rows.appendChild(rTog);
+
+    // posiciones predefinidas de leyenda (Paso 4 G6 de qiimelab-prompt-
+    // editor-fase-4-ejes-rejilla-leyenda-lienzo.md) — reutiliza el MISMO
+    // mecanismo de arrastre (s.dx/s.dy) en vez de recalcular el layout: el
+    // módulo aporta unos pocos desplazamientos ya sensatos relativos a la
+    // posición natural en la que él mismo dibuja la leyenda.
+    if (id === 'legend' && Array.isArray(cfg.legendPositions) && cfg.legendPositions.length) {
+      const rPos = row(T.legendPosition);
+      const posWrap = document.createElement('div');
+      posWrap.className = 'ce-toggles';
+      cfg.legendPositions.forEach((p) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = p.label;
+        b.addEventListener('click', () => {
+          s.dx = p.dx; s.dy = p.dy;
+          w.wrap.setAttribute('transform', 'translate(' + s.dx + ',' + s.dy + ')');
+          writeStoreDebounced();
+        });
+        posWrap.appendChild(b);
+      });
+      rPos.appendChild(posWrap);
+      rows.appendChild(rPos);
+    }
 
     // enlazar cada <label> de fila con su control (accesibilidad del panel)
     panel.querySelectorAll('.ce-row').forEach((r) => {

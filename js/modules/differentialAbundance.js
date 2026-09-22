@@ -14,7 +14,7 @@ import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
-import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
+import { drawGroupBoxplot, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { shortTaxonName } from './taxaBarplot.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
@@ -992,6 +992,7 @@ export function render(container) {
       return {
         ...boxplotCfg(d.taxon), elements: result.ceElements, paletteSeries: result.paletteSeries,
         statsControls: result.statsControls,
+        figureOptions: result.figureOptions, legendPositions: result.legendPositions,
       };
     }
 
@@ -1055,6 +1056,8 @@ export function render(container) {
       colorScale: ceCfg.colorScale,
       onColorScaleChange: ceCfg.onColorScaleChange,
       statsControls: ceCfg.statsControls, onStatsChange: () => paint(),
+      figureOptions: ceCfg.figureOptions, onFigureOptionsChange: () => paint(),
+      legendPositions: (ceCfg.legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
       onReset: () => paint(),
       startEditing: wasEditing,
     });

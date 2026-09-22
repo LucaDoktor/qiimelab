@@ -12,7 +12,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP } from '../lib/stats.js';
-import { drawGroupBoxplot } from '../lib/groupBoxplot.js';
+import { drawGroupBoxplot, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealFunctionalWithMeta, mountExampleButtons, exampleDownloadBlock } from '../lib/exampleData.js';
@@ -76,6 +76,7 @@ export function render(container) {
   let editor = null;
 
   function paint() {
+    const wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
 
@@ -260,7 +261,7 @@ export function render(container) {
       return;
     }
 
-    const { kw, ceElements, paletteSeries, statsControls } = drawGroupBoxplot({
+    const { kw, ceElements, paletteSeries, statsControls, figureOptions, legendPositions } = drawGroupBoxplot({
       svg, chartWrap, tooltip, groupNames, groupData, key: 'functional',
       title: moduleName, xTitle: groupCol, yTitle: t('functional.colScore'),
       valueLabel: moduleName, valueDecimals: 3,
@@ -284,7 +285,10 @@ export function render(container) {
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
       statsControls, onStatsChange: () => paint(),
+      figureOptions, onFigureOptionsChange: () => paint(),
+      legendPositions: (legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     // tabla
