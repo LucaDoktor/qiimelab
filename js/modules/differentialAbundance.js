@@ -871,7 +871,7 @@ export function render(container) {
           g.appendChild(rect);
           if (v != null && isFinite(v) && cellW >= 40 && rowH >= 15) {
             const strong = Math.abs(v) / maxAbs > 0.55;
-            const tx = svgEl('text', { x: x + (cellW - 2) / 2, y: y + rowH / 2 + 3, 'text-anchor': 'middle', 'font-size': Math.min(11, rowH * 0.5).toFixed(1), fill: strong ? 'var(--surface)' : 'var(--ink)', 'font-family': 'var(--font-mono)', 'pointer-events': 'none', opacity: dim ? 0.4 : 1 });
+            const tx = svgEl('text', { x: x + (cellW - 2) / 2, y: y + rowH / 2 + 3, class: 'ql-cell-value', 'text-anchor': 'middle', 'font-size': Math.min(11, rowH * 0.5).toFixed(1), fill: strong ? 'var(--surface)' : 'var(--ink)', 'font-family': 'var(--font-mono)', 'pointer-events': 'none', opacity: dim ? 0.4 : 1 });
             tx.textContent = v.toFixed(1);
             g.appendChild(tx);
           }

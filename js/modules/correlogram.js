@@ -423,6 +423,7 @@ export function render(container) {
             const strong = isFinite(res.r) && Math.abs(res.r) > 0.5;
             const tx = svgEl('text', {
               x: x + (cell - 1.5) / 2, y: y + (cell - 1.5) / 2 + 3.5,
+              class: 'ql-cell-value',
               'text-anchor': 'middle', 'font-size': Math.min(13, cell * 0.42),
               'font-weight': 700, fill: strong ? 'var(--surface)' : 'var(--ink)',
               'font-family': 'var(--font-mono)', 'pointer-events': 'none',

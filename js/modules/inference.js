@@ -908,31 +908,30 @@ export function render(container) {
     axesG.appendChild(svgEl('line', {
       x1: margin.left, y1: margin.top,
       x2: margin.left, y2: margin.top + innerH,
-      stroke: 'var(--border-strong)', 'stroke-width': '1.2'
+      class: 'ql-baseline-line',
     }));
     axesG.appendChild(svgEl('line', {
       x1: margin.left, y1: margin.top + innerH,
       x2: margin.left + innerW, y2: margin.top + innerH,
-      stroke: 'var(--border-strong)', 'stroke-width': '1.2'
+      class: 'ql-baseline-line',
     }));
 
     // Ticks eje Y (0% a 100%)
     [0, 25, 50, 75, 100].forEach((pct) => {
       const y = margin.top + innerH - (pct / 100) * innerH;
-      const tick = svgEl('line', {
-        x1: margin.left - 5, y1: y,
-        x2: margin.left + innerW, y2: y,
-        stroke: pct === 0 ? 'var(--border-strong)' : 'var(--border-subtle)',
-        'stroke-dasharray': pct === 0 ? 'none' : '3 3',
-        'stroke-width': '1'
-      });
-      axesG.appendChild(tick);
+      // pct=0 coincide con el eje X ya dibujado arriba — no duplicar la línea
+      if (pct > 0) {
+        axesG.appendChild(svgEl('line', {
+          x1: margin.left - 5, y1: y,
+          x2: margin.left + innerW, y2: y,
+          class: 'ql-gridline',
+        }));
+      }
 
       const label = svgEl('text', {
         x: margin.left - 8, y: y + 4,
+        class: 'ql-tick-label',
         'text-anchor': 'end',
-        'font-size': '11px',
-        fill: 'var(--ink-2)'
       });
       label.textContent = pct + '%';
       axesG.appendChild(label);
@@ -1019,9 +1018,8 @@ export function render(container) {
       const xLabel = svgEl('text', {
         x: x + barWidth / 2,
         y: margin.top + innerH + 14,
+        class: 'ql-tick-label',
         'text-anchor': 'end',
-        'font-size': '10.5px',
-        fill: 'var(--ink-2)',
         transform: `rotate(-45, ${x + barWidth / 2}, ${margin.top + innerH + 14})`
       });
       xLabel.textContent = sId.length > 14 ? sId.slice(0, 12) + '…' : sId;
@@ -1043,7 +1041,7 @@ export function render(container) {
 
     // Leyenda lateral interactiva
     const legendG = svgEl('g', { class: 'ql-legend', 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
-    const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink-1)' });
+    const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink)' });
     legTitle.textContent = isPhenotypes
       ? (t('inference.legendPhenotypes') || 'Rasgos Principales')
       : (t('inference.legendTitle') || 'Funciones Principales');
@@ -1065,8 +1063,7 @@ export function render(container) {
       const fName = formatFunctionName(sObj.key, getLang());
       const label = svgEl('text', {
         x: 18, y: y,
-        'font-size': '11px',
-        fill: 'var(--ink-2)'
+        class: 'ql-tick-label',
       });
       label.textContent = fName.length > 22 ? fName.slice(0, 20) + '…' : fName;
       gItem.appendChild(label);
@@ -1159,11 +1156,12 @@ export function render(container) {
     const xScale = (v) => margin.left + (v / maxVal) * innerW;
 
     const axesG = svgEl('g');
-    axesG.appendChild(svgEl('line', { x1: margin.left, x2: margin.left, y1: margin.top, y2: margin.top + innerH, stroke: 'var(--border-strong)', 'stroke-width': '1.2' }));
+    axesG.appendChild(svgEl('line', { x1: margin.left, x2: margin.left, y1: margin.top, y2: margin.top + innerH, class: 'ql-baseline-line' }));
     [0, 0.25, 0.5, 0.75, 1].forEach((f) => {
       const x = margin.left + f * innerW;
-      if (f > 0) axesG.appendChild(svgEl('line', { x1: x, x2: x, y1: margin.top, y2: margin.top + innerH, stroke: 'var(--border-subtle)', 'stroke-dasharray': '3 3' }));
-      const lbl = svgEl('text', { x, y: margin.top + innerH + 16, 'text-anchor': 'middle', 'font-size': '10.5px', fill: 'var(--ink-2)' });
+      // f=0 coincide con la línea base ya dibujada arriba — no duplicar
+      if (f > 0) axesG.appendChild(svgEl('line', { x1: x, x2: x, y1: margin.top, y2: margin.top + innerH, class: 'ql-gridline' }));
+      const lbl = svgEl('text', { x, y: margin.top + innerH + 16, class: 'ql-tick-label', 'text-anchor': 'middle' });
       lbl.textContent = (maxVal * f).toFixed(maxVal * f < 1 ? 2 : 1) + '%';
       axesG.appendChild(lbl);
     });
@@ -1189,14 +1187,14 @@ export function render(container) {
     values.forEach((v, i) => {
       const cy = margin.top + i * rowH + rowH / 2;
       const fName = formatFunctionName(v.sObj.key, getLang());
-      const lbl = svgEl('text', { x: margin.left - 10, y: cy + 4, 'text-anchor': 'end', 'font-size': '11px', fill: 'var(--ink-2)' });
+      const lbl = svgEl('text', { x: margin.left - 10, y: cy + 4, class: 'ql-tick-label', 'text-anchor': 'end' });
       lbl.textContent = fName.length > 32 ? fName.slice(0, 30) + '…' : fName;
       rowsG.appendChild(lbl);
 
       if (v.byGroup) {
         const gxs = groupNames.map((g) => xScale(v.byGroup[g]));
         if (groupNames.length > 1) {
-          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, stroke: 'var(--baseline)', 'stroke-width': 1.2 }));
+          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, class: 'ql-baseline-line' }));
         }
         groupNames.forEach((g, gi) => {
           const cx = xScale(v.byGroup[g]);
@@ -1207,7 +1205,7 @@ export function render(container) {
         });
       } else {
         const cx = xScale(v.overall);
-        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, stroke: 'var(--baseline)', 'stroke-width': 1.5 }));
+        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, class: 'ql-baseline-line' }));
         rowsG.appendChild(svgEl('circle', {
           cx, cy, r: 5, fill: v.sObj.isOther ? OTHER_COLOR : getSeriesColor(i, v.sObj.isOther), stroke: 'var(--surface)', 'stroke-width': 1,
           'data-fn': v.sObj.key, 'data-val': v.overall.toFixed(2),
@@ -1234,7 +1232,7 @@ export function render(container) {
       groupNames.forEach((g, gi) => {
         const y = 14 + gi * 18;
         legendG.appendChild(svgEl('circle', { cx: 5, cy: y - 4, r: 5, fill: groupColor(gi) }));
-        const lt = svgEl('text', { x: 16, y, 'font-size': '11px', fill: 'var(--ink-2)' });
+        const lt = svgEl('text', { x: 16, y, class: 'ql-tick-label' });
         lt.textContent = g.length > 20 ? g.slice(0, 18) + '…' : g;
         legendG.appendChild(lt);
       });
@@ -1366,16 +1364,15 @@ export function render(container) {
 
     // Títulos de grupos (columnas X)
     const groupsG = svgEl('g', { class: 'ql-alluvial-group-labels' });
-    layout.groups.forEach((g) => {
+    layout.columns.forEach((col) => {
       const label = svgEl('text', {
-        x: g.x + g.width / 2,
+        x: col.x + col.width / 2,
         y: H - margin.bottom + 22,
+        class: 'ql-tick-label',
         'text-anchor': 'middle',
-        'font-size': '12px',
         'font-weight': '600',
-        fill: 'var(--ink-1)'
       });
-      label.textContent = g.name;
+      label.textContent = col.group;
       groupsG.appendChild(label);
     });
     svg.appendChild(groupsG);

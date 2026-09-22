@@ -767,9 +767,9 @@ export function render(container) {
       let errTopY = yTop;
       if (g.n >= 2 && e > 0) {
         const yHi = yScale(g.meanLog + e), yLo = yScale(Math.max(yMin, g.meanLog - e));
-        svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yHi, y2: yLo, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
-        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yHi, y2: yHi, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
-        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yLo, y2: yLo, stroke: 'var(--ink)', 'stroke-width': 1.5 }));
+        svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yHi, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
+        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yHi, y2: yHi, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
+        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yLo, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
         errTopY = yHi;
       }
 
@@ -777,7 +777,7 @@ export function render(container) {
       // comparten letra NO difieren significativamente entre sí.
       if (letters && letters[gi]) {
         const lt = svgEl('text', {
-          x: cx, y: errTopY - 8, 'text-anchor': 'middle', 'font-weight': 700, 'font-size': 13, fill: 'var(--ink)',
+          x: cx, y: errTopY - 8, class: 'ql-letter-label', 'text-anchor': 'middle', 'font-weight': 700, 'font-size': 13, fill: 'var(--ink)',
         });
         lt.textContent = letters[gi];
         svg.appendChild(lt);
