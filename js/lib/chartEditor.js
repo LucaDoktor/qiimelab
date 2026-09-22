@@ -10,6 +10,12 @@
 //    ya cargadas + genéricas del sistema), negrita/cursiva, tamaño.
 //  - Persistencia en localStorage por módulo (smart-175.chartStyle.<key>),
 //    re-aplicada al recargar. Botón "Restablecer".
+//  - Sección "Estilo de la figura": motor de variables CSS de rol (--fig-*,
+//    ver css/components.css) para rejilla/eje/marcas/título de eje/fuente.
+//    Solo variables CSS con fallback al tema actual — no repinta nada, así
+//    que a diferencia de la paleta o la geometría no hace falta cfg por
+//    módulo: aparece en las ~28 vistas en cuanto usan las clases de rol
+//    (.ql-gridline/.ql-baseline-line/.ql-tick-label/.ql-axis-label).
 //  - "Descargar SVG": exporta la figura tal cual se ve, con los estilos
 //    inline resueltos (sin depender de la hoja de estilos de la app).
 //
@@ -73,6 +79,16 @@ export function getFigureGeometry(key) {
   return readChartStyleRaw(key).__geometry || {};
 }
 
+/** Los valores del motor de variables CSS de rol (rejilla, eje, marcas,
+ *  título de eje, fuente — ver Paso 2 de qiimelab-prompt-editor-fase-0-
+ *  fundamentos.md) persistidos para `key` — { varId: valor }. Función pura,
+ *  sin DOM: mismo patrón que getPaletteOverrides/getFigureGeometry, aunque
+ *  hoy ningún módulo necesita leerla antes del primer pintado (los `--fig-*`
+ *  se aplican vía `svg.style.setProperty`, no afectan al cálculo del layout). */
+export function getFigureStyle(key) {
+  return readChartStyleRaw(key).__figureStyle || {};
+}
+
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
   ['var(--font-display)', 'Serif (IBM Plex)'],
@@ -80,6 +96,25 @@ const FONTS = [
   ['system-ui, sans-serif', 'Sistema'],
   ['Georgia, "Times New Roman", serif', 'Serif del sistema'],
   ['ui-monospace, Menlo, monospace', 'Mono del sistema'],
+];
+
+// ---- motor de variables CSS de rol (--fig-*) — Paso 2 de
+// qiimelab-prompt-editor-fase-0-fundamentos.md. Cada entrada: la variable
+// CSS que escribe (con fallback ya puesto en css/components.css), de qué
+// nodo de rol lee su valor por defecto (para prellenar el control) y qué
+// propiedad computada leer. `kind` decide el tipo de control: 'color',
+// 'number' (con min/max/step) o 'dash' (select de trazo).
+const FIG_STYLE_VARS = [
+  { id: 'gridColor', css: '--fig-grid-color', kind: 'color', role: '.ql-gridline', prop: 'stroke' },
+  { id: 'gridWidth', css: '--fig-grid-width', kind: 'number', role: '.ql-gridline', prop: 'strokeWidth', min: 0.5, max: 3, step: 0.25 },
+  { id: 'gridDash', css: '--fig-grid-dash', kind: 'dash' },
+  { id: 'axisColor', css: '--fig-axis-color', kind: 'color', role: '.ql-baseline-line', prop: 'stroke' },
+  { id: 'axisWidth', css: '--fig-axis-width', kind: 'number', role: '.ql-baseline-line', prop: 'strokeWidth', min: 0.5, max: 3, step: 0.25 },
+  { id: 'tickColor', css: '--fig-tick-color', kind: 'color', role: '.ql-tick-label', prop: 'fill' },
+  { id: 'tickSize', css: '--fig-tick-size', kind: 'number', role: '.ql-tick-label', prop: 'fontSize', min: 8, max: 16, step: 1, unit: 'px' },
+  { id: 'axisTitleColor', css: '--fig-axis-title-color', kind: 'color', role: '.ql-axis-label', prop: 'fill' },
+  { id: 'axisTitleSize', css: '--fig-axis-title-size', kind: 'number', role: '.ql-axis-label', prop: 'fontSize', min: 9, max: 18, step: 1, unit: 'px' },
+  { id: 'font', css: '--fig-font', kind: 'font' },
 ];
 
 const I18N = {
@@ -94,7 +129,9 @@ const I18N = {
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
-        geometryTitle: 'Geometría' },
+        geometryTitle: 'Geometría',
+        figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
+        dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -106,7 +143,9 @@ const I18N = {
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
-        geometryTitle: 'Geometry' },
+        geometryTitle: 'Geometry',
+        figureStyleTitle: 'Figure style', gridLabel: 'Gridlines', axisLabel: 'Axis', tickLabel: 'Tick labels', axisTitleLabel: 'Axis titles',
+        dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -190,6 +229,16 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-geom-row .ql-inputrow { display:flex; align-items:center; gap:8px; flex:1; }
 .ce-geom-row input[type=range] { flex:1; min-width:0; }
 .ce-geom-row input[type=number] { width:64px; flex:none; }
+.ce-figstyle { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-figstyle h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-figstyle-rows { display:flex; flex-direction:column; gap:8px; max-width:480px; }
+.ce-figstyle-row { display:flex; align-items:center; gap:8px; }
+.ce-figstyle-row label { flex:0 0 auto; min-width:110px; font-size:12px; color:var(--ink-2); }
+.ce-figstyle-row select { flex:1; min-width:0; }
+.ce-figstyle-controls { display:flex; align-items:center; gap:6px; flex:1; flex-wrap:wrap; }
+.ce-figstyle-controls input[type=color] { width:28px; height:24px; padding:0; border:1px solid var(--border); border-radius:5px; background:none; cursor:pointer; flex:none; }
+.ce-figstyle-controls input[type=number] { width:56px; flex:none; }
+.ce-figstyle-controls select { flex:none; width:auto; min-width:96px; }
 .ce-fs-stage { display:flex; flex-direction:column; gap:14px; }
 .ce-fs-svgwrap { flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; overflow:auto; background:var(--page); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; }
 .ce-fs-svgwrap svg.ce-fs-svg { width:100% !important; height:auto !important; max-height:calc(100vh - 260px); }
@@ -354,6 +403,12 @@ export function attachChartEditor(cfg) {
     if (editing) {
       toolbar.appendChild(renderTitlesSection());
     }
+
+    // sección de estilo (rejilla/eje/marcas/título de eje/fuente): siempre
+    // disponible cuando se edita, a diferencia de paleta/geometría que son
+    // opt-in por módulo — todo gráfico con las clases de rol de components.css
+    // (la inmensa mayoría) la aprovecha gratis, sin cfg adicional.
+    if (editing) toolbar.appendChild(renderFigureStyleSection());
 
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
 
@@ -611,6 +666,142 @@ export function attachChartEditor(cfg) {
     return wrap;
   }
 
+  // ---- estilo de figura (motor de variables CSS de rol --fig-*) ----
+  // Puro CSS custom properties sobre el propio <svg>: no repinta nada, así
+  // que a diferencia de la paleta de series o la geometría no necesita
+  // recalcular nada del gráfico — por eso no hay `cfg.onFigureStyleChange`.
+  function figureStyleOverrides() { return store.__figureStyle || {}; }
+
+  function applyFigureStyle() {
+    const ov = figureStyleOverrides();
+    FIG_STYLE_VARS.forEach((f) => {
+      const v = ov[f.id];
+      if (v === undefined || v === '') svg.style.removeProperty(f.css);
+      else svg.style.setProperty(f.css, f.unit ? (v + f.unit) : String(v));
+    });
+  }
+
+  function setFigureStyleValue(id, val) {
+    const fs = (store.__figureStyle = store.__figureStyle || {});
+    if (val === '' || val === undefined || val === null) delete fs[id];
+    else fs[id] = val;
+    if (!Object.keys(fs).length) delete store.__figureStyle;
+    applyFigureStyle();
+    writeStoreDebounced();
+  }
+
+  /** Valor por defecto para prellenar un control: lee el nodo de rol ya
+   *  dibujado en el propio SVG (si existe) para no inventar un número que
+   *  luego no coincida con lo que se ve — mismo principio que el color de
+   *  serie en `effectiveSeriesColor`. */
+  function figStyleDefault(f) {
+    if (f.kind === 'font') {
+      const node = svg.querySelector('.ql-tick-label, .ql-axis-label');
+      return node ? getComputedStyle(node).fontFamily : '';
+    }
+    if (f.kind === 'dash') return 'none';
+    const node = f.role ? svg.querySelector(f.role) : null;
+    if (!node) return f.kind === 'color' ? '#000000' : (f.min ?? 0);
+    const cs = getComputedStyle(node);
+    if (f.kind === 'color') return toHex(cs[f.prop]);
+    return parseFloat(cs[f.prop]) || f.min;
+  }
+
+  function figStyleControl(id, ov, ariaLabel) {
+    const f = FIG_STYLE_VARS.find((v) => v.id === id);
+    const def = figStyleDefault(f);
+    if (f.kind === 'color') {
+      const current = ov[id] || def;
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = isValidHex(current) ? current : '#000000';
+      inp.setAttribute('aria-label', ariaLabel);
+      inp.addEventListener('input', () => setFigureStyleValue(id, inp.value));
+      return inp;
+    }
+    if (f.kind === 'number') {
+      const current = ov[id] !== undefined ? ov[id] : def;
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.className = 'tabular';
+      inp.min = f.min; inp.max = f.max; inp.step = f.step;
+      inp.value = current;
+      inp.setAttribute('aria-label', ariaLabel);
+      inp.addEventListener('change', () => {
+        const v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) return;
+        setFigureStyleValue(id, Math.max(f.min, Math.min(f.max, v)));
+      });
+      return inp;
+    }
+    // f.kind === 'dash'
+    const current = ov[id] || def;
+    const sel = document.createElement('select');
+    [['none', T.dashSolid], ['2 2', T.dashDotted], ['4 4', T.dashDashed]].forEach(([val, label]) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = label;
+      if (val === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.setAttribute('aria-label', ariaLabel);
+    sel.addEventListener('change', () => setFigureStyleValue(id, sel.value === 'none' ? '' : sel.value));
+    return sel;
+  }
+
+  function figStyleFontRow(ov) {
+    const row = document.createElement('div');
+    row.className = 'ce-figstyle-row';
+    const selId = 'ce-figstyle-font-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', selId);
+    lab.textContent = T.font;
+    row.appendChild(lab);
+    const def = figStyleDefault(FIG_STYLE_VARS.find((v) => v.id === 'font'));
+    const sel = document.createElement('select');
+    sel.id = selId;
+    FONTS.forEach(([val, label]) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = label;
+      if ((ov.font || def) === val) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => setFigureStyleValue('font', sel.value));
+    row.appendChild(sel);
+    return row;
+  }
+
+  function figStyleGroupRow(label, ids, ov) {
+    const row = document.createElement('div');
+    row.className = 'ce-figstyle-row';
+    const lab = document.createElement('label');
+    lab.textContent = label;
+    row.appendChild(lab);
+    const controls = document.createElement('div');
+    controls.className = 'ce-figstyle-controls';
+    ids.forEach((id) => {
+      const suffix = id.endsWith('Color') ? T.color : id.endsWith('Dash') ? T.dashLabel : T.size;
+      controls.appendChild(figStyleControl(id, ov, label + ' — ' + suffix));
+    });
+    row.appendChild(controls);
+    return row;
+  }
+
+  function renderFigureStyleSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-figstyle';
+    wrap.innerHTML = '<h5>' + T.figureStyleTitle + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-figstyle-rows';
+    const ov = figureStyleOverrides();
+
+    rows.appendChild(figStyleFontRow(ov));
+    rows.appendChild(figStyleGroupRow(T.gridLabel, ['gridColor', 'gridWidth', 'gridDash'], ov));
+    rows.appendChild(figStyleGroupRow(T.axisLabel, ['axisColor', 'axisWidth'], ov));
+    rows.appendChild(figStyleGroupRow(T.tickLabel, ['tickColor', 'tickSize'], ov));
+    rows.appendChild(figStyleGroupRow(T.axisTitleLabel, ['axisTitleColor', 'axisTitleSize'], ov));
+
+    wrap.appendChild(rows);
+    return wrap;
+  }
+
   function mkBtn(icon, label, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -796,6 +987,7 @@ export function attachChartEditor(cfg) {
     // grupo del Venn) el mismo <text> es a la vez un elemento de texto
     // arrastrable Y una serie de datos — si hay override de paleta, gana él.
     applyPalette();
+    applyFigureStyle();
   }
 
   // ---- arrastre ----

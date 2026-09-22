@@ -930,14 +930,18 @@ input.ql-num-small { width: 104px; flex: none; }
 
 svg.ql-svg { width: 100%; height: auto; display: block; overflow: visible; }
 /* Texto de figura: título y ejes van cerca de --ink (alto contraste, claro y
-   oscuro); solo la nota/subtítulo de la tarjeta se queda en gris suave. */
-.ql-axis-label { fill: var(--ink); font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
-.ql-tick-label { fill: var(--ink-2); font-size: 11px; font-family: var(--font-mono); }
+   oscuro); solo la nota/subtítulo de la tarjeta se queda en gris suave.
+   Cada propiedad tiene un fallback a --fig-* (motor de variables de rol del
+   editor de gráficas, ver Paso 2 de qiimelab-prompt-editor-fase-0-
+   fundamentos.md): mientras el editor no escriba esa variable, no cambia
+   nada visualmente — es el mismo valor de tema de siempre. */
+.ql-axis-label { fill: var(--fig-axis-title-color, var(--ink)); font-size: var(--fig-axis-title-size, 12px); font-weight: 500; font-family: var(--fig-font, var(--font-mono)); }
+.ql-tick-label { fill: var(--fig-tick-color, var(--ink-2)); font-size: var(--fig-tick-size, 11px); font-family: var(--fig-font, var(--font-mono)); }
 /* Líneas de la figura: DOS roles y nada más.
    --gridline = rejilla de fondo, suave, peso 1.
    --baseline = ejes / estructura / bigotes, con más peso (1.25). */
-.ql-gridline { stroke: var(--gridline); stroke-width: 1; }
-.ql-baseline-line { stroke: var(--baseline); stroke-width: 1.25; }
+.ql-gridline { stroke: var(--fig-grid-color, var(--gridline)); stroke-width: var(--fig-grid-width, 1); stroke-dasharray: var(--fig-grid-dash, none); }
+.ql-baseline-line { stroke: var(--fig-axis-color, var(--baseline)); stroke-width: var(--fig-axis-width, 1.25); }
 .ql-threshold-line { stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.9; }
 /* Variante "elegida por el usuario" (vs. la de referencia automática arriba):
    sólida y con --accent, para un control interactivo (p.ej. profundidad de

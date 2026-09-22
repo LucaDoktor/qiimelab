@@ -33,7 +33,15 @@ function createMockDOM() {
       _uid: nextId++,
       tagName: tagName.toUpperCase(),
       attributes: {},
-      style: {},
+      // objeto plano + los 3 métodos de CSSStyleDeclaration que usa el motor
+      // --fig-* (applyFigureStyle en chartEditor.js): el resto del código ya
+      // solo hace asignación directa de propiedad (el.style.fill = '#fff'),
+      // que un objeto plano soporta sin más.
+      style: {
+        setProperty(k, v) { this[k] = v; },
+        removeProperty(k) { delete this[k]; },
+        getPropertyValue(k) { return this[k] || ''; },
+      },
       classList: {
         _classes: new Set(),
         add(...cls) { cls.forEach((c) => el.classList._classes.add(c)); },
