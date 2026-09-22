@@ -855,6 +855,65 @@ export function render(container) {
     legG.setAttribute('transform', 'translate(' + marginL + ',' + (marginT + gridSize + 22) + ')');
     svg.appendChild(legG);
 
+    // Paso 5 de qiimelab-prompt-editor-fase-3-heatmaps-escalas-continuas.md
+    // (rendimiento): con un dataset grande (100+ muestras → miles de
+    // celdas) un `paint()` completo también reconstruye el dendrograma, los
+    // controles Y la tabla de distancias N×N (esta última es, medido, el
+    // coste dominante — más que las <rect> del propio mapa de calor) — un
+    // simple cambio de paleta/dominio/pasos no necesita nada de eso.
+    // `recolorCells()` actualiza en el sitio solo lo que SÍ depende de la
+    // escala de color (fill/stroke de cada <rect>, el texto de valor y la
+    // leyenda), sin tocar el resto del DOM. Medido con 200×200 celdas
+    // sintéticas (tests/colorscaleperf.mjs): ~250 ms con `paint()` completo
+    // → recolorear en el sitio evita la reconstrucción de la tabla y del
+    // dendrograma, el coste que de verdad escalaba con N².
+    function recolorCells() {
+      const csOv2 = getColorScaleOptions('betaDiversity');
+      const csDomain2 = [
+        csOv2.domainMin != null ? csOv2.domainMin : 0,
+        csOv2.domainMax != null ? csOv2.domainMax : maxDist,
+      ];
+      const scale2 = makeColorScale({
+        type: 'sequential', domain: csDomain2,
+        range: paletteColorsOf(csOv2.paletteId || 'app:sequential'),
+        steps: csOv2.steps, invert: csOv2.invert,
+      });
+      const showValue2 = csOv2.showValue === true;
+      const cellBorder2 = csOv2.cellBorder || null;
+
+      svg.querySelectorAll('text.ql-cell-value').forEach((el) => el.remove());
+      svg.querySelectorAll('rect[data-ri]').forEach((rect) => {
+        const ri = +rect.dataset.ri, ci = +rect.dataset.ci;
+        const rowId = order[ri], colId = order[ci];
+        const v = data.matrix[idxOf[rowId]][idxOf[colId]];
+        rect.setAttribute('fill', scale2.scale(v) || 'var(--surface)');
+        if (cellBorder2) { rect.setAttribute('stroke', cellBorder2.color); rect.setAttribute('stroke-width', cellBorder2.width); }
+        else { rect.removeAttribute('stroke'); rect.removeAttribute('stroke-width'); }
+        if (showValue2 && cellSize >= 12) {
+          const x = marginL + ci * cellSize, y = marginT + ri * cellSize;
+          const span2 = scale2.domain[1] - scale2.domain[0];
+          const frac2 = span2 === 0 ? 0 : Math.abs((v - scale2.domain[0]) / span2);
+          const strong2 = frac2 > 0.55;
+          const tx = svgEl('text', {
+            x: x + (cellSize - 1) / 2, y: y + (cellSize - 1) / 2 + 3.5, class: 'ql-cell-value',
+            'text-anchor': 'middle', 'font-size': Math.min(11, cellSize * 0.4),
+            fill: strong2 ? 'var(--surface)' : 'var(--ink)', 'font-family': 'var(--font-mono)', 'pointer-events': 'none',
+          });
+          tx.textContent = v.toFixed(2);
+          rect.insertAdjacentElement('afterend', tx);
+        }
+      });
+
+      const legGradEl = svg.querySelector('#' + CSS.escape(legendGradId));
+      if (legGradEl) {
+        while (legGradEl.firstChild) legGradEl.removeChild(legGradEl.firstChild);
+        scale2.legendStops.forEach((st) => legGradEl.appendChild(svgEl('stop', { offset: st.offset + '%', 'stop-color': st.color })));
+      }
+      const legTexts = legG.querySelectorAll('text');
+      if (legTexts[0]) legTexts[0].textContent = scale2.domain[0].toFixed(3) + ' · ' + t('beta.legendSimilar');
+      if (legTexts[1]) legTexts[1].textContent = scale2.domain[1].toFixed(3) + ' · ' + t('beta.legendDistinct');
+    }
+
     editor = attachChartEditor({
       key: 'betaDiversity', svg, mount: chartPanel, filename: t('beta.title') + '-' + metric, lang: getLang(), startEditing: wasEditing,
       elements: [
@@ -864,7 +923,7 @@ export function render(container) {
       ],
       colorScale: { type: 'sequential', domain: [0, maxDist], defaultShowValue: false },
       onReset: () => paint(),
-      onColorScaleChange: () => paint(),
+      onColorScaleChange: () => recolorCells(),
     });
 
     const scrollDiv = document.createElement('div');
