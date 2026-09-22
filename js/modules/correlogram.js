@@ -18,8 +18,10 @@ import { t, getLang } from '../lib/i18n.js';
 import { pearson, spearman, formatP } from '../lib/stats.js';
 import { matchSampleId } from '../lib/sampleMatch.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
-import { attachChartEditor, getPaletteOverrides, getStatsOptions } from '../lib/chartEditor.js';
+import { attachChartEditor, getColorScaleOptions, getStatsOptions } from '../lib/chartEditor.js';
 import { formatPStyled } from '../lib/pFormat.js';
+import { makeColorScale } from '../lib/colorScale.js';
+import { paletteColorsOf } from '../lib/palettes.js';
 import { forceLayout } from '../lib/forceLayout.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
@@ -90,17 +92,6 @@ function collectVariables(topN) {
   return vars;
 }
 
-// degradado continuo (color-mix por celda, no una serie discreta): la
-// paleta se lee ANTES de calcular colores y hay que repintar para
-// aplicarla. Ver js/lib/chartEditor.js getPaletteOverrides().
-function corrFill(r) {
-  const ov = getPaletteOverrides('correlogram');
-  const zero = ov.mid || 'var(--corr-zero)';
-  if (!isFinite(r)) return zero;
-  const pct = Math.round(Math.min(1, Math.abs(r)) * 100);
-  const pole = r >= 0 ? (ov.pos || 'var(--corr-pos)') : (ov.neg || 'var(--corr-neg)');
-  return 'color-mix(in srgb, ' + pole + ' ' + pct + '%, ' + zero + ')';
-}
 // Estrellas para las TABLAS (matriz y red) — siempre estrellas, sin badge
 // "ns" para las no significativas (silencioso como antes). Delega en el
 // formateador de p de la Fase 0 en vez de reimplementar el mapeo de
@@ -134,8 +125,15 @@ export function render(container) {
   let pThresh = 0.05;            // p máximo (solo vista red)
   let netSort = { key: 'r', dir: 'desc' };
   let editor = null;
+  let wasEditing = false; // ver cfg.startEditing en chartEditor.js — capturado en paint() antes de
+                           // destruir el editor, leído por renderMatrix/renderNetwork (funciones
+                           // hermanas de paint(), no anidadas) al recrearlo
 
   function paint() {
+    // ver cfg.startEditing en chartEditor.js: sin esto, cada repintado
+    // disparado DESDE DENTRO del propio editor (escala de color,
+    // "Restablecer"…) cerraría el panel "Personalizar" de golpe.
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
 
@@ -411,6 +409,21 @@ export function render(container) {
 
     const isBubbles = matrixStyle === 'bubbles';
     const statsOpts = getStatsOptions('correlogram');
+    // escala de color continua compartida (Paso 2 de qiimelab-prompt-
+    // editor-fase-3-heatmaps-escalas-continuas.md) — dominio FIJO [-1,1]
+    // (r no puede salirse de ahí por definición, a diferencia del dominio
+    // de beta que depende de los datos), editable igualmente desde el
+    // panel. La diagonal (r=1 fijo, "no aplica") se queda FUERA de la
+    // escala a propósito — usa --corr-diag, un token CSS propio (no la
+    // escala de datos, que no tiene sentido fijada en r=1 siempre).
+    const csOv = getColorScaleOptions('correlogram');
+    const colorScale = isBubbles ? null : makeColorScale({
+      type: 'divergent',
+      domain: [csOv.domainMin != null ? csOv.domainMin : -1, csOv.domainMax != null ? csOv.domainMax : 1],
+      midpoint: csOv.midpoint != null ? csOv.midpoint : 0,
+      range: paletteColorsOf(csOv.paletteId || 'app:divergent'),
+      steps: csOv.steps, invert: csOv.invert,
+    });
     for (let i = 0; i < k; i++) {
       for (let j = 0; j < k; j++) {
         const res = results[i][j];
@@ -418,7 +431,7 @@ export function render(container) {
         const x = marginL + j * cell, y = marginT + i * cell;
         const rect = svgEl('rect', {
           x, y, width: cell - 1.5, height: cell - 1.5, rx: 2,
-          fill: isDiag ? 'color-mix(in srgb, var(--baseline) 55%, var(--surface))' : (isBubbles ? 'var(--surface)' : corrFill(res.r)),
+          fill: isDiag ? 'var(--corr-diag)' : (isBubbles ? 'var(--surface)' : (colorScale.scale(res.r) || 'var(--corr-zero)')),
           stroke: (isBubbles && !isDiag) ? 'var(--gridline)' : undefined,
           ...(isDiag ? {} : { 'data-i': i, 'data-j': j }),
         });
@@ -510,21 +523,25 @@ export function render(container) {
         rx += cMaxLeg * 2 + 16;
       });
     } else {
-      const legGradOv = getPaletteOverrides('correlogram');
       const defs = svgEl('defs', {});
-      const grad = svgEl('linearGradient', { id: 'ql-corr-scale', x1: '0', y1: '0', x2: '1', y2: '0' });
-      grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': legGradOv.neg || 'var(--corr-neg)' }));
-      grad.appendChild(svgEl('stop', { offset: '0.5', 'stop-color': legGradOv.mid || 'var(--corr-zero)' }));
-      grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': legGradOv.pos || 'var(--corr-pos)' }));
+      const legendGradId = 'ql-cscale-correlogram';
+      const grad = svgEl('linearGradient', { id: legendGradId, x1: '0', y1: '0', x2: '1', y2: '0' });
+      colorScale.legendStops.forEach((st) => {
+        grad.appendChild(svgEl('stop', { offset: st.offset + '%', 'stop-color': st.color }));
+      });
       defs.appendChild(grad);
       svg.appendChild(defs);
       const barW = Math.min(180, gridS * 0.7);
-      legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#ql-corr-scale)', stroke: 'var(--baseline)' }));
-      [['−1', 0, 'start'], ['0', barW / 2, 'middle'], ['+1', barW, 'end']].forEach(([lab, xx, anchor]) => {
-        const lt = svgEl('text', { x: xx, y: 25, class: 'ql-tick-label', 'text-anchor': anchor });
-        lt.textContent = lab;
-        legG.appendChild(lt);
-      });
+      legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#' + legendGradId + ')', stroke: 'var(--baseline)' }));
+      const midT = colorScale.domain[1] === colorScale.domain[0] ? 0.5
+        : (colorScale.midpoint - colorScale.domain[0]) / (colorScale.domain[1] - colorScale.domain[0]);
+      const fmt = (v) => (Math.round(v * 100) / 100).toString();
+      [[fmt(colorScale.domain[0]), 0, 'start'], [fmt(colorScale.midpoint), Math.max(0, Math.min(barW, midT * barW)), 'middle'], [fmt(colorScale.domain[1]), barW, 'end']]
+        .forEach(([lab, xx, anchor]) => {
+          const lt = svgEl('text', { x: xx, y: 25, class: 'ql-tick-label', 'text-anchor': anchor });
+          lt.textContent = lab;
+          legG.appendChild(lt);
+        });
       const legNote = svgEl('text', { x: 0, y: 42, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
       legNote.textContent = t('correlogram.legendStars');
       legG.appendChild(legNote);
@@ -541,20 +558,21 @@ export function render(container) {
         { id: 'collabels', selector: '[data-ce="collabels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
-      // orden alineado con DIVERGENT_STOPS = [neg=rojo, mid=gris, pos=azul];
-      // corr-neg/corr-pos ya son alias de enriched(rojo)/depleted(azul). En
-      // burbujas 'mid' no se usa (solo 2 colores de signo, sin celda r≈0).
-      paletteSeries: [
-        { id: 'neg', label: t('correlogram.legendNeg') },
-        { id: 'mid', label: t('correlogram.legendZero') },
-        { id: 'pos', label: t('correlogram.legendPos') },
-      ],
-      paletteType: isBubbles ? 'categorical' : 'divergent',
-      // el mapa de calor pinta con color-mix() continuo por celda: un cambio
-      // de paleta en el editor solo se ve si se repinta entero. Las burbujas
-      // usan data-ce-series-fill (2 colores planos) y el editor las recolorea
-      // en vivo sin repintar — igual que el resto de gráficos categóricos.
-      ...(isBubbles ? {} : { onChange: () => paint() }),
+      // burbujas: 2 colores planos por signo, recoloreados en vivo sin
+      // repintar — igual que el resto de gráficos categóricos. El mapa de
+      // calor usa la escala de color continua compartida (Paso 3 de
+      // qiimelab-prompt-editor-fase-3-heatmaps-escalas-continuas.md) en vez
+      // del mecanismo de paleta por serie.
+      ...(isBubbles ? {
+        paletteSeries: [
+          { id: 'neg', label: t('correlogram.legendNeg') },
+          { id: 'pos', label: t('correlogram.legendPos') },
+        ],
+        paletteType: 'categorical',
+      } : {
+        colorScale: { type: 'divergent', domain: [-1, 1], defaultMidpoint: 0 },
+        onColorScaleChange: () => paint(),
+      }),
       // solo el mapa de calor anota la celda con p (las burbujas usan
       // tamaño+color, sin texto) — mismo panel de significación que
       // groupBoxplot.js, sin el selector de método de ajuste (aquí cada
@@ -562,6 +580,7 @@ export function render(container) {
       // que corregir).
       ...(isBubbles ? {} : { statsControls: { hasMultiGroup: false }, onStatsChange: () => paint() }),
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     // subtítulo informativo (fuera de la figura)
@@ -732,6 +751,7 @@ export function render(container) {
       ],
       paletteType: 'divergentPoles',
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     chartPanel.insertAdjacentHTML('beforeend',

@@ -118,6 +118,75 @@ try {
     exportCheck.noColorMix && exportCheck.noVar && exportCheck.hasGradient, JSON.stringify(exportCheck));
 
   check('sin errores de consola tras beta', c.problems.length === 0, c.problems.join('; '));
+
+  // ================= correlogram.js (divergente, diagonal fuera de la escala) =================
+  console.log('\n-- correlogram.js (divergente + diagonal especial) --');
+  await c.ev(`location.hash = '#/correlograma'`);
+  await sleep(1800);
+  await openEditor();
+
+  const corrSetup = await c.ev(`(() => {
+    const sec = document.querySelector('.ce-colorscale');
+    return { present: !!sec, hasMidpointRow: sec ? /medio|midpoint/i.test(sec.textContent) : false };
+  })()`);
+  check('la sección "Escala de color" aparece para la matriz de correlación, CON punto medio (tipo divergente)',
+    corrSetup.present && corrSetup.hasMidpointRow, JSON.stringify(corrSetup));
+
+  const diagCheck = await c.ev(`(() => {
+    const rects = [...document.querySelectorAll('svg rect[rx="2"]')].filter((r) => r.closest('[data-ce]') == null || true);
+    // celdas de la matriz: tienen data-i/data-j (fuera de diagonal) o ninguno de los 2 (diagonal)
+    const withData = document.querySelectorAll('rect[data-i]');
+    const w = withData[0];
+    // encontrar una celda diagonal real: mismo padre <svg>, sin data-i, tamaño de celda similar
+    const svg = w.closest('svg');
+    const allCellRects = [...svg.querySelectorAll('rect')].filter((r) => r.getAttribute('width') === w.getAttribute('width'));
+    const diagRect = allCellRects.find((r) => !r.hasAttribute('data-i'));
+    return {
+      anyColorMix: [...svg.querySelectorAll('rect')].some((r) => (r.getAttribute('fill') || '').includes('color-mix')),
+      diagFill: diagRect ? getComputedStyle(diagRect).fill : null,
+      offDiagFill: getComputedStyle(w).fill,
+    };
+  })()`);
+  check('ninguna celda (ni la diagonal) usa color-mix() ya en el fill', !diagCheck.anyColorMix, JSON.stringify(diagCheck));
+  check('la diagonal tiene un color distinto de las celdas de datos (var(--corr-diag), fuera de la escala)',
+    diagCheck.diagFill && diagCheck.diagFill !== diagCheck.offDiagFill, JSON.stringify(diagCheck));
+
+  const midpointShift = await c.ev(`(() => {
+    const w = document.querySelector('rect[data-i]');
+    const before = getComputedStyle(w).fill;
+    const midInp = [...document.querySelectorAll('.ce-colorscale input[type=number]')].find((i) => i.step === 'any' && i.closest('.ce-cs-row').textContent.match(/medio|midpoint/i));
+    midInp.value = '0.5';
+    midInp.dispatchEvent(new Event('change', { bubbles: true }));
+    const w2 = document.querySelector('rect[data-i]');
+    const after = getComputedStyle(w2).fill;
+    return { before, after, changed: before !== after };
+  })()`);
+  check('cambiar el punto medio recolorea las celdas de datos', midpointShift.changed, JSON.stringify(midpointShift));
+
+  // volver el midpoint a 0 y comprobar la diagonal SIGUE igual (no sigue la escala de r)
+  const diagStable = await c.ev(`(() => {
+    const midInp = [...document.querySelectorAll('.ce-colorscale input[type=number]')].find((i) => i.step === 'any' && i.closest('.ce-cs-row').textContent.match(/medio|midpoint/i));
+    midInp.value = '0';
+    midInp.dispatchEvent(new Event('change', { bubbles: true }));
+    const w = document.querySelector('rect[data-i]');
+    const svg = w.closest('svg');
+    const allCellRects = [...svg.querySelectorAll('rect')].filter((r) => r.getAttribute('width') === w.getAttribute('width'));
+    const diagRect = allCellRects.find((r) => !r.hasAttribute('data-i'));
+    return { diagFill: diagRect ? getComputedStyle(diagRect).fill : null };
+  })()`);
+  check('la diagonal es idéntica antes y después de mover el punto medio (nunca sigue la escala de datos)',
+    diagStable.diagFill === diagCheck.diagFill, JSON.stringify({ before: diagCheck.diagFill, after: diagStable.diagFill }));
+
+  const corrExport = await c.ev(`(async () => {
+    const mod = await import('/js/lib/figureExport.js');
+    const svg = document.querySelector('rect[data-i]').closest('svg');
+    const out = mod.serializeForExport(svg, { scheme: 'light', background: 'white' });
+    return { noColorMix: !/color-mix\\(/.test(out.svg), noVar: !/var\\(--/.test(out.svg), hasGradient: /<linearGradient[^>]*id="ql-cscale-correlogram"/.test(out.svg) };
+  })()`);
+  check('el SVG exportado de correlograma no tiene color-mix()/var() residual (incl. --corr-diag resuelto) y conserva el <linearGradient> de leyenda',
+    corrExport.noColorMix && corrExport.noVar && corrExport.hasGradient, JSON.stringify(corrExport));
+
+  check('sin errores de consola tras correlograma', c.problems.length === 0, c.problems.join('; '));
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;

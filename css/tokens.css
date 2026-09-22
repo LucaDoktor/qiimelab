@@ -56,6 +56,7 @@
   --corr-pos: var(--depleted);
   --corr-neg: var(--enriched);
   --corr-zero: color-mix(in srgb, var(--baseline) 42%, var(--surface)); /* r ≈ 0: gris neutro visible en claro y oscuro */
+  --corr-diag: color-mix(in srgb, var(--baseline) 55%, var(--surface)); /* diagonal de la matriz (r=1 fijo, fuera de la escala de datos): un gris algo más marcado que --corr-zero para distinguir "no aplica" de "sin correlación" */
 
   /* DATOS · estado */
   --good: #0ca30c;
@@ -113,6 +114,7 @@
     --corr-pos: var(--depleted);
     --corr-neg: var(--enriched);
     --corr-zero: color-mix(in srgb, var(--baseline) 42%, var(--surface));
+    --corr-diag: color-mix(in srgb, var(--baseline) 55%, var(--surface));
 
     --good: #0ca30c;
     --warning: #fab219;
