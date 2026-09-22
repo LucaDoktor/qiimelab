@@ -12,7 +12,11 @@ const {
   comparePair, backgroundContrast, validatePalette, checkAgainstPalette,
   deltaE, DELTA_E_FAIL, DELTA_E_WARN,
 } = await import(APP_ROOT + '/js/lib/paletteValidator.js');
-const { CATEGORICAL, CATEGORICAL_SCATTER_MAX, SEQUENTIAL, DIVERGENT } = await import(APP_ROOT + '/js/lib/palettes.js');
+const {
+  CATEGORICAL, CATEGORICAL_SCATTER_MAX, SEQUENTIAL, DIVERGENT,
+  PALETTE_TYPE_FAMILY, palettesForType, resolvePaletteColors, paletteColorsOf, evenlySampleColors,
+} = await import(APP_ROOT + '/js/lib/palettes.js');
+const { PALETTE_CATALOG } = await import(APP_ROOT + '/js/lib/paletteCatalog.js');
 
 let failed = false;
 const check = (name, ok, extra = '') => {
@@ -124,6 +128,68 @@ check('polo positivo: sin FAIL de contraste contra ningún fondo', posContrast.v
 // el centro neutro puede fundirse un poco con el fondo a propósito (como
 // --corr-zero) — solo se comprueba que no es un color inválido ni idéntico a un polo
 check('centro neutro: distinto de ambos polos', DIVERGENT.mid !== DIVERGENT.neg && DIVERGENT.mid !== DIVERGENT.pos);
+
+// ---- 5. catálogo ampliado (Fase 2, Paso 1) ----
+console.log('\n-- catálogo ampliado (js/lib/paletteCatalog.js) --');
+check('40 paletas adicionales (42 del JSON de origen − smart175 − smart175-div, ya cubiertas por la paleta por defecto)',
+  PALETTE_CATALOG.length === 40, PALETTE_CATALOG.length + ' entradas');
+
+const ids = PALETTE_CATALOG.map((p) => p.id);
+check('ids todos distintos', new Set(ids).size === ids.length);
+check('ningún id de PALETTE_CATALOG lleva ":" (reservado para "app:<paletteType>")', ids.every((id) => !id.includes(':')));
+
+let hexBad = 0, overflowBad = 0, typeBad = 0;
+PALETTE_CATALOG.forEach((p) => {
+  if (!p.colors.every((h) => /^#[0-9a-f]{6}$/.test(h))) hexBad++;
+  if (!['cycle', 'clamp'].includes(p.overflowMode)) overflowBad++;
+  if (!['qualitative', 'sequential', 'diverging'].includes(p.type)) typeBad++;
+});
+check('todos los colores son hex válidos en minúsculas', hexBad === 0, hexBad + ' paleta(s) con hex inválido');
+check('todas declaran overflowMode (cycle|clamp)', overflowBad === 0, overflowBad + ' paleta(s) sin overflowMode válido');
+check('todas declaran un type conocido', typeBad === 0, typeBad + ' paleta(s) con type desconocido');
+
+// overflowMode coherente con el type (Paso 1: "no heredar la regla de la
+// paleta de 8 sin pensarlo" — categóricas ciclan, secuencial/divergente sujeta)
+const wrongOverflow = PALETTE_CATALOG.filter((p) =>
+  (p.type === 'qualitative') !== (p.overflowMode === 'cycle'));
+check('qualitative ⇔ cycle, sequential/diverging ⇔ clamp (ninguna excepción)', wrongOverflow.length === 0,
+  wrongOverflow.map((p) => p.id).join(', '));
+
+// maxSafeN solo tiene sentido para categóricas (series discretas) — las
+// rampas continuas no tienen un "nº de series" que distinguir
+const seqWithMaxSafeN = PALETTE_CATALOG.filter((p) => p.type !== 'qualitative' && p.maxSafeN != null);
+check('sequential/diverging no llevan maxSafeN (no aplica a una rampa continua)', seqWithMaxSafeN.length === 0,
+  seqWithMaxSafeN.map((p) => p.id).join(', '));
+const qualWithoutMaxSafeN = PALETTE_CATALOG.filter((p) => p.type === 'qualitative' && p.maxSafeN == null);
+check('todas las qualitative traen maxSafeN', qualWithoutMaxSafeN.length === 0);
+
+// ---- 6. palettesForType / resolvePaletteColors / evenlySampleColors ----
+console.log('\n-- selector por familia + resolución de color (chartEditor.js) --');
+check('palettesForType("categorical") solo trae qualitative + la entrada app:', palettesForType('categorical').every((p) => p.type === 'qualitative'));
+check('palettesForType("divergent") solo trae diverging', palettesForType('divergent').every((p) => p.type === 'diverging'));
+check('palettesForType("sequentialPoles") solo trae sequential (misma familia que "sequential")',
+  palettesForType('sequentialPoles').every((p) => p.type === 'sequential'));
+check('la primera entrada de cada familia es la paleta por defecto de la app (isDefault)',
+  palettesForType('categorical')[0].isDefault && palettesForType('categorical')[0].colors.join() === CATEGORICAL.join());
+
+check('resolvePaletteColors("app:categorical", i) === paleta por defecto índice a índice',
+  CATEGORICAL.every((hex, i) => resolvePaletteColors('app:categorical', i) === hex));
+check('resolvePaletteColors(id de catálogo, 0) === primer color de esa paleta',
+  resolvePaletteColors('okabe-ito', 0) === PALETTE_CATALOG.find((p) => p.id === 'okabe-ito').colors[0]);
+check('resolvePaletteColors: overflow "clamp" repite el último tono más allá de la longitud',
+  resolvePaletteColors('viridis', 50) === paletteColorsOf('viridis')[paletteColorsOf('viridis').length - 1]);
+check('resolvePaletteColors: overflow "cycle" (tol-highcontrast, 3 tonos) vuelve al primero en el índice 3',
+  resolvePaletteColors('tol-highcontrast', 3) === PALETTE_CATALOG.find((p) => p.id === 'tol-highcontrast').colors[0]);
+check('id desconocido: null, no lanza', resolvePaletteColors('no-existe-esta-paleta', 0) === null);
+
+check('evenlySampleColors(colors, 2) === [primero, último] — nunca los 2 primeros de una rampa de 11',
+  JSON.stringify(evenlySampleColors(paletteColorsOf('viridis'), 2)) ===
+  JSON.stringify([paletteColorsOf('viridis')[0], paletteColorsOf('viridis')[10]]));
+check('evenlySampleColors(colors, 3) === [primero, medio, último] (neg/mid/pos de una divergente)',
+  JSON.stringify(evenlySampleColors(paletteColorsOf('coolwarm'), 3)) ===
+  JSON.stringify([paletteColorsOf('coolwarm')[0], paletteColorsOf('coolwarm')[5], paletteColorsOf('coolwarm')[10]]));
+check('evenlySampleColors(colors, 1) === [primero]', JSON.stringify(evenlySampleColors(['#111111', '#222222'], 1)) === JSON.stringify(['#111111']));
+check('evenlySampleColors([], n) === [] sin lanzar', JSON.stringify(evenlySampleColors([], 3)) === '[]');
 
 console.log('\nRESULTADO: ' + (failed ? 'FAIL' : 'PASS'));
 process.exit(failed ? 1 : 0);

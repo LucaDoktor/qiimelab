@@ -70,6 +70,7 @@ const SUITE = [
   { name: 'stats/pairwisestats', file: 'stats/pairwisestats.mjs', kind: 'R' },
   { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },
   { name: 'keyboard-editor', file: 'keyboard-editor.mjs', kind: 'navegador' },
+  { name: 'paletteseries', file: 'paletteseries.mjs', kind: 'navegador' },
   { name: 'chart-fullscreen', file: 'chart-fullscreen.mjs', kind: 'navegador' },
   { name: 'sangerchromatogram', file: 'sangerchromatogram.mjs', kind: 'navegador' },
   { name: 'session-ui', file: 'session-ui.mjs', kind: 'navegador' },

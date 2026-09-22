@@ -6,6 +6,8 @@
 //
 // Construidas para pasar js/lib/paletteValidator.js — ver tests/palettes.mjs.
 
+import { PALETTE_CATALOG } from './paletteCatalog.js';
+
 /**
  * Categórica — 8 tonos, ORDEN FIJO (nunca ciclar: una 9ª serie va a "Otros").
  * Los 7 primeros son exactamente --cat-1..7 de css/tokens.css (tema claro);
@@ -74,4 +76,104 @@ export function paletteColorAt(name, i, { max } = {}) {
   if (!def) return null;
   const colors = max ? def.colors.slice(0, max) : def.colors;
   return colors[i % colors.length];
+}
+
+// ---------------------------------------------------------------------
+// Catálogo ampliado (Fase 2, Paso 1 de qiimelab-prompt-editor-fase-2-
+// paletas-relleno-series.md) — 40 paletas adicionales seleccionables desde
+// el editor de gráficos, además de las 3 de arriba (que siguen siendo LA
+// paleta por defecto: la que se usa si el usuario no toca nada). Ver
+// js/lib/paletteCatalog.js para las fuentes/licencias/metadatos completos.
+
+/** `paletteType` de attachChartEditor ('categorical'/'sequential'/
+ *  'sequentialPoles'/'divergent'/'divergentPoles') → familia de
+ *  PALETTE_CATALOG a ofrecer en el desplegable. Un módulo que pide
+ *  'divergent' no debe ver paletas 'qualitative' en la lista: la familia
+ *  amplia (categórica/secuencial/divergente) no cambia aunque el usuario
+ *  elija otra paleta dentro de ella. */
+export const PALETTE_TYPE_FAMILY = {
+  categorical: 'qualitative',
+  sequential: 'sequential', sequentialPoles: 'sequential',
+  divergent: 'diverging', divergentPoles: 'diverging',
+};
+
+/** La entrada "paleta por defecto de la app" como si fuera una fila más del
+ *  catálogo — para que el desplegable pueda listarla junto a las demás sin
+ *  duplicar su lógica de color (sigue siendo PALETTES[paletteType], no una
+ *  copia). Un id estable con prefijo reservado ('app:') que nunca puede
+ *  chocar con un id de PALETTE_CATALOG (los suyos no llevan ':'). */
+export function defaultPaletteEntry(paletteType) {
+  const fam = PALETTE_TYPE_FAMILY[paletteType] || 'qualitative';
+  const def = PALETTES[paletteType];
+  if (!def) return null;
+  return {
+    id: 'app:' + paletteType, name: null /* se resuelve con T.paletteCategorical/etc en chartEditor.js */,
+    type: fam, overflowMode: fam === 'qualitative' ? 'cycle' : 'clamp',
+    maxSafeN: def.scatterMax || null, maxCleanN: null,
+    colors: def.colors, isDefault: true,
+  };
+}
+
+/** Todas las paletas de una familia (`app:<paletteType>` primero, luego el
+ *  catálogo ampliado) — lista lista para pintar el desplegable agrupado. */
+export function palettesForType(paletteType) {
+  const fam = PALETTE_TYPE_FAMILY[paletteType] || 'qualitative';
+  const app = defaultPaletteEntry(paletteType);
+  const rest = PALETTE_CATALOG.filter((p) => p.type === fam);
+  return app ? [app, ...rest] : rest;
+}
+
+function findCatalogPalette(id) {
+  if (!id) return null;
+  const fromApp = Object.keys(PALETTE_TYPE_FAMILY).find((k) => 'app:' + k === id);
+  if (fromApp) return defaultPaletteEntry(fromApp);
+  return PALETTE_CATALOG.find((p) => p.id === id) || null;
+}
+
+/** Los colores crudos (con tope opcional) de una paleta de PALETTE_CATALOG
+ *  o `app:<paletteType>`, sin resolver desbordamiento — para
+ *  `evenlySampleColors` o cualquier otro consumidor que necesite la rampa
+ *  entera en vez de un índice suelto. */
+export function paletteColorsOf(id, { max } = {}) {
+  const pal = findCatalogPalette(id);
+  if (!pal) return [];
+  return max ? pal.colors.slice(0, max) : pal.colors;
+}
+
+/** Como `paletteColorAt`, pero resolviendo por id de PALETTE_CATALOG (o
+ *  `app:<paletteType>` para la paleta por defecto) en vez de por los 5
+ *  nombres fijos de PALETTES. Aplica `overflowMode`: 'cycle' repite desde
+ *  el principio (categóricas), 'clamp' repite el tono más extremo en vez
+ *  de ciclar una rampa continua (secuenciales/divergentes — ciclar
+ *  rompería su lectura de orden). Uso: asignar UN color por serie discreta
+ *  en el mismo orden que trae la paleta (categóricas). Para muestrear una
+ *  rampa continua en N paradas arbitrarias (p. ej. los 2-3 "polos" de un
+ *  degradado continuo), usar `evenlySampleColors` en su lugar — indexar
+ *  0,1,2… en una rampa de 11 paradas daría los 3 tonos más oscuros, no
+ *  extremo-centro-extremo. */
+export function resolvePaletteColors(id, i, { max } = {}) {
+  const colors = paletteColorsOf(id, { max });
+  if (!colors.length) return null;
+  if (i < colors.length) return colors[i];
+  const pal = findCatalogPalette(id);
+  return pal.overflowMode === 'clamp' ? colors[colors.length - 1] : colors[i % colors.length];
+}
+
+/** Muestrea `n` paradas EQUIESPACIADAS (por posición, ida y vuelta con
+ *  Math.round) a lo largo de `colors` — para aplicar una paleta de M
+ *  paradas a una figura que solo tiene N<M marcas fijas (los 2 polos de un
+ *  degradado continuo, o los 3 neg/mid/pos de una escala divergente):
+ *  n=2 siempre da [primero, último]; n=3 da [primero, medio, último];
+ *  n>=M se comporta como identidad (cada parada de `colors` aparece, con
+ *  repetición solo si n>M). */
+export function evenlySampleColors(colors, n) {
+  if (!colors || !colors.length) return [];
+  if (n <= 1) return [colors[0]];
+  const m = colors.length;
+  const out = [];
+  for (let j = 0; j < n; j++) {
+    const idx = m === 1 ? 0 : Math.round((j * (m - 1)) / (n - 1));
+    out.push(colors[idx]);
+  }
+  return out;
 }

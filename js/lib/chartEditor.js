@@ -55,7 +55,10 @@
 // queda como referencia/red de seguridad un tiempo — pero no debe ganar
 // ningún caso de uso nuevo; cualquier control nuevo va en `attachChartEditor`.
 
-import { PALETTES, paletteColorAt } from './palettes.js';
+import {
+  PALETTES, paletteColorAt, palettesForType, resolvePaletteColors,
+  paletteColorsOf, evenlySampleColors, PALETTE_TYPE_FAMILY,
+} from './palettes.js';
 import { checkAgainstPalette, isValidHex } from './paletteValidator.js';
 import { openPanel as openModalPanel } from './modal.js';
 import { escapeHtml } from './dom.js';
@@ -151,6 +154,8 @@ const I18N = {
         paletteWarnClash: (name) => 'parecido a "' + name + '" para algunos tipos de daltonismo',
         paletteWarnContrast: 'poco contraste sobre el fondo de la figura',
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
+        paletteAppDefault: 'por defecto', paletteApply: 'Aplicar', paletteChoose: 'Elegir paleta',
+        paletteWarnSafeN: (n, max) => n + ' series superan las ' + max + ' que esta paleta distingue con seguridad bajo daltonismo',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
@@ -168,6 +173,8 @@ const I18N = {
         paletteWarnClash: (name) => 'similar to "' + name + '" for some kinds of colour blindness',
         paletteWarnContrast: 'low contrast against the figure background',
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
+        paletteAppDefault: 'default', paletteApply: 'Apply', paletteChoose: 'Choose palette',
+        paletteWarnSafeN: (n, max) => n + ' series exceed the ' + max + ' this palette safely tells apart under colour blindness',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
@@ -240,9 +247,13 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-title-row input[type=text] { flex:1; min-width:180px; height:26px; padding:2px 8px; font-size:12px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); color:var(--ink); }
 .ce-palette { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-palette h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
-.ce-pal-btns { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-.ce-pal-btns button { border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-2); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; display:flex; align-items:center; gap:6px; }
-.ce-pal-btns button:hover { border-color:var(--accent); color:var(--ink); }
+.ce-pal-chooser { margin-bottom:10px; }
+.ce-pal-chooser-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ce-pal-chooser-row label { font-size:12px; color:var(--ink-2); }
+.ce-pal-chooser-row select { flex:1; min-width:160px; }
+.ce-pal-chooser-row button { border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-2); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+.ce-pal-chooser-row button:hover { border-color:var(--accent); color:var(--ink); }
+.ce-pal-preview { margin-top:6px; }
 .ce-pal-swatchbar { display:flex; }
 .ce-pal-swatchbar span { display:block; width:8px; height:14px; }
 .ce-pal-rows { display:flex; flex-direction:column; gap:6px; max-width:420px; }
@@ -399,9 +410,22 @@ export function attachChartEditor(cfg) {
     writeStore();
   }
 
-  function applyPresetPalette(name) {
+  /** Aplica una paleta del catálogo (js/lib/palettes.js) a TODAS las series
+   *  configuradas de golpe. `id` es 'app:<paletteType>' (la paleta por
+   *  defecto de la app) o un id de PALETTE_CATALOG (Fase 2, Paso 1 de
+   *  qiimelab-prompt-editor-fase-2-paletas-relleno-series.md). Categóricas:
+   *  un color por serie EN ORDEN (mismo comportamiento que antes). Secuencial/
+   *  divergente: se muestrean equiespaciadas tantas paradas como series haya
+   *  configuradas (2 "polos" siempre caen en el primer/último tono de la
+   *  rampa elegida, nunca en sus 2 primeros — ver evenlySampleColors). */
+  function applyPresetPalette(id) {
     const pal = (store.__palette = store.__palette || {});
-    paletteSeries.forEach((s, i) => { pal[s.id] = paletteColorAt(name, i, { max: paletteMax }); });
+    const isQualitative = (PALETTE_TYPE_FAMILY[paletteType] || 'qualitative') === 'qualitative';
+    const picks = isQualitative
+      ? paletteSeries.map((s, i) => resolvePaletteColors(id, i, { max: paletteMax }))
+      : evenlySampleColors(paletteColorsOf(id, { max: paletteMax }), paletteSeries.length);
+    paletteSeries.forEach((s, i) => { if (picks[i]) pal[s.id] = picks[i]; });
+    store.__paletteChoice = id;
     applyPalette();
     writeStore();
   }
@@ -552,11 +576,10 @@ export function attachChartEditor(cfg) {
     divergentPoles: T.paletteDivergent,
   };
 
-  function swatchBar(name) {
+  function swatchBarColors(colors) {
     const bar = document.createElement('span');
     bar.className = 'ce-pal-swatchbar';
-    const colors = (PALETTES[name] && PALETTES[name].colors) || [];
-    colors.slice(0, paletteMax || colors.length).forEach((hex) => {
+    (colors || []).slice(0, paletteMax || (colors || []).length).forEach((hex) => {
       const sw = document.createElement('span');
       sw.style.background = hex;
       bar.appendChild(sw);
@@ -564,20 +587,85 @@ export function attachChartEditor(cfg) {
     return bar;
   }
 
+  function paletteEntryLabel(p) {
+    if (p.isDefault) return (PALETTE_LABEL[paletteType] || paletteType) + ' — ' + T.paletteAppDefault;
+    return p.name;
+  }
+
+  /** Desplegable con todas las paletas de la MISMA familia que `paletteType`
+   *  (categórica/secuencial/divergente — nunca mezcladas: no tendría
+   *  sentido ofrecer una rampa secuencial de 9 tonos para recolorear series
+   *  discretas de un Venn) + una vista previa de swatches que se actualiza
+   *  al cambiar de opción SIN aplicar todavía, y un botón "Aplicar" aparte
+   *  (Paso 1 de qiimelab-prompt-editor-fase-2-paletas-relleno-series.md —
+   *  antes era un único botón fijo a la paleta por defecto de la app). */
+  function renderPaletteChooser() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-pal-chooser';
+
+    const options = palettesForType(paletteType);
+    const current = store.__paletteChoice && options.some((p) => p.id === store.__paletteChoice)
+      ? store.__paletteChoice : 'app:' + paletteType;
+
+    const row = document.createElement('div');
+    row.className = 'ce-pal-chooser-row';
+    const selId = 'ce-pal-choose-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', selId);
+    lab.textContent = T.paletteChoose;
+    row.appendChild(lab);
+
+    const sel = document.createElement('select');
+    sel.id = selId;
+    const appGroup = document.createElement('optgroup');
+    appGroup.label = PALETTE_LABEL[paletteType] || paletteType;
+    const catGroup = document.createElement('optgroup');
+    catGroup.label = T.paletteTitle;
+    options.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = paletteEntryLabel(p);
+      if (p.id === current) o.selected = true;
+      (p.isDefault ? appGroup : catGroup).appendChild(o);
+    });
+    sel.appendChild(appGroup);
+    if (catGroup.children.length) sel.appendChild(catGroup);
+    row.appendChild(sel);
+
+    const applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.className = 'ql-btn';
+    applyBtn.textContent = T.paletteApply;
+    applyBtn.addEventListener('click', () => applyPresetPalette(sel.value));
+    row.appendChild(applyBtn);
+    wrap.appendChild(row);
+
+    const preview = document.createElement('div');
+    preview.className = 'ce-pal-preview';
+    const warn = document.createElement('p');
+    warn.className = 'ce-pal-warn';
+    const paint = () => {
+      const p = options.find((o) => o.id === sel.value);
+      preview.innerHTML = '';
+      if (p) preview.appendChild(swatchBarColors(p.colors));
+      warn.textContent = '';
+      if (p && p.type === 'qualitative' && p.maxSafeN != null && paletteSeries.length > p.maxSafeN) {
+        warn.textContent = '⚠ ' + T.paletteWarnSafeN(paletteSeries.length, p.maxSafeN);
+      }
+    };
+    sel.addEventListener('change', paint);
+    paint();
+    wrap.appendChild(preview);
+    wrap.appendChild(warn);
+
+    return wrap;
+  }
+
   function renderPaletteSection() {
     const wrap = document.createElement('div');
     wrap.className = 'ce-palette';
     wrap.innerHTML = '<h5>' + T.paletteTitle + '</h5>';
 
-    const btnRow = document.createElement('div');
-    btnRow.className = 'ce-pal-btns';
-    const applyBtn = document.createElement('button');
-    applyBtn.type = 'button';
-    applyBtn.appendChild(swatchBar(paletteType));
-    applyBtn.insertAdjacentHTML('beforeend', '<span>' + (PALETTE_LABEL[paletteType] || paletteType) + '</span>');
-    applyBtn.addEventListener('click', () => applyPresetPalette(paletteType));
-    btnRow.appendChild(applyBtn);
-    wrap.appendChild(btnRow);
+    wrap.appendChild(renderPaletteChooser());
 
     const rows = document.createElement('div');
     rows.className = 'ce-pal-rows';
