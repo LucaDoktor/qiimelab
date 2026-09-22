@@ -21,6 +21,7 @@ import { ingestFile } from '../lib/ingest.js';
 import { parseTable } from '../lib/csv.js';
 import { summariseCountSeries, splitByFacet } from '../lib/countStats.js';
 import { fisherLSD, compactLetterDisplay } from '../lib/stats.js';
+import { drawSignificanceBrackets, countBracketRows } from '../lib/statAnnotations.js';
 import {
   loadExampleMicrobialCountsPlate, loadExampleMicrobialCountsMPN, exampleDownloadBlock,
 } from '../lib/exampleData.js';
@@ -42,6 +43,8 @@ export function render(container) {
   let activeId = null;
   let errBar = 'sd';               // 'sd' | 'se'
   let plotStyle = 'bars';          // 'bars' | 'jitter'
+  let sigDisplay = 'letters';      // 'letters' | 'brackets' — Paso 4 de
+                                    // qiimelab-prompt-editor-fase-1-anotaciones-estadisticas.md
   let sort = { key: 'group', dir: 'asc' };
   let editors = []; // uno por bloque — con "agrupar por" puede haber varios a la vez
   const addVarState = new Map(); // seriesId -> { open, mode:'manual'|'file', name, joinCol, editingCol, msg }
@@ -600,6 +603,30 @@ export function render(container) {
       controls.appendChild(ebField);
     }
 
+    // letras compactas ⇄ corchetes por pares — mismo cálculo de fisherLSD
+    // (ANOVA + LSD de Fisher, alpha=0.05) ya hecho arriba, solo cambia el
+    // renderizado (Paso 4 de qiimelab-prompt-editor-fase-1-anotaciones-
+    // estadisticas.md). Solo tiene sentido con barras (el jitter no dibuja
+    // significación hoy) y cuando hay letras que mostrar.
+    if (plotStyle === 'bars' && lsd) {
+      const sigField = document.createElement('div');
+      sigField.className = 'ql-field';
+      sigField.innerHTML = '<label>' + t('recuentos.sigDisplayLabel') + '</label>';
+      const seg = document.createElement('div');
+      seg.className = 'ql-segmented';
+      [['letters', t('recuentos.sigDisplayLetters')], ['brackets', t('recuentos.sigDisplayBrackets')]].forEach(([v, lbl]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ql-seg-btn' + (sigDisplay === v ? ' is-on' : '');
+        b.textContent = lbl;
+        b.addEventListener('click', () => { if (sigDisplay !== v) { sigDisplay = v; paint(); } });
+        seg.appendChild(b);
+      });
+      sigField.appendChild(seg);
+      sigField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('recuentos.sigDisplayHelp') + '</p>');
+      controls.appendChild(sigField);
+    }
+
     // resumen
     const statsBox = document.createElement('div');
     statsBox.style.marginTop = '16px';
@@ -670,7 +697,7 @@ export function render(container) {
     if (plotStyle === 'jitter') {
       drawJitter(svg, chartWrap, tooltip, chartPanel, s, summary, usable, level);
     } else {
-      drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, level);
+      drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, lsd, level);
     }
     renderTable(tableCard, summary, usable, letters);
   }
@@ -700,7 +727,7 @@ export function render(container) {
   }
 
   // ---- barras verticales + barra de error ----
-  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups, letters, level) {
+  function drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, groups, letters, lsd, level) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const err = (g) => (errBar === 'sd' ? g.sd : g.se);
@@ -716,7 +743,19 @@ export function render(container) {
 
     const n = groups.length;
     const slotW = Math.max(70, Math.min(150, 620 / n));
-    const marginL = 60, marginR = 20, marginT = letters ? 54 : 40;
+    const marginL = 60, marginR = 20;
+    const rowHeight = 26;
+    // corchetes por pares (Paso 4): mismo fisherLSD.pairwise ya calculado
+    // arriba, solo cambia el renderizado — sin recorte por umbral propio,
+    // el `significant` de fisherLSD (alpha=0.05) ya decide qué par se ve.
+    const bracketXPositions = groups.map((_, gi) => marginL + slotW * gi + slotW / 2);
+    const sigPairs = (sigDisplay === 'brackets' && lsd)
+      ? lsd.pairwise.filter((p) => p.significant).map((p) => ({ i: p.i, j: p.j, p: p.p }))
+      : [];
+    const bracketRows = sigPairs.length ? countBracketRows(sigPairs, bracketXPositions) : 0;
+    const marginT = sigDisplay === 'brackets'
+      ? (bracketRows ? 40 + (bracketRows - 1) * rowHeight + 24 : 40)
+      : (letters ? 54 : 40);
     const longestLabel = Math.max(...groups.map((g) => g.key.length));
     const rotate = n > 4 || longestLabel > 12;
     const marginB = rotate ? 60 + Math.min(120, longestLabel * 5.2) : 70;
@@ -774,8 +813,9 @@ export function render(container) {
       }
 
       // letra de grupo homogéneo (ANOVA + LSD de Fisher): dos grupos que
-      // comparten letra NO difieren significativamente entre sí.
-      if (letters && letters[gi]) {
+      // comparten letra NO difieren significativamente entre sí. Alternativa
+      // (Paso 4): corchetes por pares, dibujados una vez fuera de este bucle.
+      if (sigDisplay === 'letters' && letters && letters[gi]) {
         const lt = svgEl('text', {
           x: cx, y: errTopY - 8, class: 'ql-letter-label', 'text-anchor': 'middle', 'font-weight': 700, 'font-size': 13, fill: 'var(--ink)',
         });
@@ -793,6 +833,10 @@ export function render(container) {
       tx.textContent = g.key.length > 28 ? g.key.slice(0, 27) + '…' : g.key;
       svg.appendChild(tx);
     });
+
+    if (sigPairs.length) {
+      drawSignificanceBrackets(svg, { pairs: sigPairs, xPositions: bracketXPositions, yTop: marginT - 16, rowHeight });
+    }
 
     // título de eje Y
     const yT = svgEl('text', {
@@ -828,6 +872,7 @@ export function render(container) {
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
+        ...(sigPairs.length ? [{ id: 'sig', selector: '[data-ce="sig"]', kind: 'group' }] : []),
       ],
       paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g.key })),
       paletteType: 'categorical',
