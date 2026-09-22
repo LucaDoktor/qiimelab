@@ -166,6 +166,36 @@ try {
     recuentosCheck.n.some((h) => /Estructura|Structure/.test(h)), JSON.stringify(recuentosCheck));
   check('sin errores de consola tras #/recuentos', c.problems.length === 0, c.problems.join('; '));
 
+  // ================= #/barplots (groupTaxaByAbundance + taxa order) =================
+  console.log('\n-- #/barplots: orden de taxones (groupTaxaByAbundance) --');
+  await c.ev(`location.hash = '#/barplots'`);
+  await sleep(1800);
+  await openEditor();
+
+  const barplotsSetup = await c.ev(`(() => ({ n: [...document.querySelectorAll('.ce-colorscale h5')].map((h) => h.textContent) }))()`);
+  check('la sección "Estructura" aparece en la vista vertical apilada de barplots',
+    barplotsSetup.n.some((h) => /Estructura|Structure/.test(h)), JSON.stringify(barplotsSetup));
+
+  const taxaOrderTest = await c.ev(`(() => {
+    // etiquetas de taxón: <text class="ql-tick-label" text-anchor="end"> a la izquierda del área de trazado
+    const legendLabels = () => [...document.querySelectorAll('[data-ce="legend"] text.ql-tick-label')].map((t) => t.textContent);
+    const before = legendLabels();
+    const sel = [...document.querySelectorAll('.ce-cs-row select')].find((s) => [...s.options].some((o) => /alfabético|alphabetical/i.test(o.textContent)));
+    sel.value = 'alpha-asc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const after = legendLabels();
+    return { before, after, hadSelect: !!sel };
+  })()`);
+  check('el selector de orden de taxones existe en barplots', taxaOrderTest.hadSelect);
+  check('cambiar a "alfabético A-Z" reordena la leyenda de taxones (cambia el orden real)',
+    JSON.stringify(taxaOrderTest.before) !== JSON.stringify(taxaOrderTest.after), JSON.stringify(taxaOrderTest));
+
+  // el editor sigue abierto tras el repintado disparado por el cambio de orden
+  const stillOpenBarplots = await c.ev(`(() => !!document.querySelector('.ce-colorscale'))()`);
+  check('el panel "Personalizar" de barplots sigue abierto tras reordenar taxones (startEditing)', stillOpenBarplots);
+
+  check('sin errores de consola tras #/barplots', c.problems.length === 0, c.problems.join('; '));
+
 } catch (e) {
   console.error('EXCEPCIÓN:', e.message);
   failed = true;

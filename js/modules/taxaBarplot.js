@@ -1,7 +1,7 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor, getFigureGeometry } from '../lib/chartEditor.js';
+import { attachChartEditor, getFigureGeometry, getFigureOptions } from '../lib/chartEditor.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { groupColor } from '../lib/groupBoxplot.js';
 import { kruskalWallis, benjaminiHochberg, cliffsDelta, quartiles, formatP, lefseLdaScore, studentTwoTailedP } from '../lib/stats.js';
@@ -155,6 +155,22 @@ export function groupTaxaByAbundance(data, minAbundanceOrOpts = 1, topNParam = 1
   const topTaxa = means.filter((m) => topSet.has(m.header)).map((m) => m.header);
   const otherTaxa = means.filter((m) => !topSet.has(m.header)).map((m) => m.header);
   const hasOther = otherTaxa.length > 0 || preAggOtherHeaders.length > 0;
+
+  // Orden de categorías (Paso 2/G4 de qiimelab-prompt-editor-fase-4-ejes-
+  // rejilla-leyenda-lienzo.md) — SOLO cambia el orden de apilado/filas
+  // dentro de los ya elegidos como "top N por abundancia" (topSet arriba no
+  // se toca): "original" mantiene el criterio de siempre (abundancia
+  // descendente, ya es el orden natural de `means`). 'Otros' nunca entra
+  // aquí, se añade aparte siempre al final (ver más abajo).
+  if (opts.categoryOrder && opts.categoryOrder !== 'original' && opts.categoryOrder !== 'value-desc') {
+    const byMean = new Map(means.map((m) => [m.header, m.mean]));
+    const cmp = {
+      'alpha-asc': (a, b) => shortTaxonName(a).localeCompare(shortTaxonName(b)),
+      'alpha-desc': (a, b) => shortTaxonName(b).localeCompare(shortTaxonName(a)),
+      'value-asc': (a, b) => byMean.get(a) - byMean.get(b),
+    }[opts.categoryOrder];
+    if (cmp) topTaxa.sort(cmp);
+  }
 
   // Suma de abundancias de taxones minoritarios muestra por muestra asignadas a 'Otros'
   const groupedRows = rows.map((row) => {
@@ -327,6 +343,10 @@ export function render(container) {
   let bmView = 'single';       // 'single' (un método, el de siempre) | 'consensus' (panel taxón × método)
   let bmConsSort = { key: 'count', dir: 'desc' };
   let editor = null;
+  let wasEditing = false; // ver cfg.startEditing en chartEditor.js — capturado al principio de
+                           // paint()/renderBiomarkers/renderBiomarkerConsensus antes de destruir
+                           // el editor anterior, para no cerrar el panel "Personalizar" en cada
+                           // repintado disparado desde dentro del propio editor
   // Geometría del aluvial: persistida vía attachChartEditor (cfg.geometrySliders,
   // key ALLUVIAL_CE_KEY) desde el 22 sep 2026 — antes vivía solo en memoria en el
   // modal openChartEditor (ya retirado, ver nota de arquitectura en chartEditor.js),
@@ -350,6 +370,7 @@ export function render(container) {
   let seriesColorOverrides = {};
 
   function paint() {
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
@@ -663,7 +684,13 @@ export function render(container) {
 
     function renderChartAndTable() {
       if (editor) { editor.destroy(); editor = null; }
-      const grouped = groupTaxaByAbundance(table, minAbundance, topN, { minPrev, isPercentage: true });
+      // Paso 2/G4: orden de taxones leído SIEMPRE de la clave 'taxaBarplot'
+      // (la vista vertical apilada, por defecto) con independencia de qué
+      // variante esté activa ahora mismo (burbujas/horizontal) — esas 2 no
+      // tienen su propia sección "Estructura" todavía (evita guardar la
+      // preferencia en 2-3 sitios inconsistentes a la vez).
+      const barplotStructOpts = getFigureOptions('taxaBarplot');
+      const grouped = groupTaxaByAbundance(table, minAbundance, topN, { minPrev, isPercentage: true, categoryOrder: barplotStructOpts.categoryOrder });
       const { topTaxa, otherTaxa, preAggOtherHeaders, series, means, hasOther } = grouped;
       const colorsRepeat = topTaxa.length > CAT_VARS.length;
 
@@ -989,6 +1016,7 @@ export function render(container) {
           alluvialLinkOpacity = 0.4;
           paint();
         },
+        startEditing: wasEditing,
       });
 
       // Tabla de abundancia relativa media por grupo
@@ -1358,7 +1386,18 @@ export function render(container) {
         label: (series.find((s) => s.colorVar === cv) || {}).label || t('barplots.paletteSlotN', { n: i + 1 }),
       })),
       paletteType: 'categorical',
+      // Paso 2/G4 (qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-
+      // lienzo.md) — orden de taxones. Solo en la vista vertical apilada
+      // (clave 'taxaBarplot'): groupTaxaByAbundance() ya lee esta MISMA
+      // clave con independencia de la vista activa (ver arriba), así que
+      // mostrar el control en 2-3 vistas a la vez guardaría en cubos
+      // separados y desincronizaría el panel de lo que de verdad se aplica.
+      ...(plotStyle !== 'bubbles' && !horizontal ? {
+        figureOptions: { categoryOrder: true },
+        onFigureOptionsChange: () => paint(),
+      } : {}),
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
 
     // tabla
@@ -1606,6 +1645,7 @@ export function render(container) {
         { id: 'title', create: { text: t('barplots.sunburstTitle') + ' — ' + titleName, x: cx, y: 24, anchor: 'middle', cls: 'ce-title' } },
       ],
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
   }
 
@@ -2302,8 +2342,9 @@ export function render(container) {
       const tx = svgEl('text', { x: 200, y: 44, 'text-anchor': 'middle', class: 'ql-axis-label', fill: 'var(--ink-muted)' });
       tx.textContent = t('barplots.bmNone');
       svg.appendChild(tx);
+      wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
       if (editor) { editor.destroy(); editor = null; }
-      editor = attachChartEditor({ key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(), elements: [], onReset: () => paint() });
+      editor = attachChartEditor({ key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(), elements: [], onReset: () => paint(), startEditing: wasEditing });
       return;
     }
     const labelChars = Math.max(...sig.map((s) => s.label.length), 8);
@@ -2401,6 +2442,7 @@ export function render(container) {
     legG.setAttribute('transform', 'translate(' + marginL + ',' + legY + ')');
     svg.appendChild(legG);
 
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     editor = attachChartEditor({
       key: 'taxaBiomarkers', svg, mount, filename: t('barplots.bmTitle'), lang: getLang(),
@@ -2413,6 +2455,7 @@ export function render(container) {
       paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
       paletteType: 'categorical',
       onReset: () => paint(),
+      startEditing: wasEditing,
     });
   }
 
