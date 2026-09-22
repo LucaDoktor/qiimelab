@@ -56,7 +56,7 @@
 // ningún caso de uso nuevo; cualquier control nuevo va en `attachChartEditor`.
 
 import {
-  PALETTES, paletteColorAt, palettesForType, resolvePaletteColors,
+  paletteColorAt, palettesForType, resolvePaletteColors,
   paletteColorsOf, evenlySampleColors, PALETTE_TYPE_FAMILY,
 } from './palettes.js';
 import {
