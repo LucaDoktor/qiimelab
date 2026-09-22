@@ -40,6 +40,7 @@ const SUITE = [
   { name: 'alluvial', file: 'alluvial.mjs', kind: 'estático' },
   { name: 'sunburst', file: 'sunburst.mjs', kind: 'estático' },
   { name: 'charteditor', file: 'charteditor.mjs', kind: 'estático' },
+  { name: 'statannotations', file: 'statannotations.mjs', kind: 'estático' },
   { name: 'figureexport', file: 'figureexport.mjs', kind: 'estático' },
   { name: 'chromatooltip', file: 'chromatooltip.mjs', kind: 'estático' },
   { name: 'sangerinspector', file: 'sangerinspector.mjs', kind: 'estático' },

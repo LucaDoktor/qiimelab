@@ -260,11 +260,10 @@ export function render(container) {
       return;
     }
 
-    const { kw, ceElements, paletteSeries } = drawGroupBoxplot({
-      svg, chartWrap, tooltip, groupNames, groupData,
+    const { kw, ceElements, paletteSeries, statsControls } = drawGroupBoxplot({
+      svg, chartWrap, tooltip, groupNames, groupData, key: 'functional',
       title: moduleName, xTitle: groupCol, yTitle: t('functional.colScore'),
       valueLabel: moduleName, valueDecimals: 3,
-      bracketKey: 'alpha.kwBracket',
     });
 
     statsBox.innerHTML =
@@ -284,6 +283,7 @@ export function render(container) {
       key: 'functional', svg, mount: chartPanel, filename: t('functional.title') + '-' + moduleName, lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
+      statsControls, onStatsChange: () => paint(),
       onReset: () => paint(),
     });
 

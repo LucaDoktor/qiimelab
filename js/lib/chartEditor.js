@@ -100,6 +100,19 @@ export function getFigureStyle(key) {
   return readChartStyleRaw(key).__figureStyle || {};
 }
 
+/** Las opciones de anotación estadística (modo asteriscos/p-exacto, estilo
+ *  Prism, umbral de significación, método de ajuste de p) persistidas para
+ *  `key` — ver Paso 3 de qiimelab-prompt-editor-fase-1-anotaciones-
+ *  estadisticas.md. Función pura, sin DOM: el módulo la lee ANTES de
+ *  calcular los pares significativos (mannWhitneyU/dunnTest dependen de
+ *  qué método de ajuste y umbral haya elegido el usuario), igual que
+ *  getFigureGeometry/getPaletteOverrides. Valores ausentes = sin
+ *  personalizar; los valores por defecto los decide quien llama (aquí no,
+ *  para no bifurcar la fuente de verdad de "cuál es el valor por defecto"). */
+export function getStatsOptions(key) {
+  return readChartStyleRaw(key).__stats || {};
+}
+
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
   ['var(--font-display)', 'Serif (IBM Plex)'],
@@ -142,7 +155,10 @@ const I18N = {
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
         figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
-        dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua' },
+        dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua',
+        statsTitle: 'Significación estadística', statsMode: 'Mostrar', statsModeStars: 'Solo asteriscos',
+        statsModeExact: 'Solo p exacto', statsModeBoth: 'Asteriscos + p', statsStyle: 'Estilo',
+        statsThreshold: 'Umbral de significación', statsMethod: 'Ajuste de p (varias comparaciones)' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -156,7 +172,10 @@ const I18N = {
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
         figureStyleTitle: 'Figure style', gridLabel: 'Gridlines', axisLabel: 'Axis', tickLabel: 'Tick labels', axisTitleLabel: 'Axis titles',
-        dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed' },
+        dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed',
+        statsTitle: 'Statistical significance', statsMode: 'Show', statsModeStars: 'Stars only',
+        statsModeExact: 'Exact p only', statsModeBoth: 'Stars + p', statsStyle: 'Style',
+        statsThreshold: 'Significance threshold', statsMethod: 'p adjustment (multiple comparisons)' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -240,6 +259,13 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-geom-row .ql-inputrow { display:flex; align-items:center; gap:8px; flex:1; }
 .ce-geom-row input[type=range] { flex:1; min-width:0; }
 .ce-geom-row input[type=number] { width:64px; flex:none; }
+.ce-stats { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.ce-stats h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
+.ce-stats-rows { display:flex; flex-direction:column; gap:8px; max-width:420px; }
+.ce-stats-row { display:flex; align-items:center; gap:8px; }
+.ce-stats-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
+.ce-stats-row select { flex:1; min-width:0; }
+.ce-stats-row input[type=number] { width:72px; flex:none; }
 .ce-figstyle { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-figstyle h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
 .ce-figstyle-rows { display:flex; flex-direction:column; gap:8px; max-width:480px; }
@@ -280,6 +306,14 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  * @param {Function} [cfg.onGeometryChange]  (id, value) — el módulo debe
  *        repintar con el nuevo valor (mismo patrón que `onReset`/`onChange`,
  *        pero con el dato: no hay forma de inferirlo solo del DOM).
+ * @param {object} [cfg.statsControls]  { hasMultiGroup } — activa la sección
+ *        "Significación estadística" (Paso 3 de qiimelab-prompt-editor-
+ *        fase-1-anotaciones-estadisticas.md): modo asteriscos/p-exacto,
+ *        estilo Prism, umbral, método de ajuste (solo con hasMultiGroup,
+ *        ≥3 grupos — con 2 no hay comparaciones múltiples que ajustar).
+ * @param {Function} [cfg.onStatsChange]  se llama tras persistir un cambio
+ *        en las opciones de estadística — el módulo debe repintar entero
+ *        (recalcula qué pares son significativos), mismo patrón que `onReset`.
  */
 export function attachChartEditor(cfg) {
   injectStyles();
@@ -288,6 +322,7 @@ export function attachChartEditor(cfg) {
   const paletteType = cfg.paletteType || 'categorical'; // qué botones de paleta ofrecer
   const paletteMax = cfg.paletteMax; // tope de tonos simultáneos (scatter/red: 3-4, no los 8)
   const geometrySliders = cfg.geometrySliders || []; // [{ id, label, min, max, step, value, unit?, isPercent? }]
+  const statsControls = cfg.statsControls || null; // { hasMultiGroup } | null (sección desactivada)
   const lang = cfg.lang || 'es';
   const T = tr(lang);
   const LSKEY = 'smart-175.chartStyle.' + key;
@@ -428,6 +463,8 @@ export function attachChartEditor(cfg) {
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
 
     if (editing && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
+
+    if (editing && statsControls) toolbar.appendChild(renderStatsSection());
   }
 
   function renderTitlesSection() {
@@ -676,6 +713,86 @@ export function attachChartEditor(cfg) {
       row.appendChild(inputRow);
       rows.appendChild(row);
     });
+
+    wrap.appendChild(rows);
+    return wrap;
+  }
+
+  // ---- significación estadística (Paso 3 de qiimelab-prompt-editor-fase-1-
+  // anotaciones-estadisticas.md) — a diferencia de estilo/paleta/geometría,
+  // un cambio aquí obliga a RECALCULAR qué pares son significativos (no solo
+  // repintar), así que se resuelve entero en cfg.onStatsChange (mismo
+  // patrón que onReset: el módulo vuelve a llamar a su función de pintado).
+  function statsOverrides() { return store.__stats || {}; }
+
+  function setStatsValue(id, val) {
+    const s = (store.__stats = store.__stats || {});
+    if (val === '' || val === undefined || val === null) delete s[id]; else s[id] = val;
+    if (!Object.keys(s).length) delete store.__stats;
+    writeStore();
+    if (cfg.onStatsChange) try { cfg.onStatsChange(store.__stats || {}); } catch (e) { /* noop */ }
+  }
+
+  function statsRow(labelText, controlEl) {
+    const row = document.createElement('div');
+    row.className = 'ce-stats-row';
+    const id = 'ce-stats-' + (++cePanelUid);
+    const lab = document.createElement('label');
+    lab.setAttribute('for', id);
+    lab.textContent = labelText;
+    row.appendChild(lab);
+    controlEl.id = id;
+    row.appendChild(controlEl);
+    return row;
+  }
+
+  function statsSelect(current, options, onChange) {
+    const sel = document.createElement('select');
+    options.forEach(([val, label]) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = label;
+      if (val === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => onChange(sel.value));
+    return sel;
+  }
+
+  function renderStatsSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-stats';
+    wrap.innerHTML = '<h5>' + T.statsTitle + '</h5>';
+
+    const rows = document.createElement('div');
+    rows.className = 'ce-stats-rows';
+    const s = statsOverrides();
+    const mode = s.mode || 'stars+exact';
+
+    rows.appendChild(statsRow(T.statsMode, statsSelect(mode, [
+      ['stars', T.statsModeStars], ['exact', T.statsModeExact], ['stars+exact', T.statsModeBoth],
+    ], (v) => setStatsValue('mode', v))));
+
+    if (mode !== 'stars') {
+      rows.appendChild(statsRow(T.statsStyle, statsSelect(s.style || 'gp', [
+        ['gp', 'GraphPad'], ['apa', 'APA'], ['nejm', 'NEJM'],
+      ], (v) => setStatsValue('style', v))));
+    }
+
+    const thresholdInp = document.createElement('input');
+    thresholdInp.type = 'number'; thresholdInp.min = '0'; thresholdInp.max = '1'; thresholdInp.step = '0.01';
+    thresholdInp.value = s.threshold != null ? s.threshold : 0.05;
+    thresholdInp.addEventListener('change', () => {
+      const v = parseFloat(thresholdInp.value);
+      if (!Number.isFinite(v)) return;
+      setStatsValue('threshold', Math.max(0, Math.min(1, v)));
+    });
+    rows.appendChild(statsRow(T.statsThreshold, thresholdInp));
+
+    if (statsControls.hasMultiGroup) {
+      rows.appendChild(statsRow(T.statsMethod, statsSelect(s.method || 'holm', [
+        ['holm', 'Holm'], ['BH', 'Benjamini-Hochberg'], ['bonferroni', 'Bonferroni'],
+        ['hochberg', 'Hochberg'], ['BY', 'Benjamini-Yekutieli'],
+      ], (v) => setStatsValue('method', v))));
+    }
 
     wrap.appendChild(rows);
     return wrap;

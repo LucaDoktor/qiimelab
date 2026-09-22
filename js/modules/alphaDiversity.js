@@ -222,8 +222,9 @@ export function render(container) {
 
     const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
     const drawFn = plotStyle === 'jitter' ? drawGroupStripPlot : drawGroupBoxplot;
-    const { kw, ceElements, paletteSeries } = drawFn({
-      svg, chartWrap, tooltip, groupNames, groupData,
+    const ceKey = plotStyle === 'jitter' ? 'alphaDiversity-jitter' : 'alphaDiversity';
+    const { kw, ceElements, paletteSeries, statsControls } = drawFn({
+      svg, chartWrap, tooltip, groupNames, groupData, key: ceKey,
       title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
       valueDecimals: decimals,
     });
@@ -242,9 +243,10 @@ export function render(container) {
         : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
 
     editor = attachChartEditor({
-      key: plotStyle === 'jitter' ? 'alphaDiversity-jitter' : 'alphaDiversity', svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
+      key: ceKey, svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
+      statsControls, onStatsChange: () => paint(),
       onReset: () => paint(),
     });
 

@@ -959,12 +959,15 @@ export function render(container) {
 
       const result = drawGroupBoxplot({
         svg, chartWrap, tooltip,
-        groupNames, groupData,
+        groupNames, groupData, key: 'differentialAbundance-boxplot',
         title: d.taxon, xTitle: boxplotGroupCol, yTitle: t('differential.boxplotYAxis'),
         valueLabel: t('differential.boxplotYAxis'), valueDecimals: 2,
       });
 
-      return { ...boxplotCfg(d.taxon), elements: result.ceElements, paletteSeries: result.paletteSeries };
+      return {
+        ...boxplotCfg(d.taxon), elements: result.ceElements, paletteSeries: result.paletteSeries,
+        statsControls: result.statsControls,
+      };
     }
 
     function renderTable() {
@@ -1024,6 +1027,7 @@ export function render(container) {
       paletteSeries: ceCfg.paletteSeries,
       paletteType: ceCfg.paletteType,
       onChange: ceCfg.onChange,
+      statsControls: ceCfg.statsControls, onStatsChange: () => paint(),
       onReset: () => paint(),
     });
 
