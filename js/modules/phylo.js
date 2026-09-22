@@ -188,16 +188,24 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
   const labelsG = svgEl('g', { 'data-ce': 'leaflabels' });
   const rightX = marginL + plotW;
 
+  // índice de clado (para data-ce-series-*) de una hoja, o -1 si no hay
+  // colorCol o su categoría no calzó con ninguna de matchedCategories
+  function catIdxOf(label) {
+    const cat = resolveCat(label);
+    return cat ? matchedCategories.indexOf(cat) : -1;
+  }
+
   function drawNode(node) {
     const px = xOf(node.id);
     if (node.children.length) {
       const childYs = node.children.map((ch) => yOf(ch.node));
-      linesG.appendChild(svgEl('line', { x1: px, y1: Math.min(...childYs), x2: px, y2: Math.max(...childYs), class: 'ql-baseline-line' }));
+      linesG.appendChild(svgEl('line', { x1: px, y1: Math.min(...childYs), x2: px, y2: Math.max(...childYs), class: 'ql-baseline-line', 'data-ce-series-stroke': 'branch' }));
       node.children.forEach((ch) => {
         const cy = yOf(ch.node);
         const isLeaf = !ch.node.children.length;
-        const leafColor = isLeaf ? colorForLeaf(ch.node.label) : null;
-        const lineAttrs = { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line' };
+        const catIdx = isLeaf ? catIdxOf(ch.node.label) : -1;
+        const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
+        const lineAttrs = { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           lineAttrs.stroke = leafColor;
           lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
@@ -207,10 +215,11 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
       });
     } else {
       const py = yOf(node);
-      const leafColor = colorForLeaf(node.label);
+      const catIdx = catIdxOf(node.label);
+      const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
 
       if (rightX - px > 2) {
-        const guideAttrs = { x1: px, y1: py, x2: rightX, y2: py, class: 'ql-threshold-line' };
+        const guideAttrs = { x1: px, y1: py, x2: rightX, y2: py, class: 'ql-threshold-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           guideAttrs.stroke = leafColor;
           guideAttrs.style = 'stroke:' + leafColor + ';opacity:0.75;';
@@ -218,7 +227,11 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
         linesG.appendChild(svgEl('line', guideAttrs));
       }
 
-      const dotAttrs = { cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot' };
+      const dotAttrs = {
+        cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot',
+        'data-ce-series-fill': catIdx >= 0 ? 's' + catIdx : 'branch',
+        'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch',
+      };
       if (leafColor) {
         dotAttrs.fill = leafColor;
         dotAttrs.stroke = leafColor;
@@ -227,6 +240,7 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
       linesG.appendChild(svgEl('circle', dotAttrs));
 
       const labAttrs = { x: rightX + 6, y: py + 4, class: 'ql-phylo-leaflabel' };
+      if (catIdx >= 0) labAttrs['data-ce-series-fill'] = 's' + catIdx;
       if (leafColor) {
         labAttrs.fill = leafColor;
         labAttrs.style = 'fill:' + leafColor + ';';
@@ -237,16 +251,17 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
     }
   }
   const rootY = yOf(tree);
-  linesG.appendChild(svgEl('line', { x1: marginL - 10, y1: rootY, x2: marginL, y2: rootY, class: 'ql-baseline-line' }));
+  linesG.appendChild(svgEl('line', { x1: marginL - 10, y1: rootY, x2: marginL, y2: rootY, class: 'ql-baseline-line', 'data-ce-series-stroke': 'branch' }));
   drawNode(tree);
   svg.appendChild(linesG);
   svg.appendChild(labelsG);
 
-  // barra de escala
+  // barra de escala -- data-ce="scalebar" para que sea un elemento
+  // arrastrable/ocultable propio (Fase 5.2), no solo unas líneas sueltas
   const scaleVal = niceScaleValue(maxDepth);
   if (scaleVal > 0) {
     const x0 = marginL, y0 = H - 14 - legendH, w = scaleVal * xScale;
-    const g = svgEl('g', {});
+    const g = svgEl('g', { 'data-ce': 'scalebar' });
     g.appendChild(svgEl('line', { x1: x0, y1: y0, x2: x0 + w, y2: y0, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0, y1: y0 - 4, x2: x0, y2: y0 + 4, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0 + w, y1: y0 - 4, x2: x0 + w, y2: y0 + 4, class: 'ql-baseline-line' }));
@@ -345,6 +360,11 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
   const linesG = svgEl('g', {});
   const labelsG = svgEl('g', { 'data-ce': 'leaflabels' });
 
+  function catIdxOf(label) {
+    const cat = resolveCat(label);
+    return cat ? matchedCategories.indexOf(cat) : -1;
+  }
+
   function drawNode(node) {
     const r = rOf(node.id);
     if (node.children.length) {
@@ -356,15 +376,16 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
       if (sweep > 1e-9) {
         linesG.appendChild(svgEl('path', {
           d: 'M ' + p0.x + ' ' + p0.y + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + p1.x + ' ' + p1.y,
-          fill: 'none', class: 'ql-baseline-line',
+          fill: 'none', class: 'ql-baseline-line', 'data-ce-series-stroke': 'branch',
         }));
       }
       node.children.forEach((ch) => {
         const a = angleOf(ch.node);
         const pIn = point(a, r), pOut = point(a, rOf(ch.node.id));
         const isLeaf = !ch.node.children.length;
-        const leafColor = isLeaf ? colorForLeaf(ch.node.label) : null;
-        const lineAttrs = { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line' };
+        const catIdx = isLeaf ? catIdxOf(ch.node.label) : -1;
+        const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
+        const lineAttrs = { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           lineAttrs.stroke = leafColor;
           lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
@@ -375,10 +396,11 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
     } else {
       const a = angleOf(node);
       const pLeaf = point(a, r), pOuter = point(a, plotR);
-      const leafColor = colorForLeaf(node.label);
+      const catIdx = catIdxOf(node.label);
+      const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
 
       if (plotR - r > 2) {
-        const guideAttrs = { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line' };
+        const guideAttrs = { x1: pLeaf.x, y1: pLeaf.y, x2: pOuter.x, y2: pOuter.y, class: 'ql-threshold-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           guideAttrs.stroke = leafColor;
           guideAttrs.style = 'stroke:' + leafColor + ';opacity:0.75;';
@@ -386,7 +408,11 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
         linesG.appendChild(svgEl('line', guideAttrs));
       }
 
-      const dotAttrs = { cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot' };
+      const dotAttrs = {
+        cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot',
+        'data-ce-series-fill': catIdx >= 0 ? 's' + catIdx : 'branch',
+        'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch',
+      };
       if (leafColor) {
         dotAttrs.fill = leafColor;
         dotAttrs.stroke = leafColor;
@@ -403,6 +429,7 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
         'dominant-baseline': 'middle',
         transform: 'rotate(' + (angleDeg - 90 + (flip ? 180 : 0)) + ' ' + pLab.x + ' ' + pLab.y + ')',
       };
+      if (catIdx >= 0) labAttrs['data-ce-series-fill'] = 's' + catIdx;
       if (leafColor) {
         labAttrs.fill = leafColor;
         labAttrs.style = 'fill:' + leafColor + ';';
@@ -417,10 +444,12 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
   svg.appendChild(labelsG);
 
   // barra de escala: segmento recto en la esquina, no radia desde el centro
+  // -- data-ce="scalebar" para que sea un elemento arrastrable/ocultable
+  // propio (Fase 5.2), no solo unas líneas sueltas
   const scaleVal = niceScaleValue(maxDepth);
   if (scaleVal > 0) {
     const x0 = 8, y0 = H - 14, w = scaleVal * rScale;
-    const g = svgEl('g', {});
+    const g = svgEl('g', { 'data-ce': 'scalebar' });
     g.appendChild(svgEl('line', { x1: x0, y1: y0, x2: x0 + w, y2: y0, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0, y1: y0 - 4, x2: x0, y2: y0 + 4, class: 'ql-baseline-line' }));
     g.appendChild(svgEl('line', { x1: x0 + w, y1: y0 - 4, x2: x0 + w, y2: y0 + 4, class: 'ql-baseline-line' }));
@@ -879,27 +908,9 @@ export function render(container) {
 
       const isCircular = s.layout === 'circular';
       if (isCircular) drawCladogramCircular(svg, tree, colorOpts); else drawCladogramRect(svg, tree, colorOpts);
-
-      if (s.colorCol && matchedCategories.length > 0) {
-        const htmlLegend = document.createElement('div');
-        htmlLegend.id = 'phylo-legend';
-        htmlLegend.className = 'ql-legend';
-        htmlLegend.style.cssText = 'margin-top:14px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;flex-wrap:wrap;gap:14px;align-items:center;';
-        const legTitle = document.createElement('strong');
-        legTitle.style.cssText = 'font-size:12px;color:var(--ink);';
-        legTitle.textContent = s.colorCol + ':';
-        htmlLegend.appendChild(legTitle);
-
-        matchedCategories.forEach((cat) => {
-          const item = document.createElement('span');
-          item.className = 'ql-legend-item';
-          const c = categoryColorMap.get(cat);
-          item.innerHTML = '<span class="ql-legend-swatch ql-sq" style="background:' + c + '"></span>' +
-            '<span>' + escapeHtml(cat) + '</span>';
-          htmlLegend.appendChild(item);
-        });
-        chartPanel.appendChild(htmlLegend);
-      }
+      // la leyenda de categorías ya se dibuja DENTRO del <svg> (data-ce="legend",
+      // con data-ce-series-fill por clado -> editable vía paletteSeries más
+      // abajo); no duplicarla en un bloque HTML aparte debajo del gráfico.
 
       editor = attachChartEditor({
         key: isCircular ? 'phylo-circular' : 'phylo', svg, mount: chartPanel, lang: getLang(),
@@ -908,7 +919,13 @@ export function render(container) {
           { id: 'title', create: { text: t('phylo.figTitle'), x: 8, y: 14, anchor: 'start', cls: 'ce-title' } },
           { id: 'leaflabels', selector: '[data-ce="leaflabels"]', kind: 'group' },
           ...(matchedCategories.length > 0 ? [{ id: 'legend', selector: '[data-ce="legend"]', kind: 'group' }] : []),
+          { id: 'scalebar', selector: '[data-ce="scalebar"]', kind: 'group' },
         ],
+        paletteSeries: [
+          { id: 'branch', label: t('phylo.branchLabel') },
+          ...matchedCategories.map((cat, i) => ({ id: 's' + i, label: cat })),
+        ],
+        paletteType: 'categorical',
         onReset: () => paint(),
       });
 

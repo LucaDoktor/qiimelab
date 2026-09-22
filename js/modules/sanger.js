@@ -1591,6 +1591,7 @@ export function render(container) {
   let stopActiveDrag = null; // si el usuario navega fuera a mitad de un arrastre, lo suelta el cleanup final
   let trimDebounceTimer = null; // temporizador de debounce para controles de recorte interactivo
   let editor = null;
+  let wasEditing = false;
   let chromaTooltip = null;
 
   function sampleList() { return [...samples.values()].sort((a, b) => a.id.localeCompare(b.id)); }
@@ -1673,6 +1674,7 @@ export function render(container) {
 
   function paint() {
     if (trimDebounceTimer) { clearTimeout(trimDebounceTimer); trimDebounceTimer = null; }
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     if (chromaTooltip) { chromaTooltip.destroy(); chromaTooltip = null; }
     container.innerHTML = '';
@@ -2262,12 +2264,16 @@ export function render(container) {
     stack.appendChild(card);
     container.appendChild(stack);
 
-    if (editor) { editor.destroy(); editor = null; }
+    // wasEditing ya se capturó en paint() -- para cuando llegamos aquí,
+    // paint() ya destruyó el editor anterior (variable compartida a nivel
+    // de módulo, no de esta función)
     editor = attachChartEditor({
       key: 'sanger-chromatogram', svg, mount: card, lang: getLang(),
       filename: t('sanger.title') + '-' + sample.id + '-' + s.selectedDirection,
-      elements: [], paletteType: 'categorical', paletteMax: 4,
+      elements: [{ id: 'title', create: { text: t('sanger.tabCromatograma'), x: 8, y: 14, anchor: 'start', cls: 'ce-title' } }],
+      paletteType: 'categorical', paletteMax: 4,
       paletteSeries: read.trace ? ['A', 'C', 'G', 'T'].map((b) => ({ id: 'base-' + b, label: b })) : [],
+      startEditing: wasEditing,
     });
   }
 
