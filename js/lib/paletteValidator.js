@@ -53,6 +53,49 @@ export function oklab(hex) {
   return rgb ? oklabFromUnit(toUnit(rgb)) : null;
 }
 
+// ---- inversa de OKLab — para interpolar EN OKLab y volver a un hex
+// pintable (js/lib/colorScale.js, Fase 3 del editor: rampas perceptualmente
+// uniformes en vez de RGB lineal). Inversa genérica de matriz 3×3 (Cramer)
+// aplicada a las DOS matrices de oklabFromUnit — así la ida y la vuelta usan
+// exactamente los mismos coeficientes (verificado por ida-vuelta en
+// tests/colorscale.mjs, no se transcriben constantes "publicadas" aparte
+// que podrían no cuadrar con las de arriba).
+function invert3x3(M) {
+  const [[a, b, c], [d, e, f], [g, h, i]] = M;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g);
+  const G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d;
+  const det = a * A + b * B + c * C;
+  return [[A, D, G], [B, E, H], [C, F, I]].map((row) => row.map((v) => v / det));
+}
+const M_RGB_TO_LMS = [
+  [0.4122214708, 0.5363325363, 0.0514459929],
+  [0.2119034982, 0.6806995451, 0.1073969566],
+  [0.0883024619, 0.2817188376, 0.6299787005],
+];
+const M_LMS_TO_OKLAB = [
+  [0.2104542553, 0.7936177850, -0.0040720468],
+  [1.9779984951, -2.4285922050, 0.4505937099],
+  [0.0259040371, 0.7827717662, -0.8086757660],
+];
+const M_LMS_TO_RGB = invert3x3(M_RGB_TO_LMS);
+const M_OKLAB_TO_LMS = invert3x3(M_LMS_TO_OKLAB);
+
+/** [L, a, b] OKLab → [r, g, b] lineal-sRGB en 0..1, SIN sujetar al rango —
+ *  quien llama decide si clampear (colores fuera de gamut son normales al
+ *  interpolar entre 2 extremos saturados). */
+export function oklabToUnit(lab) {
+  const lms_ = mulM(M_OKLAB_TO_LMS, lab);
+  const lms = lms_.map((v) => v * v * v); // cubo: inversa de Math.cbrt
+  return mulM(M_LMS_TO_RGB, lms).map(l2s);
+}
+
+/** [L, a, b] OKLab → hex, clampeado a 0..255 (fuera de gamut se satura al
+ *  borde, no se rompe). */
+export function oklabToHex(lab) {
+  return rgbToHex(oklabToUnit(lab).map((v) => clamp01(v) * 255));
+}
+
 /** Distancia perceptual entre dos hex, en la misma escala ×100 que usa
  *  tests/cvd.mjs (para que los umbrales PASS/WARN/FAIL sean los mismos). */
 export function deltaE(hexA, hexB) {
