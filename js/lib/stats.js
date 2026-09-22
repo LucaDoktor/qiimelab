@@ -290,6 +290,20 @@ function gammaQcf(a, x) {
   return Math.exp(-x + a * Math.log(x) - logGamma(a)) * h;
 }
 
+/**
+ * Φ(z): CDF de la normal estándar, vía la gamma incompleta regularizada
+ * (erf(x) = P(½, x²) para x≥0) — mismo enfoque numéricamente estable que
+ * chiSquarePValue (serie o fracción continua según el régimen), en vez de
+ * una aproximación racional de precisión fija: hace falta para p-valores
+ * pequeños de mannWhitneyU/dunnTest/wilcoxonSignedRank en pairwiseStats.js.
+ */
+export function stdNormalCdf(z) {
+  if (!isFinite(z)) return z > 0 ? 1 : 0;
+  const x2 = (z * z) / 2;
+  const erf = x2 < 1.5 ? gammaP(0.5, x2) : 1 - gammaQcf(0.5, x2);
+  return z >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+
 /** p-valor de la cola superior de una chi-cuadrado con `df` grados de libertad. */
 export function chiSquarePValue(x, df) {
   if (x <= 0) return 1;
