@@ -455,23 +455,12 @@ export function render(container) {
     controls.className = 'ql-card ql-panel';
     controls.innerHTML = '<h2>' + t('ui.controls') + '</h2>';
 
-    // Selector de tipo de visualización (Barras clásicas | Flujos Aluvial)
-    const typeField = document.createElement('div');
-    typeField.className = 'ql-field';
-    typeField.innerHTML = '<label>' + t('barplots.chartType') + '</label>';
-    const typeSeg = document.createElement('div');
-    typeSeg.className = 'ql-segmented';
-    [['barplot', t('barplots.chartTypeBars')], ['alluvial', t('barplots.chartTypeAlluvial')]].forEach(([v, lbl]) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'ql-seg-btn' + (view === v ? ' is-on' : '');
-      b.textContent = lbl;
-      b.addEventListener('click', () => { if (view !== v) { view = v; paint(); } });
-      typeSeg.appendChild(b);
-    });
-    typeField.appendChild(typeSeg);
-    controls.appendChild(typeField);
-
+    // El cambio Barplot/Aluvial ya vive en las pestañas de arriba (junto a
+    // Sunburst/Biomarcadores) — antes había AQUÍ un segundo selector
+    // duplicado (solo Barras/Aluvial) que hacía exactamente lo mismo con
+    // otro control, en otro sitio de la página. Quitado, no fusionado con
+    // las pestañas de arriba, para no tener el mismo interruptor en dos
+    // sitios a la vez.
     const levelField = document.createElement('div');
     levelField.className = 'ql-field';
     levelField.innerHTML = '<label>' + t('barplots.levelLabel') + '</label>';
