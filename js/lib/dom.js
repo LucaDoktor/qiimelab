@@ -98,3 +98,15 @@ export function splitLead(html, minRest = 120) {
   const rest = s.slice(m[0].length).trim();
   return rest.length >= minRest ? { lead, rest } : { lead: s, rest: '' };
 }
+
+/** Recorta al área de trazado (x,y,w,h): con un rango de eje manual más
+ *  estrecho que los datos, nada se dibuja fuera de los ejes. Devuelve el valor
+ *  para el atributo clip-path del grupo de datos. `id` debe ser único por SVG. */
+export function plotClip(svg, id, x, y, w, h) {
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = svgEl('defs', {}); svg.insertBefore(defs, svg.firstChild); }
+  const cp = svgEl('clipPath', { id });
+  cp.appendChild(svgEl('rect', { x, y, width: w, height: h }));
+  defs.appendChild(cp);
+  return 'url(#' + id + ')';
+}

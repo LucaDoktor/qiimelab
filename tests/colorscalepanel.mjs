@@ -38,7 +38,7 @@ try {
   await openEditor();
 
   const setup = await c.ev(`(() => {
-    const sec = document.querySelector('.ce-colorscale');
+    const sec = [...document.querySelectorAll('.ce-colorscale')].find((s) => /Escala de color|Colour scale/i.test(s.querySelector('h5').textContent));
     return sec ? { present: true, hasMidpoint: !!sec.querySelector('.ce-cs-row:nth-child(3) input[type=number]') && /medio|midpoint/i.test(sec.textContent) } : { present: false };
   })()`);
   check('la sección "Escala de color" aparece para el heatmap de beta', setup.present);
@@ -154,7 +154,7 @@ try {
   await openEditor();
 
   const corrSetup = await c.ev(`(() => {
-    const sec = document.querySelector('.ce-colorscale');
+    const sec = [...document.querySelectorAll('.ce-colorscale')].find((s) => /Escala de color|Colour scale/i.test(s.querySelector('h5').textContent));
     return { present: !!sec, hasMidpointRow: sec ? /medio|midpoint/i.test(sec.textContent) : false };
   })()`);
   check('la sección "Escala de color" aparece para la matriz de correlación, CON punto medio (tipo divergente)',
@@ -252,7 +252,7 @@ try {
   await openEditor();
 
   const daSetup = await c.ev(`(() => {
-    const sec = document.querySelector('.ce-colorscale');
+    const sec = [...document.querySelectorAll('.ce-colorscale')].find((s) => /Escala de color|Colour scale/i.test(s.querySelector('h5').textContent));
     const cells = [...document.querySelectorAll('rect[data-tt]')];
     return {
       present: !!sec,

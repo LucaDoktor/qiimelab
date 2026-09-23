@@ -257,7 +257,7 @@ const I18N = {
         paletteBorderWidth: 'Grosor', paletteBorderRadius: 'Radio de esquina',
         fullscreen: 'Pantalla completa', fullscreenExit: 'Salir de pantalla completa', fullscreenTitle: 'Editor de la figura — vista ampliada',
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
-        geometryTitle: 'Geometría',
+        geometryTitle: 'Geometría', geoMarker: 'Tamaño de los puntos', geoLine: 'Grosor de las líneas', geoBar: 'Anchura de barras y cajas', geoCell: 'Tamaño de las celdas', marginsGenericLabel: 'Margen extra del lienzo (px)',
         figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
         gridVisibleLabel: 'Mostrar rejilla', legendVisibleLabel: 'Mostrar leyenda', pointsVisibleLabel: 'Mostrar puntos individuales',
         panelBorderLabel: 'Marco del panel', panelBgLabel: 'Fondo del panel', legendPosition: 'Posición',
@@ -272,7 +272,7 @@ const I18N = {
         csDomainMin: 'Mínimo del dominio', csDomainMax: 'Máximo del dominio', csResetDomain: 'Restablecer',
         csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala',
         csShowValue: 'Valor en celda', csCellBorder: 'Borde de celda',
-        structureTitle: 'Estructura', axisDomain: 'Rango del eje', axisLog: 'Escala logarítmica',
+        structureTitle: 'Estructura', axisDomain: 'Rango del eje', axisLog: 'Escala logarítmica', axisDomainX: 'Rango del eje X', axisDomainY: 'Rango del eje Y', axisLogX: 'Escala logarítmica (X)', axisLogY: 'Escala logarítmica (Y)',
         categoryOrderLabel: 'Orden de categorías', orderOriginal: 'Original', orderAlphaAsc: 'Alfabético A-Z',
         orderAlphaDesc: 'Alfabético Z-A', orderValueAsc: 'Por valor (ascendente)', orderValueDesc: 'Por valor (descendente)',
         gridMinorLabel: 'Rejilla menor', marginsLabel: 'Márgenes (±px)',
@@ -306,7 +306,7 @@ const I18N = {
         paletteBorderWidth: 'Thickness', paletteBorderRadius: 'Corner radius',
         fullscreen: 'Full screen', fullscreenExit: 'Exit full screen', fullscreenTitle: 'Figure editor — enlarged view',
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
-        geometryTitle: 'Geometry',
+        geometryTitle: 'Geometry', geoMarker: 'Point size', geoLine: 'Line width', geoBar: 'Bar and box width', geoCell: 'Cell size', marginsGenericLabel: 'Extra canvas margin (px)',
         figureStyleTitle: 'Figure style', gridLabel: 'Gridlines', axisLabel: 'Axis', tickLabel: 'Tick labels', axisTitleLabel: 'Axis titles',
         gridVisibleLabel: 'Show gridlines', legendVisibleLabel: 'Show legend', pointsVisibleLabel: 'Show individual points',
         panelBorderLabel: 'Panel border', panelBgLabel: 'Panel background', legendPosition: 'Position',
@@ -321,7 +321,7 @@ const I18N = {
         csDomainMin: 'Domain minimum', csDomainMax: 'Domain maximum', csResetDomain: 'Reset',
         csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale',
         csShowValue: 'Value in cell', csCellBorder: 'Cell border',
-        structureTitle: 'Structure', axisDomain: 'Axis range', axisLog: 'Logarithmic scale',
+        structureTitle: 'Structure', axisDomain: 'Axis range', axisLog: 'Logarithmic scale', axisDomainX: 'X axis range', axisDomainY: 'Y axis range', axisLogX: 'Logarithmic scale (X)', axisLogY: 'Logarithmic scale (Y)',
         categoryOrderLabel: 'Category order', orderOriginal: 'Original', orderAlphaAsc: 'Alphabetical A-Z',
         orderAlphaDesc: 'Alphabetical Z-A', orderValueAsc: 'By value (ascending)', orderValueDesc: 'By value (descending)',
         gridMinorLabel: 'Minor gridlines', marginsLabel: 'Margins (±px)',
@@ -1001,9 +1001,9 @@ export function attachChartEditor(cfg) {
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
 
     // ---- panel Ajustes (rueda): lo que recalcula la figura ----
-    if (settingsOpen && figureOptionsCfg) toolbar.appendChild(renderStructureSection());
+    if (settingsOpen) toolbar.appendChild(renderStructureSection());
 
-    if (settingsOpen && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
+    if (settingsOpen && (geometrySliders.length || geoPresentSliders().length)) toolbar.appendChild(renderGeometrySection());
 
     if (settingsOpen && statsControls) toolbar.appendChild(renderStatsSection());
 
@@ -1533,6 +1533,61 @@ export function attachChartEditor(cfg) {
   // ---- geometría (parámetros estructurales que necesitan repintar) ----
   function geometryOverrides() { return store.__geometry || {}; }
 
+  // ---- geometría universal por roles (data-ce-role) ----
+  // Cualquier figura puede marcar sus elementos de datos con data-ce-role=
+  // marker|line|bar|barh|cell y obtiene GRATIS los sliders de tamaño de punto,
+  // grosor de línea, anchura de barra/caja y tamaño de celda: se escala cada
+  // elemento respecto a su valor original (guardado la 1ª vez), sin recalcular
+  // ni repintar la figura — a diferencia de geometrySliders (por módulo), que
+  // sí pueden rehacer el layout.
+  const GEO_SLIDERS = [
+    { key: 'marker', roles: ['marker'], label: () => T.geoMarker, min: 0.4, max: 3, step: 0.1 },
+    { key: 'line', roles: ['line'], label: () => T.geoLine, min: 0.4, max: 4, step: 0.1 },
+    { key: 'bar', roles: ['bar', 'barh'], label: () => T.geoBar, min: 0.2, max: 1.6, step: 0.05 },
+    { key: 'cell', roles: ['cell'], label: () => T.geoCell, min: 0.4, max: 1, step: 0.05 },
+  ];
+  const geoBase = new WeakMap();
+  function geoRoleElems(role) { return Array.from(svg.querySelectorAll('[data-ce-role="' + role + '"]')); }
+  function geoPresentSliders() { return GEO_SLIDERS.filter((g) => g.roles.some((r) => svg.querySelector('[data-ce-role="' + r + '"]'))); }
+  function geoScaleOf(key) { const g = store.__geoScale || {}; return g[key] != null ? g[key] : 1; }
+  function geoBaseOf(el) {
+    let b = geoBase.get(el);
+    if (!b) {
+      const n = (a) => { const v = parseFloat(el.getAttribute(a)); return Number.isFinite(v) ? v : 0; };
+      b = { r: n('r'), x: n('x'), y: n('y'), w: n('width'), h: n('height'), sw: parseFloat(el.getAttribute('stroke-width')) };
+      if (!Number.isFinite(b.sw)) b.sw = parseFloat(getComputedStyle(el).strokeWidth) || 1;
+      geoBase.set(el, b);
+    }
+    return b;
+  }
+  function applyGeoScale() {
+    const has = store.__geoScale && Object.keys(store.__geoScale).length;
+    // sin ajustes guardados y sin nada aplicado antes: no tocar el DOM
+    if (!has && !svg.__ceGeoApplied) return;
+    svg.__ceGeoApplied = !!has;
+    geoRoleElems('marker').forEach((el) => { const b = geoBaseOf(el); el.setAttribute('r', String(+(b.r * geoScaleOf('marker')).toFixed(3))); });
+    geoRoleElems('line').forEach((el) => {
+      const k = geoScaleOf('line');
+      if (k === 1) el.style.removeProperty('stroke-width'); else el.style.strokeWidth = String(+(geoBaseOf(el).sw * k).toFixed(3));
+    });
+    const kb = geoScaleOf('bar');
+    geoRoleElems('bar').forEach((el) => { const b = geoBaseOf(el); const w = b.w * kb; el.setAttribute('width', String(+w.toFixed(3))); el.setAttribute('x', String(+(b.x + (b.w - w) / 2).toFixed(3))); });
+    geoRoleElems('barh').forEach((el) => { const b = geoBaseOf(el); const h = b.h * kb; el.setAttribute('height', String(+h.toFixed(3))); el.setAttribute('y', String(+(b.y + (b.h - h) / 2).toFixed(3))); });
+    const kc = geoScaleOf('cell');
+    geoRoleElems('cell').forEach((el) => {
+      const b = geoBaseOf(el); const w = b.w * kc, h = b.h * kc;
+      el.setAttribute('width', String(+w.toFixed(3))); el.setAttribute('height', String(+h.toFixed(3)));
+      el.setAttribute('x', String(+(b.x + (b.w - w) / 2).toFixed(3))); el.setAttribute('y', String(+(b.y + (b.h - h) / 2).toFixed(3)));
+    });
+  }
+  function setGeoScale(key, v) {
+    const g = (store.__geoScale = store.__geoScale || {});
+    if (!Number.isFinite(v) || v === 1) delete g[key]; else g[key] = v;
+    if (!Object.keys(g).length) delete store.__geoScale;
+    applyGeoScale();
+    writeStoreDebounced();
+  }
+
   function setGeometryValue(id, val) {
     const geo = (store.__geometry = store.__geometry || {});
     geo[id] = val;
@@ -1583,6 +1638,39 @@ export function attachChartEditor(cfg) {
       rangeInp.addEventListener('input', () => onSliderChange(rangeInp.value));
       numInp.addEventListener('change', () => onSliderChange(numInp.value));
 
+      inputRow.appendChild(rangeInp);
+      inputRow.appendChild(numInp);
+      row.appendChild(inputRow);
+      rows.appendChild(row);
+    });
+
+    // sliders universales por rol (ver GEO_SLIDERS)
+    geoPresentSliders().forEach((g) => {
+      const cur = geoScaleOf(g.key);
+      const row = document.createElement('div');
+      row.className = 'ce-geom-row';
+      const rowId = 'ce-geom-' + (++cePanelUid);
+      const lab = document.createElement('label');
+      lab.setAttribute('for', rowId);
+      lab.textContent = g.label() + ' (×)';
+      row.appendChild(lab);
+      const inputRow = document.createElement('div');
+      inputRow.className = 'ql-inputrow';
+      const rangeInp = document.createElement('input');
+      rangeInp.type = 'range'; rangeInp.id = rowId;
+      rangeInp.min = g.min; rangeInp.max = g.max; rangeInp.step = g.step; rangeInp.value = cur;
+      const numInp = document.createElement('input');
+      numInp.type = 'number'; numInp.className = 'tabular';
+      numInp.min = g.min; numInp.max = g.max; numInp.step = g.step; numInp.value = cur;
+      const onChange = (raw) => {
+        const num = parseFloat(raw);
+        if (Number.isNaN(num)) return;
+        const v = Math.max(g.min, Math.min(g.max, num));
+        rangeInp.value = v; numInp.value = v;
+        setGeoScale(g.key, v);
+      };
+      rangeInp.addEventListener('input', () => onChange(rangeInp.value));
+      numInp.addEventListener('change', () => onChange(numInp.value));
       inputRow.appendChild(rangeInp);
       inputRow.appendChild(numInp);
       row.appendChild(inputRow);
@@ -1860,11 +1948,51 @@ export function attachChartEditor(cfg) {
   // onStatsChange/onColorScaleChange: el módulo vuelve a pintar entero).
   function structureOverrides() { return store.__structure || {}; }
 
+  // Configuración EFECTIVA de "Estructura": la que pasa el módulo o, si no
+  // pasa ninguna, una mínima con solo el margen genérico del lienzo — así
+  // TODA figura tiene la sección. `axis` es el eje Y (o el único eje) y
+  // `axisX` el eje horizontal cuando el gráfico tiene dos ejes numéricos.
+  const structCfg = (() => {
+    const c = figureOptionsCfg || {};
+    return {
+      axis: c.axis || false, axisX: c.axisX || false,
+      categoryOrder: !!c.categoryOrder, gridMinor: !!c.gridMinor,
+      margins: c.margins || { generic: true, base: { top: 0, right: 0, bottom: 0, left: 0 } },
+    };
+  })();
+
+  // Margen extra genérico: amplía el viewBox (lienzo) sin tocar el layout del
+  // módulo. Si el módulo cambia el viewBox por su cuenta (p. ej. el aluvial
+  // al redibujarse), se toma el nuevo como base.
+  let vbLast = null, vbBase = null, vbBasePx = null;
+  function applyCanvasMargins() {
+    if (!structCfg.margins.generic) return;
+    const cur = svg.getAttribute('viewBox');
+    if (!cur) return;
+    if (cur !== vbLast) {
+      vbBase = cur;
+      vbBasePx = /px$/.test(svg.style.width || '') ? parseFloat(svg.style.width) : null;
+    }
+    const m = (store.__structure || {}).marginExtra || {};
+    const t = +m.top || 0, r = +m.right || 0, b = +m.bottom || 0, l = +m.left || 0;
+    const [x, y, w, h] = vbBase.split(/[\s,]+/).map(Number);
+    if (![x, y, w, h].every(Number.isFinite)) return;
+    if (!(t || r || b || l)) {
+      if (vbLast && cur === vbLast) { svg.setAttribute('viewBox', vbBase); if (vbBasePx != null) svg.style.width = vbBasePx + 'px'; vbLast = null; }
+      return;
+    }
+    const next = [x - l, y - t, w + l + r, h + t + b].map((v) => +v.toFixed(2)).join(' ');
+    svg.setAttribute('viewBox', next);
+    vbLast = next;
+    if (vbBasePx != null) svg.style.width = (vbBasePx * (w + l + r) / w).toFixed(1) + 'px';
+  }
+
   function setStructureValue(id, val) {
     const s = (store.__structure = store.__structure || {});
     if (val === '' || val === undefined || val === null) delete s[id]; else s[id] = val;
     if (!Object.keys(s).length) delete store.__structure;
     writeStore();
+    if (structCfg.margins.generic && id === 'marginExtra') { applyCanvasMargins(); return; }
     if (cfg.onFigureOptionsChange) try { cfg.onFigureOptionsChange(store.__structure || {}); } catch (e) { /* noop */ }
   }
 
@@ -1890,41 +2018,44 @@ export function attachChartEditor(cfg) {
     rows.className = 'ce-cs-rows';
     const s = structureOverrides();
 
-    if (figureOptionsCfg.axis) {
-      const [dMin, dMax] = figureOptionsCfg.axis.domain || [0, 1];
+    // dos ejes numéricos (X e Y) o uno solo; con los dos, cada fila lleva su letra
+    const axisRows = (axCfg, kMin, kMax, kLog, label, labelLog) => {
+      const [dMin, dMax] = axCfg.domain || [0, 1];
       const domainWrap = document.createElement('div');
       domainWrap.className = 'ce-cs-domain';
       const minInp = document.createElement('input');
-      minInp.type = 'number'; minInp.step = 'any'; minInp.value = s.axisMin != null ? s.axisMin : dMin;
+      minInp.type = 'number'; minInp.step = 'any'; minInp.value = s[kMin] != null ? s[kMin] : dMin;
       minInp.setAttribute('aria-label', T.csDomainMin);
-      minInp.addEventListener('change', () => { const v = parseFloat(minInp.value); if (Number.isFinite(v)) setStructureValue('axisMin', v); });
+      minInp.addEventListener('change', () => { const v = parseFloat(minInp.value); if (Number.isFinite(v)) setStructureValue(kMin, v); });
       const maxInp = document.createElement('input');
-      maxInp.type = 'number'; maxInp.step = 'any'; maxInp.value = s.axisMax != null ? s.axisMax : dMax;
+      maxInp.type = 'number'; maxInp.step = 'any'; maxInp.value = s[kMax] != null ? s[kMax] : dMax;
       maxInp.setAttribute('aria-label', T.csDomainMax);
-      maxInp.addEventListener('change', () => { const v = parseFloat(maxInp.value); if (Number.isFinite(v)) setStructureValue('axisMax', v); });
+      maxInp.addEventListener('change', () => { const v = parseFloat(maxInp.value); if (Number.isFinite(v)) setStructureValue(kMax, v); });
       domainWrap.appendChild(minInp);
       domainWrap.appendChild(maxInp);
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.textContent = T.csResetDomain;
       resetBtn.addEventListener('click', () => {
         const s2 = (store.__structure = store.__structure || {});
-        delete s2.axisMin; delete s2.axisMax;
+        delete s2[kMin]; delete s2[kMax];
         if (!Object.keys(s2).length) delete store.__structure;
         writeStore();
         if (cfg.onFigureOptionsChange) try { cfg.onFigureOptionsChange(store.__structure || {}); } catch (e) { /* noop */ }
       });
       domainWrap.appendChild(resetBtn);
-      rows.appendChild(structureRow(T.axisDomain, domainWrap));
-
-      if (figureOptionsCfg.axis.log) {
+      rows.appendChild(structureRow(label, domainWrap));
+      if (axCfg.log) {
         const logChk = document.createElement('input');
-        logChk.type = 'checkbox'; logChk.checked = !!s.axisLog;
-        logChk.addEventListener('change', () => setStructureValue('axisLog', logChk.checked ? true : ''));
-        rows.appendChild(structureRow(T.axisLog, logChk));
+        logChk.type = 'checkbox'; logChk.checked = !!s[kLog];
+        logChk.addEventListener('change', () => setStructureValue(kLog, logChk.checked ? true : ''));
+        rows.appendChild(structureRow(labelLog, logChk));
       }
-    }
+    };
+    const twoAxes = !!(structCfg.axis && structCfg.axisX);
+    if (structCfg.axisX) axisRows(structCfg.axisX, 'axisXMin', 'axisXMax', 'axisXLog', twoAxes ? T.axisDomainX : T.axisDomain, twoAxes ? T.axisLogX : T.axisLog);
+    if (structCfg.axis) axisRows(structCfg.axis, 'axisMin', 'axisMax', 'axisLog', twoAxes ? T.axisDomainY : T.axisDomain, twoAxes ? T.axisLogY : T.axisLog);
 
-    if (figureOptionsCfg.categoryOrder) {
+    if (structCfg.categoryOrder) {
       const sel = document.createElement('select');
       [
         ['original', T.orderOriginal], ['alpha-asc', T.orderAlphaAsc], ['alpha-desc', T.orderAlphaDesc],
@@ -1938,15 +2069,15 @@ export function attachChartEditor(cfg) {
       rows.appendChild(structureRow(T.categoryOrderLabel, sel));
     }
 
-    if (figureOptionsCfg.gridMinor) {
+    if (structCfg.gridMinor) {
       const chk = document.createElement('input');
       chk.type = 'checkbox'; chk.checked = !!s.gridMinor;
       chk.addEventListener('change', () => setStructureValue('gridMinor', chk.checked ? true : ''));
       rows.appendChild(structureRow(T.gridMinorLabel, chk));
     }
 
-    if (figureOptionsCfg.margins) {
-      const base = figureOptionsCfg.margins.base || { top: 0, right: 0, bottom: 0, left: 0 };
+    if (structCfg.margins) {
+      const base = structCfg.margins.base || { top: 0, right: 0, bottom: 0, left: 0 };
       const m = s.marginExtra || {};
       const marginWrap = document.createElement('div');
       marginWrap.className = 'ce-cs-domain';
@@ -1968,7 +2099,7 @@ export function attachChartEditor(cfg) {
       resetBtn.type = 'button'; resetBtn.className = 'ql-btn ql-btn-ghost'; resetBtn.textContent = T.csResetDomain;
       resetBtn.addEventListener('click', () => setStructureValue('marginExtra', ''));
       marginWrap.appendChild(resetBtn);
-      rows.appendChild(structureRow(T.marginsLabel, marginWrap));
+      rows.appendChild(structureRow(structCfg.margins.generic ? T.marginsGenericLabel : T.marginsLabel, marginWrap));
     }
 
     wrap.appendChild(rows);
@@ -2338,6 +2469,8 @@ export function attachChartEditor(cfg) {
     // arrastrable Y una serie de datos — si hay override de paleta, gana él.
     applyPalette();
     applyFigureStyle();
+    applyGeoScale();
+    applyCanvasMargins();
   }
 
   // ---- arrastre ----
