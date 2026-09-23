@@ -88,7 +88,8 @@ export function render(container) {
   }
 
   function paint() {
-    wasEditingAny = editors.some((e) => e.isEditing && e.isEditing());
+    // isEditing() devuelve el modo ('edit'|'settings') o false — se conserva el modo, no un booleano
+    wasEditingAny = editors.map((e) => (e.isEditing ? e.isEditing() : false)).find(Boolean) || false;
     editors.forEach((e) => e.destroy()); editors = [];
     container.innerHTML = '';
 

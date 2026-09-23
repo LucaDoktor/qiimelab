@@ -234,7 +234,7 @@ const FIG_STYLE_VARS = [
 ];
 
 const I18N = {
-  es: { customize: 'Personalizar', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG', downloadTiff: 'Descargar TIFF',
+  es: { customize: 'Personalizar', settings: 'Ajustes', settingsHint: 'Ajustes de la figura: estructura, tamaños, estadística y escala de color. Los cambios recalculan el gráfico.', done: 'Terminar', reset: 'Restablecer', download: 'Descargar SVG', downloadPng: 'Descargar PNG', downloadTiff: 'Descargar TIFF',
         hint: 'Arrastra los textos (o enfócalos con el tabulador y muévelos con las flechas). Haz clic o pulsa Intro para cambiar su estilo.',
         lead: 'Esta figura es editable:', leadRest: 'cambia textos, colores y posiciones, y descárgala en SVG o PNG.',
         text: 'Texto', color: 'Color', hex: 'Hex', font: 'Fuente', size: 'Tamaño', bold: 'Negrita', italic: 'Cursiva', close: 'Cerrar',
@@ -283,7 +283,7 @@ const I18N = {
         presetJournalTitle: 'Presets de revista', presetJournalHelp: 'Fuente/tamaño/grosor/ancho según la especificación oficial — aplicar reemplaza el estilo actual.',
         presetNatureLabel: (mm) => 'Nature (' + mm + ' mm)', presetCellLabel: (mm) => 'Cell (' + mm + ' mm)',
         exportWidthLabel: 'Ancho de exportación (mm)', exportWidthHelp: 'Vacío = tamaño natural en píxeles.' },
-  en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
+  en: { customize: 'Customise', settings: 'Settings', settingsHint: 'Figure settings: structure, sizes, statistics and colour scale. Changes recalculate the chart.', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
         text: 'Text', color: 'Colour', hex: 'Hex', font: 'Font', size: 'Size', bold: 'Bold', italic: 'Italic', close: 'Close',
@@ -338,6 +338,7 @@ function tr(lang) { return I18N[lang] || I18N.es; }
 // iconos propios, mismo estilo que la barra lateral (24×24, trazo 1.7, redondeado)
 // aria-hidden/focusable="false": son decorativos, el <span> del botón lleva el texto.
 const CE_ICONS = {
+  gear: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   edit: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.4 3.6a2 2 0 0 1 2.9 2.9L7.5 18.3 3.5 19.5l1.2-4Z"/></svg>',
   download: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0-3.5-3.5M12 14l3.5-3.5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
   reset: '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 1 1-1.5 4.5"/><path d="M3.5 4.5v4.8h4.8"/></svg>',
@@ -589,7 +590,14 @@ export function attachChartEditor(cfg) {
   // arrancaba con editing=false, perdiendo el estado de la anterior. El
   // módulo debe leer `editor.isEditing()` ANTES de destruir la instancia
   // vieja y pasarlo aquí.
-  let editing = !!cfg.startEditing;
+  // Dos paneles exclusivos: 'edit' (Personalizar: títulos, estilo, paleta,
+  // presets — lo que se ARRASTRA y se ve) y 'settings' (rueda Ajustes:
+  // estructura, geometría, estadística, escala de color — lo que RECALCULA
+  // la figura). startEditing acepta true|'edit'|'settings'; isEditing()
+  // devuelve el modo ('edit'|'settings') o false, así que los módulos que
+  // hacen `startEditing: editor.isEditing()` conservan cuál estaba abierto.
+  let editing = !!cfg.startEditing && cfg.startEditing !== 'settings';
+  let settingsOpen = cfg.startEditing === 'settings';
   let selectedId = null;
   let panel = null;
   let cePanelUid = 0; // ids para enlazar <label for> ↔ control dentro del panel
@@ -939,14 +947,24 @@ export function attachChartEditor(cfg) {
     if (editing) {
       lead.className = 'ce-hint';
       lead.textContent = T.hint;
+    } else if (settingsOpen) {
+      lead.className = 'ce-hint';
+      lead.textContent = T.settingsHint;
     } else {
       lead.innerHTML = '<strong>' + T.lead + '</strong> ' + T.leadRest;
     }
     toolbar.appendChild(lead);
 
-    const bCustom = mkBtn(CE_ICONS.edit, editing ? T.done : T.customize, () => { setEditing(!editing); });
+    const bCustom = mkBtn(CE_ICONS.edit, editing ? T.done : T.customize, () => { setPanel(editing ? false : 'edit'); });
     bCustom.className = 'ql-btn' + (editing ? ' ce-on' : ' ce-cta');
     toolbar.appendChild(bCustom);
+
+    // rueda de Ajustes: la MISMA en todas las figuras (antes solo el aluvial
+    // de Barplots tenía la suya, un modal aparte ya retirado)
+    const bSet = mkBtn(CE_ICONS.gear, settingsOpen ? T.done : T.settings, () => { setPanel(settingsOpen ? false : 'settings'); });
+    bSet.className = 'ql-btn ce-settings-btn' + (settingsOpen ? ' ce-on' : '');
+    bSet.setAttribute('aria-expanded', String(settingsOpen));
+    toolbar.appendChild(bSet);
 
     const bFull = mkBtn(CE_ICONS.fullscreen, fsHandle ? T.fullscreenExit : T.fullscreen, openFullscreen);
     bFull.className = 'ql-btn' + (fsHandle ? ' ce-on' : '');
@@ -982,13 +1000,14 @@ export function attachChartEditor(cfg) {
 
     if (editing && paletteSeries.length) toolbar.appendChild(renderPaletteSection());
 
-    if (editing && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
+    // ---- panel Ajustes (rueda): lo que recalcula la figura ----
+    if (settingsOpen && figureOptionsCfg) toolbar.appendChild(renderStructureSection());
 
-    if (editing && statsControls) toolbar.appendChild(renderStatsSection());
+    if (settingsOpen && geometrySliders.length) toolbar.appendChild(renderGeometrySection());
 
-    if (editing && colorScaleCfg) toolbar.appendChild(renderColorScaleSection());
+    if (settingsOpen && statsControls) toolbar.appendChild(renderStatsSection());
 
-    if (editing && figureOptionsCfg) toolbar.appendChild(renderStructureSection());
+    if (settingsOpen && colorScaleCfg) toolbar.appendChild(renderColorScaleSection());
 
     // Presets (Fase 6): siempre disponible al editar, no opt-in por módulo
     // -- a diferencia de paleta/geometría, cualquier gráfico puede guardar/
@@ -2172,10 +2191,16 @@ export function attachChartEditor(cfg) {
 
   function setEditing(on) {
     editing = on;
+    if (on) settingsOpen = false;
     svg.classList.toggle('ce-editing', on);
     if (!on) { closePanel(); selectedId = null; syncSelection(); }
     renderToolbar();
     sync();
+  }
+  /** Abre 'edit' (Personalizar) o 'settings' (Ajustes), o cierra ambos (false). */
+  function setPanel(mode) {
+    settingsOpen = mode === 'settings';
+    setEditing(mode === 'edit');
   }
 
   // ---- crear / envolver elementos y aplicar estado ----
@@ -2785,7 +2810,7 @@ export function attachChartEditor(cfg) {
     download: downloadSvg,
     downloadPng,
     isDirty: () => Object.keys(store).length > 0,
-    isEditing: () => editing,
+    isEditing: () => (editing ? 'edit' : (settingsOpen ? 'settings' : false)),
     destroy() {
       if (fsHandle) fsHandle.close(); // devuelve el <svg>/toolbar a casa antes de que el módulo limpie su contenedor
       clearTimeout(debTimer);
