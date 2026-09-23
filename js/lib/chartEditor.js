@@ -545,6 +545,19 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
  *        arrastrándose libremente. `dx`/`dy` son ABSOLUTOS (mismo sistema
  *        que ya usa el arrastre), no relativos a la posición actual.
  */
+// Foco pendiente tras un repintado "de recálculo" (estadística/escala de
+// color/estructura): esas secciones fuerzan cfg.onStatsChange/
+// onColorScaleChange/... -> paint() del módulo -> destroy() de esta
+// instancia + attachChartEditor() de cero, así que el <select>/<input> que
+// el usuario acababa de tocar deja de existir a mitad de la interacción y
+// el foco cae a <body>. Para alguien navegando por teclado (o simplemente
+// mirando el anillo de foco) eso se siente como si "Personalizar" se
+// hubiera cerrado, aunque el panel siga abierto. Module-scope a propósito:
+// la instancia VIEJA es quien captura el foco (vía 'focusin' en su propio
+// toolbar) justo antes de autodestruirse, y es la instancia NUEVA quien lo
+// consume al arrancar — no hay ninguna instancia común entre ambas.
+let pendingRefocusRef = null;
+
 export function attachChartEditor(cfg) {
   injectStyles();
   const { key, svg, mount, filename = 'figura', elements = [] } = cfg;
@@ -602,6 +615,17 @@ export function attachChartEditor(cfg) {
     } catch (e) { /* modo privado */ }
     if (cfg.onChange) try { cfg.onChange(); } catch (e) { /* noop */ }
     renderToolbar();
+    // ver la nota de `pendingRefocusRef` más arriba — este renderToolbar()
+    // de aquí es el que de verdad rompe el foco en el caso más común
+    // (`onStatsChange`/`onColorScaleChange` que NO destruye el editor
+    // entero, p. ej. el atajo `recolorCells()` de beta): reconstruye el
+    // <select>/<input> que el usuario acaba de tocar sin que
+    // cfg.onStatsChange/onColorScaleChange lleguen a intervenir. Sin
+    // limpiar pendingRefocusRef aquí a propósito: si además el módulo SÍ
+    // destruye y recrea el editor entero (grupo/alfa/funcional/...), la
+    // llamada de más abajo (init de attachChartEditor) necesita la misma
+    // referencia para completar el aterrizaje final.
+    if (pendingRefocusRef) restoreFocusRef(pendingRefocusRef);
   }
   function st(id) { return (store[id] = store[id] || {}); }
 
@@ -873,6 +897,39 @@ export function attachChartEditor(cfg) {
   const toolbar = document.createElement('div');
   toolbar.className = 'ce-toolbar';
   mount.appendChild(toolbar);
+
+  // ver la nota de arquitectura junto a `let pendingRefocusRef` más arriba.
+  // Clases de las secciones que SÍ pueden repintarse enteras a mitad de
+  // interacción (estadística/escala de color/geometría/estructura) — no
+  // hace falta cubrir paleta/títulos/presets, cuyos cambios no disparan
+  // cfg.onStatsChange/onColorScaleChange y por tanto nunca destruyen esta
+  // instancia. Dos secciones distintas reutilizan la misma clase CSS
+  // ('ce-colorscale': Escala de color Y Estructura), así que además de la
+  // clase se guarda el índice de aparición dentro del toolbar.
+  const REFOCUS_SECTION_SEL = '.ce-stats, .ce-colorscale, .ce-geometry';
+  function captureFocusRef() {
+    const ae = document.activeElement;
+    if (!ae || !toolbar.contains(ae)) return null;
+    const section = ae.closest(REFOCUS_SECTION_SEL);
+    if (!section) return null;
+    const sectionClass = section.className.split(' ')[0];
+    const sameClassSections = Array.from(toolbar.querySelectorAll('.' + sectionClass));
+    const sectionIdx = sameClassSections.indexOf(section);
+    const focusables = Array.from(section.querySelectorAll('select, input, button'));
+    const idx = focusables.indexOf(ae);
+    if (idx < 0 || sectionIdx < 0) return null;
+    return { sectionClass, sectionIdx, idx };
+  }
+  function restoreFocusRef(ref) {
+    if (!ref) return;
+    const sameClassSections = Array.from(toolbar.querySelectorAll('.' + ref.sectionClass));
+    const section = sameClassSections[ref.sectionIdx];
+    if (!section) return;
+    const focusables = Array.from(section.querySelectorAll('select, input, button'));
+    const el = focusables[ref.idx];
+    if (el) try { el.focus(); } catch (e) { /* noop */ }
+  }
+  toolbar.addEventListener('focusin', () => { pendingRefocusRef = captureFocusRef(); });
 
   function renderToolbar() {
     toolbar.innerHTML = '';
@@ -2712,6 +2769,14 @@ export function attachChartEditor(cfg) {
   // ---- init ----
   if (editing) svg.classList.add('ce-editing'); // startEditing: ver más arriba
   renderToolbar();
+  // cfg.startEditing=true SOLO puede venir de un repintado que el propio
+  // editor disparó (ver nota de `pendingRefocusRef` más arriba) — una
+  // apertura nueva de "Personalizar" por el usuario nunca lo pasa, así que
+  // no hay riesgo de robarle el foco a otra cosa que tuviera antes.
+  if (cfg.startEditing && pendingRefocusRef) {
+    restoreFocusRef(pendingRefocusRef);
+    pendingRefocusRef = null;
+  }
   sync();
 
   return {
