@@ -33,6 +33,38 @@ export function quartiles(sortedArr) {
   return { q1: pct(0.25), median: pct(0.5), q3: pct(0.75) };
 }
 
+/**
+ * Densidad por kernel gaussiano (KDE) -- para el gráfico de violín (prompt
+ * "quick wins" del 22 sep 2026, punto 4). Ancho de banda por la regla de
+ * Silverman, h = 0.9·min(SD, IQR/1.34)·n^(-1/5) -- la misma aproximación
+ * que usa `bw.nrd0()` de R (el ancho de banda por defecto de `density()`).
+ * Evalúa la densidad en `nPoints` puntos equiespaciados entre min(x)-3h y
+ * max(x)+3h (margen de 3h para que la curva llegue suave a 0 en los
+ * extremos en vez de cortarse en seco justo en el dato más extremo).
+ * @param {number[]} x
+ * @param {number} [nPoints=100]
+ * @returns {{ x:number[], density:number[], bandwidth:number, n:number } | null}  null si n<2
+ */
+export function gaussianKDE(x, nPoints = 100) {
+  const n = x.length;
+  if (n < 2) return null;
+  const sd = stdDev(x);
+  const q = quartiles(x.slice().sort((a, b) => a - b));
+  const iqr = q.q3 - q.q1;
+  const spread = iqr > 0 ? Math.min(sd, iqr / 1.34) : sd;
+  const h = spread > 0 ? 0.9 * spread * Math.pow(n, -0.2) : (Math.max(...x) - Math.min(...x)) / 4 || 1;
+  const xMin = Math.min(...x) - 3 * h, xMax = Math.max(...x) + 3 * h;
+  const xs = [], density = [];
+  const norm = 1 / (n * h * Math.sqrt(2 * Math.PI));
+  for (let i = 0; i < nPoints; i++) {
+    const xi = xMin + ((xMax - xMin) * i) / (nPoints - 1);
+    let d = 0;
+    for (let j = 0; j < n; j++) { const z = (xi - x[j]) / h; d += Math.exp(-0.5 * z * z); }
+    xs.push(xi); density.push(d * norm);
+  }
+  return { x: xs, density, bandwidth: h, n };
+}
+
 // ---------- diversidad alfa (índices por muestra) ----------
 // Verificados contra vegan::diversity() / vegan::estimateR() (ver README,
 // "Notas de desarrollo"). Todos toman un vector de CONTEOS (o abundancias) por

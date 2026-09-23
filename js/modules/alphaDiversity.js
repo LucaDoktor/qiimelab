@@ -2,7 +2,7 @@ import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
 import { formatP, rarefactionCurve } from '../lib/stats.js';
 import { rarefactionBatchAsync } from '../lib/heavyStats.js';
-import { drawGroupBoxplot, drawGroupStripPlot, groupColor, legendPositionLabel } from '../lib/groupBoxplot.js';
+import { drawGroupBoxplot, drawGroupStripPlot, drawGroupViolin, groupColor, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { matchSampleId, makeGroupResolver } from '../lib/sampleMatch.js';
 import {
   collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS, countVectors,
@@ -104,7 +104,7 @@ export function render(container) {
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
     chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
-      t(plotStyle === 'jitter' ? 'alpha.jitterNote' : 'alpha.chartNote') + '</p>';
+      t(plotStyle === 'jitter' ? 'alpha.jitterNote' : plotStyle === 'violin' ? 'alpha.violinNote' : 'alpha.chartNote') + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('a11y.chartBoxplotAlpha') });
@@ -165,6 +165,7 @@ export function render(container) {
       options: [
         { value: 'box', labelKey: 'alpha.plotStyleBox' },
         { value: 'jitter', labelKey: 'alpha.plotStyleJitter' },
+        { value: 'violin', labelKey: 'alpha.plotStyleViolin' },
       ],
       active: plotStyle,
       onChange: (v) => { plotStyle = v; paint(); },
@@ -228,9 +229,9 @@ export function render(container) {
     }
 
     const decimals = /^(chao1|observed)$/.test(metric) ? 2 : 3;
-    const drawFn = plotStyle === 'jitter' ? drawGroupStripPlot : drawGroupBoxplot;
-    const ceKey = plotStyle === 'jitter' ? 'alphaDiversity-jitter' : 'alphaDiversity';
-    const { kw, ceElements, paletteSeries, statsControls, figureOptions, legendPositions } = drawFn({
+    const drawFn = plotStyle === 'jitter' ? drawGroupStripPlot : plotStyle === 'violin' ? drawGroupViolin : drawGroupBoxplot;
+    const ceKey = plotStyle === 'jitter' ? 'alphaDiversity-jitter' : plotStyle === 'violin' ? 'alphaDiversity-violin' : 'alphaDiversity';
+    const { kw, ceElements, paletteSeries, statsControls, figureOptions, legendPositions, lowN } = drawFn({
       svg, chartWrap, tooltip, groupNames, groupData, key: ceKey,
       title: t('alpha.title'), xTitle: groupCol, yTitle: curMetric.label, valueLabel: curMetric.label,
       valueDecimals: decimals,
@@ -247,7 +248,8 @@ export function render(container) {
         '<div class="mono tabular" style="font-size:13px;">p = ' + formatP(kw.p) + (kw.p < 0.05 ? ' <span class="ql-badge ql-badge-good" style="margin-left:6px;">' + t('alpha.kwSignificant') + '</span>' : '') + '</div>' +
         '</div>' +
         '<p class="ql-field-help">' + t('alpha.kwHelp') + '</p>'
-        : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>');
+        : '<p class="ql-field-help">' + t('alpha.kwOneGroup') + '</p>') +
+      (plotStyle === 'violin' && lowN && lowN.length ? '<p class="ql-field-help">' + t('alpha.violinLowN', { groups: lowN.join(', ') }) + '</p>' : '');
 
     editor = attachChartEditor({
       key: ceKey, svg, mount: chartPanel, filename: t('alpha.title') + '-' + metric, lang: getLang(),

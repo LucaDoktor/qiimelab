@@ -14,7 +14,7 @@ import {
   addMicrobialCountSeries, updateMicrobialCountSeries, removeMicrobialCountSeries,
 } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { groupColor, drawGroupStripPlot, legendPositionLabel } from '../lib/groupBoxplot.js';
+import { groupColor, drawGroupStripPlot, drawGroupViolin, legendPositionLabel } from '../lib/groupBoxplot.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { ingestFile } from '../lib/ingest.js';
@@ -563,7 +563,7 @@ export function render(container) {
     const chartPanel = document.createElement('section');
     chartPanel.className = 'ql-card ql-panel';
     chartPanel.innerHTML = '<p class="ql-panel-note" style="margin-bottom:4px;">' +
-      (plotStyle === 'jitter' ? t('recuentos.jitterNote') : t('recuentos.chartNote', { bar: errBar === 'sd' ? t('recuentos.sd') : t('recuentos.se') })) + '</p>';
+      (plotStyle === 'jitter' ? t('recuentos.jitterNote') : plotStyle === 'violin' ? t('recuentos.violinNote') : t('recuentos.chartNote', { bar: errBar === 'sd' ? t('recuentos.sd') : t('recuentos.se') })) + '</p>';
     const chartWrap = document.createElement('div');
     chartWrap.className = 'ql-chartwrap scroll-x';
     const svg = svgEl('svg', { class: 'ql-svg', role: 'img', 'aria-label': t('recuentos.a11yChart', { organism: (s.label || '') + (level ? ' — ' + level : '') }) });
@@ -581,6 +581,7 @@ export function render(container) {
       options: [
         { value: 'bars', labelKey: 'recuentos.plotStyleBars' },
         { value: 'jitter', labelKey: 'recuentos.plotStyleJitter' },
+        { value: 'violin', labelKey: 'recuentos.plotStyleViolin' },
       ],
       active: plotStyle,
       onChange: (v) => { plotStyle = v; paint(); },
@@ -700,6 +701,8 @@ export function render(container) {
 
     if (plotStyle === 'jitter') {
       drawJitter(svg, chartWrap, tooltip, chartPanel, s, summary, usable, level);
+    } else if (plotStyle === 'violin') {
+      drawViolin(svg, chartWrap, tooltip, chartPanel, s, summary, usable, level);
     } else {
       drawBars(svg, chartWrap, tooltip, chartPanel, s, summary, usable, letters, lsd, level);
     }
@@ -724,6 +727,41 @@ export function render(container) {
     editors.push(attachChartEditor({
       key: blockKey, svg, mount: chartPanel,
       filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : '') + '-jitter', lang: getLang(),
+      elements: ceElements,
+      paletteSeries, paletteType: 'categorical',
+      statsControls, onStatsChange: () => paint(),
+      figureOptions, onFigureOptionsChange: () => paint(),
+      legendPositions: (legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
+      onReset: () => paint(),
+      startEditing: wasEditingAny,
+    }));
+  }
+
+  // ---- violín: densidad KDE por grupo, misma escala de ancho entre grupos ----
+  function drawViolin(svg, chartWrap, tooltip, chartPanel, s, summary, groups, level) {
+    const groupNames = groups.map((g) => g.key);
+    const groupData = {};
+    groups.forEach((g) => { groupData[g.key] = g.values; });
+    const yTitle = t('recuentos.yAxis', { unit: s.mapping.alreadyLog ? (summary.valueName || t('recuentos.value')) : ('log₁₀ ' + (summary.valueName || t('recuentos.value'))) });
+    const blockTitle = (s.label || t('recuentos.title')) + (level ? ' — ' + level : '');
+
+    const { ceElements, paletteSeries, figureOptions, legendPositions, statsControls, lowN } = drawGroupViolin({
+      svg, chartWrap, tooltip, groupNames, groupData,
+      title: blockTitle, xTitle: summary.groupColNames.join(' × ') || t('recuentos.group'),
+      yTitle, valueLabel: yTitle, valueDecimals: 3,
+    });
+
+    if (lowN && lowN.length) {
+      const p = document.createElement('p');
+      p.className = 'ql-field-help';
+      p.textContent = t('recuentos.violinLowN', { groups: lowN.join(', ') });
+      chartPanel.appendChild(p);
+    }
+
+    const blockKey = 'microbialCounts-violin' + (level ? '-' + level : '');
+    editors.push(attachChartEditor({
+      key: blockKey, svg, mount: chartPanel,
+      filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : '') + '-violin', lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
       statsControls, onStatsChange: () => paint(),
