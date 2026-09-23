@@ -1,6 +1,6 @@
 import { state, subscribe } from '../state.js';
 import { t, getLang } from '../lib/i18n.js';
-import { upgma, leafOrder, permanova, formatP } from '../lib/stats.js';
+import { upgma, leafOrder, permanova, formatP, confidenceEllipsePoints } from '../lib/stats.js';
 import { upgmaOrderAsync } from '../lib/heavyStats.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { rda, cca } from '../lib/constrainedOrdination.js';
@@ -80,6 +80,7 @@ export function render(container) {
   let pcoaPlotStyle = 'scatter'; // 'scatter' | 'bubbles' | '3d'
   let rot3dX = -0.4, rot3dY = 0.6; // ángulos de rotación (radianes) de la nube 3D, persisten entre repintados
   let pcoaSizeCol = null;        // columna numérica de metadatos usada como tamaño en 'bubbles'
+  let pcoaShowEllipses = false;  // elipses de confianza al 95% por grupo (2D, no aplica a 'bubbles' ni '3d')
   let editor = null;
   let wasEditing = false; // ver cfg.startEditing en chartEditor.js — capturado en paint() antes de
                            // destruir el editor, leído por renderHeatmap/renderConstrained/renderPcoa
@@ -1046,6 +1047,18 @@ export function render(container) {
         onChange: (v) => { pcoaPlotStyle = v; paint(); },
       }));
     }
+    if (pcoaPlotStyle === 'scatter' && groups.length > 0) {
+      const ellField = document.createElement('div'); ellField.className = 'ql-field';
+      const ellRow = document.createElement('label'); ellRow.className = 'ql-checkrow';
+      const ellCb = document.createElement('input');
+      ellCb.type = 'checkbox'; ellCb.checked = pcoaShowEllipses;
+      ellCb.addEventListener('change', () => { pcoaShowEllipses = ellCb.checked; paint(); });
+      ellRow.appendChild(ellCb);
+      ellRow.appendChild(document.createTextNode(' ' + t('beta.pcoaEllipsesLabel')));
+      ellField.appendChild(ellRow);
+      ellField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('beta.pcoaEllipsesHelp') + '</p>');
+      controls.appendChild(ellField);
+    }
     if (numericCols.length > 0 && pcoaPlotStyle === 'bubbles') {
       if (!pcoaSizeCol || !numericCols.includes(pcoaSizeCol)) pcoaSizeCol = numericCols[0];
       const sizeField = document.createElement('div'); sizeField.className = 'ql-field';
@@ -1144,6 +1157,30 @@ export function render(container) {
       return 4 + Math.sqrt(Math.max(0, frac)) * 12; // 4–16px, escala de área
     };
 
+    // elipses de confianza al 95% por grupo (prompt "quick wins" del 22 sep
+    // 2026, punto 3) -- equivalente a vegan::ordiellipse/ggplot2::
+    // stat_ellipse(type="norm"), js/lib/stats.js:confidenceEllipsePoints.
+    // Se dibujan ANTES que los puntos para que queden debajo (capa de
+    // fondo), y se calculan en espacio de DATOS (no de píxeles: sx/sy
+    // pueden tener escalas X/Y distintas) y solo se transforman a píxeles
+    // al construir el polígono.
+    let ellipsesOmitted = [];
+    if (pcoaShowEllipses && groups.length > 0) {
+      const ellG = svgEl('g', { 'data-ce': 'ellipses' });
+      groups.forEach((g, gi) => {
+        const idxs = ord.sampleIds.map((sid, i) => (groupOf[sid] === g ? i : -1)).filter((i) => i >= 0);
+        const xs = idxs.map((i) => ord.coords[i][pcX]), ys = idxs.map((i) => ord.coords[i][pcY]);
+        const ell = confidenceEllipsePoints(xs, ys, 0.95, 72);
+        if (!ell) { ellipsesOmitted.push(g); return; }
+        const ptsAttr = ell.points.map(([dx, dy]) => sx(dx) + ',' + sy(dy)).join(' ');
+        ellG.appendChild(svgEl('polygon', {
+          points: ptsAttr, fill: colorForGroup(g), 'fill-opacity': 0.12, stroke: colorForGroup(g), 'stroke-width': 1.5, 'stroke-opacity': 0.7,
+          'data-ce-series-fill': 's' + gi, 'data-ce-series-stroke': 's' + gi,
+        }));
+      });
+      svg.appendChild(ellG);
+    }
+
     const pts = svgEl('g', {});
     svg.appendChild(pts);
     ord.sampleIds.forEach((sid, i) => {
@@ -1197,6 +1234,13 @@ export function render(container) {
       }
       legG.setAttribute('transform', 'translate(' + m.l + ',' + (H - 22) + ')');
       svg.appendChild(legG);
+    }
+
+    if (pcoaShowEllipses && ellipsesOmitted.length) {
+      const om = document.createElement('p');
+      om.className = 'ql-field-help';
+      om.textContent = t('beta.pcoaEllipsesOmitted', { groups: ellipsesOmitted.join(', ') });
+      chartPanel.appendChild(om);
     }
 
     editor = attachChartEditor({

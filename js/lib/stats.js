@@ -410,6 +410,57 @@ export function pearson(x, y) {
 }
 
 /**
+ * Elipse de confianza normal bivariante alrededor de (xs,ys) -- equivalente
+ * a `car::dataEllipse(x, y, levels=confidence)` / `vegan::ordiellipse` /
+ * `ggplot2::stat_ellipse(type="norm")`: autovectores/autovalores de la
+ * matriz de covarianza 2×2, escalados por la raíz de la cuantila chi-
+ * cuadrado con 2 grados de libertad (que tiene forma cerrada:
+ * -2·ln(1-confianza), no hace falta invertir la CDF numéricamente).
+ * Con n < 4 la elipse es numéricamente inestable (covarianza mal
+ * determinada) -- se devuelve null, y quien llama decide cómo avisarlo en
+ * vez de dibujar algo engañoso.
+ * @param {number[]} xs
+ * @param {number[]} ys
+ * @param {number} [confidence=0.95]
+ * @param {number} [nPoints=72]  vértices del polígono cerrado que aproxima la elipse
+ * @returns {{ center:[number,number], points:[number,number][], semiMajor:number, semiMinor:number, angle:number } | null}
+ */
+export function confidenceEllipsePoints(xs, ys, confidence = 0.95, nPoints = 72) {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 4) return null;
+  const mx = mean(xs), my = mean(ys);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx, dy = ys[i] - my;
+    sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+  }
+  const denom = n - 1;
+  sxx /= denom; syy /= denom; sxy /= denom;
+
+  // autovalores/autovectores de la matriz de covarianza 2x2 [[sxx,sxy],[sxy,syy]]
+  const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+  const disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+  const l1 = tr / 2 + disc, l2 = Math.max(0, tr / 2 - disc); // autovalores, l1>=l2>=0
+  let vx, vy;
+  if (Math.abs(sxy) > 1e-12) { vx = l1 - syy; vy = sxy; } else { vx = sxx >= syy ? 1 : 0; vy = sxx >= syy ? 0 : 1; }
+  const vlen = Math.hypot(vx, vy) || 1;
+  vx /= vlen; vy /= vlen;
+
+  const q = -2 * Math.log(1 - confidence); // cuantila chi-cuadrado, 2 g.l., forma cerrada
+  const a = Math.sqrt(Math.max(0, l1) * q); // semieje mayor
+  const b = Math.sqrt(Math.max(0, l2) * q); // semieje menor
+  const angle = Math.atan2(vy, vx);
+
+  const points = [];
+  for (let i = 0; i < nPoints; i++) {
+    const theta = (2 * Math.PI * i) / nPoints;
+    const ex = a * Math.cos(theta), ey = b * Math.sin(theta);
+    points.push([mx + ex * vx - ey * vy, my + ex * vy + ey * vx]);
+  }
+  return { center: [mx, my], points, semiMajor: a, semiMinor: b, angle };
+}
+
+/**
  * Correlación de Spearman (rho): Pearson sobre los rangos de cada variable.
  * Mismo p-valor aproximado que Pearson sobre los rangos.
  */
