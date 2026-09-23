@@ -39,6 +39,7 @@ const SUITE = [
   { name: 'sanger-editor', file: 'sanger-editor.mjs', kind: 'navegador' },
   { name: 'inference-lollipop-editor', file: 'inference-lollipop-editor.mjs', kind: 'navegador' },
   { name: 'chartpresets', file: 'chartpresets.mjs', kind: 'navegador' },
+  { name: 'temporal', file: 'temporal.mjs', kind: 'navegador' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
   { name: 'phylonni', file: 'phylonni.mjs', kind: 'estático' },

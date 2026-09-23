@@ -31,6 +31,7 @@ const ICONS = {
   informe: ic('<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>'),
   glosario: ic('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 10.5h4"/>'),
   validacion: ic('<path d="M12 3 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
+  temporal: ic('<path d="M4 20h16M4 20V4"/><path d="M4 15.5 9 10l4 3 7-7.5"/><circle cx="9" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="13" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="20" cy="5.5" r="1.3" fill="currentColor" stroke="none"/>'),
 };
 
 // Logomark: dendrograma (agrupamiento) reducido a 3 hojas y 2 nodos, sobre
@@ -54,6 +55,7 @@ export const ROUTES = [
   { id: 'barplots', navKey: 'nav.barplots', icon: 'bars', group: 'composition' },
   { id: 'alfa', navKey: 'nav.alpha', icon: 'alpha', group: 'composition' },
   { id: 'beta', navKey: 'nav.beta', icon: 'beta', group: 'composition' },
+  { id: 'temporal', navKey: 'nav.temporal', icon: 'temporal', group: 'composition' },
   { id: 'venn', navKey: 'nav.venn', icon: 'venn', group: 'composition' },
   { id: 'correlograma', navKey: 'nav.correlograma', icon: 'correlogram', group: 'composition' },
   { id: 'diferencial', navKey: 'nav.differential', icon: 'volcano', group: 'stats' },
@@ -121,6 +123,7 @@ export function slotFilled(routeId) {
     case 'recuentos': return Array.isArray(state.microbialCounts) && state.microbialCounts.length > 0;
     case 'venn': return !!state.taxaCounts && !!state.metadata;
     case 'correlograma': return !!state.metadata || !!state.alphaDiversity || !!state.taxaBarplot || !!state.taxaCounts;
+    case 'temporal': return !!state.metadata && (!!state.alphaDiversity || !!state.taxaBarplot || !!state.taxaCounts);
     case 'funcional': return !!state.functionalKO && !!state.functionalCategories && !!state.metadata;
     case 'qc': return Array.isArray(state.sequenceQC) && state.sequenceQC.length > 0;
     case 'informe': return !!state.taxaBarplot || !!state.alphaDiversity || !!state.betaDiversity ||

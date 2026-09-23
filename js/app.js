@@ -37,6 +37,7 @@ const moduleLoaders = {
   barplots: () => import('./modules/taxaBarplot.js'),
   alfa: () => import('./modules/alphaDiversity.js'),
   beta: () => import('./modules/betaDiversity.js'),
+  temporal: () => import('./modules/temporal.js'),
   diferencial: () => import('./modules/differentialAbundance.js'),
   recuentos: () => import('./modules/microbialCounts.js'),
   ufc: () => import('./modules/cfuCalculator.js'),
