@@ -62,6 +62,16 @@ try {
   check('con 7 series (CAT_VARS) sobre okabe-ito (maxSafeN=6) aparece el aviso de "series de más"',
     !!warnText && /7|6/.test(warnText), JSON.stringify(warnText));
 
+  // Fase 6 Paso 4: el Nº de series "seguro" no debe vivir solo en un aviso
+  // que aparece al excederlo -- tiene que estar siempre visible en el
+  // propio selector de paleta, no como afirmación genérica de "CVD-safe".
+  const safeNote = await c.ev(`(() => {
+    const n = document.querySelector('.ce-pal-chooser .ce-pal-safen');
+    return n ? n.textContent : null;
+  })()`);
+  check('el Nº de series seguro (maxSafeN=6 de Okabe-Ito) se muestra SIEMPRE junto al selector, no solo cuando se excede',
+    !!safeNote && /6/.test(safeNote), JSON.stringify(safeNote));
+
   await c.ev(`(() => { [...document.querySelectorAll('.ce-pal-chooser-row button')][0].click(); })()`);
   await sleep(200);
 

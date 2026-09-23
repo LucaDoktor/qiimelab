@@ -147,6 +147,54 @@ export function getColorScaleOptions(key) {
   return readChartStyleRaw(key).__colorScale || {};
 }
 
+// ---- Presets (Fase 6, Paso 1 y 3 de qiimelab-prompt-editor-fase-6-
+// presets-style-match-export-revista.md): un preset es "una foto del
+// store" -- el mismo objeto que ya se guarda en
+// localStorage['smart-175.chartStyle.'+key], más name/seriesOrder. Se
+// guardan en una clave APARTE, compartida entre TODAS las gráficas (no
+// por `key`), porque un preset debe poder aplicarse a cualquier gráfico. */
+const PRESETS_LSKEY = 'smart-175.chartPresets';
+
+/** Función pura, sin DOM -- mismo patrón que getPaletteOverrides/etc. */
+export function readPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_LSKEY)) || {}; }
+  catch (e) { return {}; }
+}
+function writePresets(all) {
+  try {
+    if (Object.keys(all).length) localStorage.setItem(PRESETS_LSKEY, JSON.stringify(all));
+    else localStorage.removeItem(PRESETS_LSKEY);
+  } catch (e) { /* modo privado */ }
+}
+
+const PT_TO_PX = 96 / 72; // 1pt = 4/3 px a 96dpi -- la tabla de la revista viene en pt, el motor --fig-* en px
+const pt = (n) => Math.round(n * PT_TO_PX * 100) / 100;
+
+/** Presets de revista (Paso 3): NO editables por el usuario -- reaplicar
+ *  siempre vuelve a la especificación oficial exacta, así que no hace
+ *  falta un "restablecer" aparte. Valores tomados de la tabla de
+ *  `Claude outputs/estudio-editor-graficas-nivel-biorender.md` sección
+ *  1.5 (rangos de la revista; se elige un valor concreto dentro de cada
+ *  rango, documentado aquí en pt antes de convertir a px):
+ *   - Nature: texto de cuerpo 7pt (rango 5-7), título de panel 8pt
+ *     negrita, línea 0.5pt (rango 0.25-1), fuente Helvetica/Arial.
+ *   - Cell: texto de cuerpo 7pt (rango 6-8), línea 1pt (rango 0.5-1.5),
+ *     fuente Arial únicamente. */
+function journalStyleBlock({ font, bodyPt, titlePt, linePt, widthMm }) {
+  return {
+    __figureStyle: { font, tickSize: pt(bodyPt), axisTitleSize: pt(bodyPt), gridWidth: pt(linePt), axisWidth: pt(linePt) },
+    __export: { widthMm },
+    title: { size: pt(titlePt), bold: true, font },
+  };
+}
+export const JOURNAL_PRESETS = {
+  nature89: { id: 'nature89', builtin: true, journal: 'nature', widthMm: 89, store: journalStyleBlock({ font: 'Helvetica, Arial, sans-serif', bodyPt: 7, titlePt: 8, linePt: 0.5, widthMm: 89 }) },
+  nature183: { id: 'nature183', builtin: true, journal: 'nature', widthMm: 183, store: journalStyleBlock({ font: 'Helvetica, Arial, sans-serif', bodyPt: 7, titlePt: 8, linePt: 0.5, widthMm: 183 }) },
+  cell85: { id: 'cell85', builtin: true, journal: 'cell', widthMm: 85, store: journalStyleBlock({ font: 'Arial, sans-serif', bodyPt: 7, titlePt: 8, linePt: 1, widthMm: 85 }) },
+  cell114: { id: 'cell114', builtin: true, journal: 'cell', widthMm: 114, store: journalStyleBlock({ font: 'Arial, sans-serif', bodyPt: 7, titlePt: 8, linePt: 1, widthMm: 114 }) },
+  cell174: { id: 'cell174', builtin: true, journal: 'cell', widthMm: 174, store: journalStyleBlock({ font: 'Arial, sans-serif', bodyPt: 7, titlePt: 8, linePt: 1, widthMm: 174 }) },
+};
+
 const FONTS = [
   ['var(--font-body)', 'Sans (IBM Plex)'],
   ['var(--font-display)', 'Serif (IBM Plex)'],
@@ -196,6 +244,7 @@ const I18N = {
         paletteInvalidHex: 'no es un color hex válido (usa #RRGGBB)',
         paletteAppDefault: 'por defecto', paletteApply: 'Aplicar', paletteChoose: 'Elegir paleta',
         paletteWarnSafeN: (n, max) => n + ' series superan las ' + max + ' que esta paleta distingue con seguridad bajo daltonismo',
+        paletteSafeN: (max) => 'Nº de series seguro bajo daltonismo: ' + max,
         paletteOpacity: 'Opacidad',
         paletteFillSolid: 'Sólido', paletteFillGradient: 'Degradado', paletteFillPattern: 'Patrón',
         paletteGradientAngle: 'Ángulo', paletteGradientStop: (n) => 'Parada ' + n,
@@ -223,7 +272,13 @@ const I18N = {
         categoryOrderLabel: 'Orden de categorías', orderOriginal: 'Original', orderAlphaAsc: 'Alfabético A-Z',
         orderAlphaDesc: 'Alfabético Z-A', orderValueAsc: 'Por valor (ascendente)', orderValueDesc: 'Por valor (descendente)',
         gridMinorLabel: 'Rejilla menor', marginsLabel: 'Márgenes (±px)',
-        marginSide: (side) => ({ top: 'Margen superior', right: 'Margen derecho', bottom: 'Margen inferior', left: 'Margen izquierdo' }[side] || side) },
+        marginSide: (side) => ({ top: 'Margen superior', right: 'Margen derecho', bottom: 'Margen inferior', left: 'Margen izquierdo' }[side] || side),
+        presetsTitle: 'Presets', presetSaveLabel: 'Guardar el estilo actual como preset',
+        presetNamePlaceholder: 'Nombre del preset', presetSaveBtn: 'Guardar', presetApplyBtn: 'Aplicar',
+        presetDeleteBtn: 'Borrar', presetNone: 'Sin presets guardados todavía',
+        presetJournalTitle: 'Presets de revista', presetJournalHelp: 'Fuente/tamaño/grosor/ancho según la especificación oficial — aplicar reemplaza el estilo actual.',
+        presetNatureLabel: (mm) => 'Nature (' + mm + ' mm)', presetCellLabel: (mm) => 'Cell (' + mm + ' mm)',
+        exportWidthLabel: 'Ancho de exportación (mm)', exportWidthHelp: 'Vacío = tamaño natural en píxeles.' },
   en: { customize: 'Customise', done: 'Done', reset: 'Reset', download: 'Download SVG', downloadPng: 'Download PNG', downloadTiff: 'Download TIFF',
         hint: 'Drag the labels (or focus them with Tab and move them with the arrow keys). Click or press Enter to change the style.',
         lead: 'This figure is editable:', leadRest: 'change text, colours and positions, then download it as SVG or PNG.',
@@ -235,6 +290,7 @@ const I18N = {
         paletteInvalidHex: 'not a valid hex colour (use #RRGGBB)',
         paletteAppDefault: 'default', paletteApply: 'Apply', paletteChoose: 'Choose palette',
         paletteWarnSafeN: (n, max) => n + ' series exceed the ' + max + ' this palette safely tells apart under colour blindness',
+        paletteSafeN: (max) => 'Series safe under colour blindness: ' + max,
         paletteOpacity: 'Opacity',
         paletteFillSolid: 'Solid', paletteFillGradient: 'Gradient', paletteFillPattern: 'Pattern',
         paletteGradientAngle: 'Angle', paletteGradientStop: (n) => 'Stop ' + n,
@@ -262,7 +318,13 @@ const I18N = {
         categoryOrderLabel: 'Category order', orderOriginal: 'Original', orderAlphaAsc: 'Alphabetical A-Z',
         orderAlphaDesc: 'Alphabetical Z-A', orderValueAsc: 'By value (ascending)', orderValueDesc: 'By value (descending)',
         gridMinorLabel: 'Minor gridlines', marginsLabel: 'Margins (±px)',
-        marginSide: (side) => ({ top: 'Top margin', right: 'Right margin', bottom: 'Bottom margin', left: 'Left margin' }[side] || side) },
+        marginSide: (side) => ({ top: 'Top margin', right: 'Right margin', bottom: 'Bottom margin', left: 'Left margin' }[side] || side),
+        presetsTitle: 'Presets', presetSaveLabel: 'Save the current style as a preset',
+        presetNamePlaceholder: 'Preset name', presetSaveBtn: 'Save', presetApplyBtn: 'Apply',
+        presetDeleteBtn: 'Delete', presetNone: 'No saved presets yet',
+        presetJournalTitle: 'Journal presets', presetJournalHelp: 'Font/size/weight/width per the official spec — applying replaces the current style.',
+        presetNatureLabel: (mm) => 'Nature (' + mm + ' mm)', presetCellLabel: (mm) => 'Cell (' + mm + ' mm)',
+        exportWidthLabel: 'Export width (mm)', exportWidthHelp: 'Empty = natural pixel size.' },
 };
 function tr(lang) { return I18N[lang] || I18N.es; }
 
@@ -358,6 +420,8 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-pal-border-row { display:flex; align-items:center; gap:6px; }
 .ce-pal-border-row label { font-size:11px; color:var(--ink-muted); }
 .ce-pal-warn { font-size:11px; color:#8a5a00; margin:0; }
+.ce-pal-safen { font-size:11px; color:var(--ink-muted); margin:2px 0 0; }
+.ce-pal-safen:empty { display:none; }
 .ce-geometry { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-geometry h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
 .ce-geom-rows { display:flex; flex-direction:column; gap:8px; max-width:420px; }
@@ -380,6 +444,10 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-cs-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
 .ce-cs-row select { flex:1; min-width:0; }
 .ce-cs-row input[type=number] { width:72px; flex:none; }
+.ce-cs-row input[type=text] { flex:1; min-width:120px; height:26px; padding:2px 8px; font-size:12px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); color:var(--ink); }
+.ce-presets .ce-cs-row { margin-bottom:6px; flex-wrap:wrap; }
+.ce-presets .ce-cs-row span { font-size:12px; color:var(--ink-2); }
+.ce-presets .ce-cs-row label { min-width:0; }
 .ce-cs-domain { display:flex; align-items:center; gap:6px; flex:1; flex-wrap:wrap; }
 .ce-cs-domain button { border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-2); border-radius:6px; padding:4px 8px; cursor:pointer; font-size:11.5px; }
 .ce-cs-domain button:hover { border-color:var(--accent); color:var(--ink); }
@@ -856,6 +924,12 @@ export function attachChartEditor(cfg) {
     if (editing && colorScaleCfg) toolbar.appendChild(renderColorScaleSection());
 
     if (editing && figureOptionsCfg) toolbar.appendChild(renderStructureSection());
+
+    // Presets (Fase 6): siempre disponible al editar, no opt-in por módulo
+    // -- a diferencia de paleta/geometría, cualquier gráfico puede guardar/
+    // aplicar un preset (aunque no tenga paletteSeries, sigue teniendo
+    // __figureStyle/posiciones de elemento que guardar).
+    if (editing) toolbar.appendChild(renderPresetsSection());
   }
 
   function renderTitlesSection() {
@@ -1008,12 +1082,21 @@ export function attachChartEditor(cfg) {
 
     const preview = document.createElement('div');
     preview.className = 'ce-pal-preview';
+    // Nº de series "seguro" bajo daltonismo -- Paso 4 de
+    // qiimelab-prompt-editor-fase-6-presets-style-match-export-revista.md:
+    // mostrar el N calculado por paletteValidator (vía maxSafeN, ya
+    // computado en paletteCatalog.js), no una afirmación genérica de
+    // "colorblind-safe" sin más. Nota SIEMPRE visible (no solo al
+    // excederlo, que es lo que ya hacía `warn` más abajo).
+    const safeNote = document.createElement('p');
+    safeNote.className = 'ce-pal-safen';
     const warn = document.createElement('p');
     warn.className = 'ce-pal-warn';
     const paint = () => {
       const p = options.find((o) => o.id === sel.value);
       preview.innerHTML = '';
       if (p) preview.appendChild(swatchBarColors(p.colors));
+      safeNote.textContent = (p && p.type === 'qualitative' && p.maxSafeN != null) ? T.paletteSafeN(p.maxSafeN) : '';
       warn.textContent = '';
       if (p && p.type === 'qualitative' && p.maxSafeN != null && paletteSeries.length > p.maxSafeN) {
         warn.textContent = '⚠ ' + T.paletteWarnSafeN(paletteSeries.length, p.maxSafeN);
@@ -1022,6 +1105,7 @@ export function attachChartEditor(cfg) {
     sel.addEventListener('change', paint);
     paint();
     wrap.appendChild(preview);
+    wrap.appendChild(safeNote);
     wrap.appendChild(warn);
 
     return wrap;
@@ -2429,8 +2513,16 @@ export function attachChartEditor(cfg) {
     } catch (e) { /* entorno restringido / headless */ }
   }
 
+  // ---- ancho de exportación físico (mm) -- Paso 3: un preset de revista
+  // fija store.__export.widthMm; también editable a mano en el toolbar. ----
+  function getExportWidthMm() { return (store.__export && store.__export.widthMm) || null; }
+  function setExportWidthMm(mm) {
+    if (mm > 0) store.__export = { widthMm: mm }; else delete store.__export;
+    writeStoreDebounced();
+  }
+
   function serialize() {
-    return serializeForExport(svg, { scheme: 'light', background: 'white' }).svg;
+    return serializeForExport(svg, { scheme: 'light', background: 'white', widthMm: getExportWidthMm() }).svg;
   }
 
   function downloadSvg() {
@@ -2440,15 +2532,145 @@ export function attachChartEditor(cfg) {
   }
 
   async function downloadPng() {
-    const res = await exportFigure(svg, { formats: ['png'], scheme: 'light', background: 'white', dpi: 300 });
+    const res = await exportFigure(svg, { formats: ['png'], scheme: 'light', background: 'white', dpi: 300, widthMm: getExportWidthMm() });
     triggerDownload(res.png, 'image/png', downloadFilename('png'));
     return res;
   }
 
   async function downloadTiff() {
-    const res = await exportFigure(svg, { formats: ['tiff'], scheme: 'light', background: 'white', dpi: 300 });
+    const res = await exportFigure(svg, { formats: ['tiff'], scheme: 'light', background: 'white', dpi: 300, widthMm: getExportWidthMm() });
     triggerDownload(res.tiff, 'image/tiff', downloadFilename('tiff'));
     return res;
+  }
+
+  // ---- Presets (Fase 6 Paso 1/3): aplicar es sobreescribir `store` con el
+  // contenido del preset (remapeando __palette por POSICIÓN si el nº de
+  // series no coincide) y llamar a writeStore()+sync() -- cero código de
+  // bajo nivel nuevo, reutiliza exactamente lo que ya existe para leer/
+  // escribir `store`. ----
+  function applyPresetSnapshot(preset) {
+    const cloned = JSON.parse(JSON.stringify(preset.store || {}));
+    if (cloned.__palette) {
+      const order = Array.isArray(preset.seriesOrder) ? preset.seriesOrder : Object.keys(cloned.__palette);
+      const newPal = {};
+      if (paletteSeries.length) {
+        const n = Math.min(order.length, paletteSeries.length);
+        for (let i = 0; i < n; i++) {
+          const oldId = order[i], newId = paletteSeries[i].id;
+          if (cloned.__palette[oldId] !== undefined) newPal[newId] = cloned.__palette[oldId];
+        }
+      }
+      if (Object.keys(newPal).length) cloned.__palette = newPal; else delete cloned.__palette;
+    }
+    store = cloned;
+    writeStore();
+    sync();
+  }
+
+  function savePresetAs(name) {
+    if (!name || !name.trim()) return;
+    const all = readPresets();
+    const id = 'u-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    all[id] = {
+      id, name: name.trim(), builtin: false, savedAt: Date.now(),
+      seriesOrder: paletteSeries.map((s) => s.id),
+      store: JSON.parse(JSON.stringify(store)),
+    };
+    writePresets(all);
+    renderToolbar();
+  }
+
+  function deleteUserPreset(id) {
+    const all = readPresets();
+    delete all[id];
+    writePresets(all);
+    renderToolbar();
+  }
+
+  function renderPresetsSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'ce-presets ce-colorscale'; // reutiliza el estilo de sección de "Escala de color"/"Estructura"
+    wrap.innerHTML = '<h5>' + T.presetsTitle + '</h5>';
+
+    // ancho de exportación
+    const widthRow = document.createElement('div');
+    widthRow.className = 'ce-cs-row';
+    const widthId = 'ce-exportwidth-' + (++cePanelUid);
+    const widthLab = document.createElement('label');
+    widthLab.setAttribute('for', widthId);
+    widthLab.textContent = T.exportWidthLabel;
+    const widthInp = document.createElement('input');
+    widthInp.type = 'number'; widthInp.id = widthId; widthInp.min = '10'; widthInp.max = '400'; widthInp.step = '1';
+    widthInp.value = getExportWidthMm() || '';
+    widthInp.addEventListener('change', () => setExportWidthMm(parseFloat(widthInp.value) || null));
+    widthRow.appendChild(widthLab); widthRow.appendChild(widthInp);
+    wrap.appendChild(widthRow);
+    const widthHelp = document.createElement('p');
+    widthHelp.className = 'ce-hint';
+    widthHelp.textContent = T.exportWidthHelp;
+    wrap.appendChild(widthHelp);
+
+    // guardar preset actual
+    const saveRow = document.createElement('div');
+    saveRow.className = 'ce-cs-row';
+    const nameInp = document.createElement('input');
+    nameInp.type = 'text'; nameInp.placeholder = T.presetNamePlaceholder; nameInp.setAttribute('aria-label', T.presetSaveLabel);
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button'; saveBtn.className = 'ql-btn';
+    saveBtn.textContent = T.presetSaveBtn;
+    saveBtn.addEventListener('click', () => { savePresetAs(nameInp.value); nameInp.value = ''; });
+    saveRow.appendChild(nameInp); saveRow.appendChild(saveBtn);
+    wrap.appendChild(saveRow);
+
+    // presets del usuario
+    const userPresets = Object.values(readPresets()).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    if (!userPresets.length) {
+      const noneP = document.createElement('p');
+      noneP.className = 'ce-hint';
+      noneP.textContent = T.presetNone;
+      wrap.appendChild(noneP);
+    } else {
+      userPresets.forEach((p) => {
+        const row = document.createElement('div');
+        row.className = 'ce-cs-row';
+        const lab = document.createElement('span');
+        lab.textContent = p.name;
+        lab.style.flex = '1 1 auto';
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button'; applyBtn.className = 'ql-btn';
+        applyBtn.textContent = T.presetApplyBtn;
+        applyBtn.addEventListener('click', () => applyPresetSnapshot(p));
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button'; delBtn.className = 'ql-btn ql-btn-ghost';
+        delBtn.textContent = T.presetDeleteBtn;
+        delBtn.setAttribute('aria-label', T.presetDeleteBtn + ': ' + p.name);
+        delBtn.addEventListener('click', () => deleteUserPreset(p.id));
+        row.appendChild(lab); row.appendChild(applyBtn); row.appendChild(delBtn);
+        wrap.appendChild(row);
+      });
+    }
+
+    // presets de revista (Paso 3): no editables, reaplicar siempre vuelve a
+    // la especificación oficial
+    const journalH5 = document.createElement('h5');
+    journalH5.textContent = T.presetJournalTitle;
+    wrap.appendChild(journalH5);
+    const journalHelp = document.createElement('p');
+    journalHelp.className = 'ce-hint';
+    journalHelp.textContent = T.presetJournalHelp;
+    wrap.appendChild(journalHelp);
+    const journalRow = document.createElement('div');
+    journalRow.className = 'ce-cs-row';
+    Object.values(JOURNAL_PRESETS).forEach((jp) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ql-btn';
+      b.textContent = (jp.journal === 'nature' ? T.presetNatureLabel : T.presetCellLabel)(jp.widthMm);
+      b.addEventListener('click', () => applyPresetSnapshot(jp));
+      journalRow.appendChild(b);
+    });
+    wrap.appendChild(journalRow);
+
+    return wrap;
   }
 
   function toHex(color) {

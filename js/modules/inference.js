@@ -490,6 +490,7 @@ export function render(container) {
   let minPrev = 0;
   let selectedGroupCol = null;
   let editor = null;
+  let wasEditing = false;
   let tooltipEl = null;
 
   function ensureTooltip() {
@@ -527,6 +528,7 @@ export function render(container) {
   }
 
   function paint() {
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     ensureTooltip();
@@ -1098,7 +1100,8 @@ export function render(container) {
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
-      ]
+      ],
+      startEditing: wasEditing,
     });
   }
 
@@ -1194,7 +1197,7 @@ export function render(container) {
       if (v.byGroup) {
         const gxs = groupNames.map((g) => xScale(v.byGroup[g]));
         if (groupNames.length > 1) {
-          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, class: 'ql-baseline-line' }));
+          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick' }));
         }
         groupNames.forEach((g, gi) => {
           const cx = xScale(v.byGroup[g]);
@@ -1205,7 +1208,7 @@ export function render(container) {
         });
       } else {
         const cx = xScale(v.overall);
-        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, class: 'ql-baseline-line' }));
+        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick' }));
         rowsG.appendChild(svgEl('circle', {
           cx, cy, r: 5, fill: v.sObj.isOther ? OTHER_COLOR : getSeriesColor(i, v.sObj.isOther), stroke: 'var(--surface)', 'stroke-width': 1,
           'data-fn': v.sObj.key, 'data-val': v.overall.toFixed(2),
@@ -1258,6 +1261,9 @@ export function render(container) {
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         ...(groupNames ? [{ id: 'legend', selector: '[data-ce="legend"]', kind: 'group' }] : []),
       ],
+      paletteSeries: [{ id: 'stick', label: t('inference.lollipopStick') || 'Palillo' }],
+      paletteType: 'categorical',
+      startEditing: wasEditing,
     });
   }
 
@@ -1434,7 +1440,8 @@ export function render(container) {
         { id: 'title', selector: '[data-ce="title"]' },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
-      ]
+      ],
+      startEditing: wasEditing,
     });
   }
 
