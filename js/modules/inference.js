@@ -1276,7 +1276,7 @@ export function render(container) {
       sampleKey: matrix.sampleKey,
     });
 
-    const { topTaxa, hasOther } = grouped;
+    const { topTaxa, hasOther, series } = grouped;
     const preAgg = hasOther ? ['Otros'] : [];
 
     const groupMatrixRes = computeGroupTaxaMatrix(grouped.rows, matrix.sampleKey, topTaxa, resolveGroup, {
@@ -1295,7 +1295,13 @@ export function render(container) {
     const H = 480;
     const margin = { top: 40, right: 180, bottom: 50, left: 60 };
 
-    const layout = computeAlluvialLayout(groupMatrixRes, {
+    // computeAlluvialLayout necesita { groups, taxa, matrix, sampleCounts } —
+    // groupMatrixRes solo trae groups/matrix/sampleCounts (ver
+    // computeGroupTaxaMatrix en alluvial.js), así que sin el array `taxa`
+    // (con key/label/colorVar por taxón — grouped.series ya lo trae, igual
+    // que usan renderStackedBarplot/renderLollipop más arriba en este mismo
+    // archivo) el layout iteraba 0 taxones y no dibujaba ningún nodo/flujo.
+    const layout = computeAlluvialLayout({ ...groupMatrixRes, taxa: series }, {
       width: W,
       height: H,
       margin,
@@ -1362,7 +1368,8 @@ export function render(container) {
         width: nd.width, height: Math.max(1, nd.height),
         fill: color,
         stroke: 'var(--surface)',
-        'stroke-width': '0.5'
+        'stroke-width': '0.5',
+        'data-taxon': nd.taxonKey,
       });
       nodesG.appendChild(rect);
     });
@@ -1428,6 +1435,47 @@ export function render(container) {
     yTitle.textContent = t('inference.yAxisTitle') || 'Abundancia Relativa Funcional (%)';
     svg.appendChild(yTitle);
 
+    // Leyenda lateral interactiva — mismo patrón que renderStackedBarplot
+    // más arriba en este archivo (misma paleta getSeriesColor/CAT_FALLBACKS).
+    // Faltaba del todo: nada mapeaba color -> nombre de función, así que
+    // aunque el flujo se dibujara bien no había forma de leerlo.
+    const legendG = svgEl('g', { class: 'ql-legend', 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
+    const legTitle = svgEl('text', { x: 0, y: 0, 'font-size': '12px', 'font-weight': '600', fill: 'var(--ink)' });
+    legTitle.textContent = isPhenotypes
+      ? (t('inference.legendPhenotypes') || 'Rasgos Principales')
+      : (t('inference.legendTitle') || 'Funciones Principales');
+    legendG.appendChild(legTitle);
+
+    series.forEach((sObj, i) => {
+      if (i > 22) return; // Limitar tamaño de leyenda
+      const y = 20 + i * 18;
+      const gItem = svgEl('g', { style: 'cursor:pointer;', 'data-legend-key': sObj.key });
+
+      const swatch = svgEl('rect', {
+        x: 0, y: y - 10,
+        width: 12, height: 12,
+        rx: 2,
+        fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(i, sObj.isOther),
+      });
+      gItem.appendChild(swatch);
+
+      const fName = formatFunctionName(sObj.key, getLang());
+      const label = svgEl('text', { x: 18, y, class: 'ql-tick-label' });
+      label.textContent = fName.length > 22 ? fName.slice(0, 20) + '…' : fName;
+      gItem.appendChild(label);
+
+      legendG.appendChild(gItem);
+    });
+    svg.appendChild(legendG);
+    delegateHover(svg, 'g[data-legend-key]', {
+      onEnter: (el) => {
+        svg.querySelectorAll('[data-taxon]').forEach((n) => {
+          if (n.dataset.taxon !== el.dataset.legendKey) n.style.opacity = '0.15';
+        });
+      },
+      onLeave: () => { svg.querySelectorAll('[data-taxon]').forEach((n) => { n.style.opacity = ''; }); },
+    });
+
     card.appendChild(svg);
 
     editor = attachChartEditor({
@@ -1440,6 +1488,7 @@ export function render(container) {
         { id: 'title', selector: '[data-ce="title"]' },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
+        { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
       startEditing: wasEditing,
     });
