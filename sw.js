@@ -6,7 +6,13 @@
  *
  *   - navegación / HTML  → network-first (si hay red, la versión fresca gana;
  *                          sin red, servimos el shell cacheado)
- *   - resto del mismo origen (css, js, fuentes, svg, json)
+ *   - código (js, css, json) → network-first, la caché es solo el respaldo sin
+ *                          red. Antes era cache-first + revalidación: tras cada
+ *                          despliegue se veía la versión ANTERIOR hasta recargar
+ *                          dos veces (y el aviso "versión nueva" no salía porque
+ *                          este archivo no cambiaba). Sin build step el código
+ *                          cambia a diario, así que la frescura manda.
+ *   - resto del mismo origen (fuentes, svg, imágenes)
  *                        → cache-first + revalidación en segundo plano
  *
  * El nombre de caché lleva versión; `activate` borra las viejas. Cuando este
@@ -16,7 +22,7 @@
 
 // Súbelo a mano cuando quieras forzar un vaciado de caché (normalmente no hace
 // falta: el propio cambio de bytes de este archivo ya instala un SW nuevo).
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = 'smart-175-' + VERSION;
 
 // El shell mínimo que garantiza que la app arranca sin red la primera vez que
@@ -93,7 +99,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2) Resto del mismo origen (css/js/fuentes/svg/json/woff2) → cache-first +
+  // 2) Código (js/css/json) → network-first: la versión desplegada gana; la
+  //    caché solo responde si no hay red (modo offline).
+  if (sameOrigin && /\.(?:m?js|css|json)$/i.test(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const res = await fetch(req);
+        if (res && res.ok && res.status === 200) cache.put(req, res.clone());
+        return res;
+      } catch (e) {
+        return (await cache.match(req)) || Response.error();
+      }
+    })());
+    return;
+  }
+
+  // 3) Resto del mismo origen (fuentes/svg/imágenes/woff2) → cache-first +
   //    revalidación en segundo plano. Ya no hay orígenes externos que atender.
   if (sameOrigin) {
     event.respondWith((async () => {
