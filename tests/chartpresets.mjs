@@ -147,6 +147,32 @@ try {
   check('...el título en negrita (etiqueta de panel 8pt negrita)', natureResult.titleBold === '700' || natureResult.titleBold === 'bold', JSON.stringify(natureResult));
   check('...y el ancho de exportación a 89mm, reflejado en el campo del toolbar', natureResult.exportWidthValue === '89', JSON.stringify(natureResult));
 
+  // Paso 4 (verificación final), punto 1: exportar a PNG a 300dpi con
+  // Nature aplicado y confirmar el tamaño FÍSICO real (no solo que el
+  // campo del panel diga "89") -- proxy automatizado de "verlo impreso a
+  // tamaño real"; abrir el PNG en un visor e imprimirlo de verdad, o abrir
+  // el SVG en Illustrator/Inkscape, escapa a lo que este test puede hacer
+  // (ver nota en el mensaje de commit / memoria del proyecto).
+  console.log('\n-- Paso 4: exportación PNG a tamaño físico real (89mm @ 300dpi) --');
+  const pngExport = await c.ev(`(async () => {
+    const svg = document.querySelector('svg.ql-svg');
+    const mod = await import('/js/lib/figureExport.js');
+    const res = await mod.exportFigure(svg, { formats: ['png'], scheme: 'light', background: 'white', dpi: 300, widthMm: 89 });
+    const blob = new Blob([res.png], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = url; });
+    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+    const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, img.width, img.height).data;
+    let nonWhite = 0;
+    for (let i = 0; i < data.length; i += 4 * 97) { if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++; }
+    URL.revokeObjectURL(url);
+    return { widthPx: img.width, expectedWidthPx: Math.round(89 / 25.4 * 300), nonWhiteSamples: nonWhite };
+  })()`);
+  check('el PNG exportado con Nature (89mm) mide 1051px de ancho a 300dpi (89/25.4*300, redondeado)',
+    pngExport.widthPx === pngExport.expectedWidthPx, JSON.stringify(pngExport));
+  check('...y no sale en blanco (hay contenido dibujado)', pngExport.nonWhiteSamples > 5, JSON.stringify(pngExport));
+
   console.log('\n-- preset de revista "Cell (114 mm)" en #/venn (2º tipo de gráfico distinto) --');
   await c.ev(`location.hash = '#/venn'`);
   await sleep(1500);
