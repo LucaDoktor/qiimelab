@@ -40,6 +40,7 @@ const SUITE = [
   { name: 'inference-lollipop-editor', file: 'inference-lollipop-editor.mjs', kind: 'navegador' },
   { name: 'chartpresets', file: 'chartpresets.mjs', kind: 'navegador' },
   { name: 'temporal', file: 'temporal.mjs', kind: 'navegador' },
+  { name: 'ui-fixes-editor-alluvial', file: 'ui-fixes-editor-alluvial.mjs', kind: 'navegador' },
   { name: 'primerdesign', file: 'primerdesign.mjs', kind: 'estático' },
   { name: 'phyloalign', file: 'phyloalign.mjs', kind: 'estático' },
   { name: 'phylonni', file: 'phylonni.mjs', kind: 'estático' },

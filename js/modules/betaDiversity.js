@@ -848,7 +848,13 @@ export function render(container) {
     defs.appendChild(legGrad);
 
     const legG = svgEl('g', { 'data-ce': 'legend' });
-    const barW = Math.min(160, gridSize * 0.6);
+    // mínimo 215px: por debajo de eso las 2 etiquetas ("0.000 · similar" /
+    // "1.000 · distinta", ~100-106px cada una) se solapan en el centro de
+    // la barra — el cap de 160px de antes garantizaba justo esa colisión
+    // con datasets pequeños/medianos (gridSize*0.6 < 215 es el caso común).
+    // W ya reserva sitio de sobra para esto (floor de 420px, ver más abajo
+    // en el cálculo de W de esta misma vista).
+    const barW = Math.max(215, Math.min(240, gridSize * 0.6));
     legG.appendChild(svgEl('rect', { x: 0, y: 0, width: barW, height: 11, rx: 2, fill: 'url(#' + legendGradId + ')', stroke: 'var(--baseline)' }));
     const l0 = svgEl('text', { x: 0, y: 26, class: 'ql-tick-label' }); l0.textContent = csDomain[0].toFixed(3) + ' · ' + t('beta.legendSimilar');
     const l1 = svgEl('text', { x: barW, y: 26, class: 'ql-tick-label', 'text-anchor': 'end' }); l1.textContent = csDomain[1].toFixed(3) + ' · ' + t('beta.legendDistinct');
