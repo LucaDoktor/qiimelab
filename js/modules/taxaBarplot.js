@@ -1101,7 +1101,7 @@ export function render(container) {
           const r = Math.max(2, maxR * Math.sqrt(val / maxVal));
           const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           const circle = svgEl('circle', {
-            cx, cy, r, fill: fillCol, 'fill-opacity': 0.78, stroke: 'var(--surface)', 'stroke-width': 1,
+            cx, cy, r, fill: fillCol, 'fill-opacity': 0.78, stroke: 'var(--surface)', 'stroke-width': 1, 'data-ce-role': 'marker',
             'data-sample': sampleId,
             'data-tax': s.label,
             'data-val': val,
@@ -1129,6 +1129,12 @@ export function render(container) {
       const xTitle = svgEl('text', { x: marginL + innerW / 2, y: xLabelBase, class: 'ql-axis-label ql-chart-x-title', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
       xTitle.textContent = groupCol ? t('barplots.axisSamplesBy', { col: groupCol }) : t('barplots.axisSamples');
       svg.appendChild(xTitle);
+      const yTitleB = svgEl('text', {
+        x: 14, y: marginT + innerH / 2, class: 'ql-axis-label ql-chart-y-title', 'text-anchor': 'middle',
+        transform: 'rotate(-90 14 ' + (marginT + innerH / 2) + ')', 'data-ce': 'ytitle',
+      });
+      yTitleB.textContent = t('barplots.axisTaxa');
+      svg.appendChild(yTitleB);
 
       // leyenda de tamaños: 3 círculos de referencia (estática, no editable).
       // Va pegada al margen izquierdo (no al derecho): con muchas muestras el
@@ -1195,7 +1201,7 @@ export function render(container) {
           const h = Math.max(0, yBot - yTop - gap);
           const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           const rect = svgEl('rect', {
-            x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0),
+            x: cx - barW / 2, y: yTop, width: barW, height: Math.max(h, 0), 'data-ce-role': 'bar',
             fill: fillCol,
             'data-sample': sampleId,
             'data-tax': s.label,
@@ -1280,7 +1286,7 @@ export function render(container) {
           const w = Math.max(0, xR - xL - gap);
           const fillCol = (s.key === '__other__') ? OTHER_COLOR : (seriesColorOverrides[s.key] || (s.colorVar ? 'var(' + s.colorVar + ')' : '#2a78d6'));
           const rect = svgEl('rect', {
-            x: xL, y: cy - barH / 2, width: Math.max(w, 0), height: barH,
+            x: xL, y: cy - barH / 2, width: Math.max(w, 0), height: barH, 'data-ce-role': 'barh',
             fill: fillCol,
             'data-sample': sampleId,
             'data-tax': s.label,
@@ -1554,7 +1560,7 @@ export function render(container) {
       const clickable = a.node.children && a.node.children.length > 0;
       const seg = svgEl('path', {
         d: arcPath(cx, cy, r0, r1, a.a0, a.a1),
-        fill, stroke: 'var(--surface)', 'stroke-width': 1,
+        fill, stroke: 'var(--surface)', 'stroke-width': 1, 'data-ce-role': 'line',
         'data-tt': i, 'data-sb-idx': i,
       });
       if (clickable) seg.style.cursor = 'pointer';
@@ -2383,6 +2389,12 @@ export function render(container) {
     const axT = svgEl('text', { x: marginL + innerW / 2, y: axisY, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
     axT.textContent = bmScore === 'lda' ? t('barplots.bmAxisLda') : bmScore === 'ancom' ? t('barplots.bmAxisAncom') : bmScore === 'rf' ? t('barplots.bmAxisRf') : t('barplots.bmAxisDelta');
     svg.appendChild(axT);
+    const yTb = svgEl('text', {
+      x: 14, y: marginT + (barsBottom - marginT) / 2, class: 'ql-axis-label', 'text-anchor': 'middle',
+      transform: 'rotate(-90 14 ' + (marginT + (barsBottom - marginT) / 2) + ')', 'data-ce': 'ytitle',
+    });
+    yTb.textContent = t('barplots.axisTaxa');
+    svg.appendChild(yTb);
 
     const barsG = svgEl('g', { 'data-ce': 'bars' });
     const labelsG = svgEl('g', { 'data-ce': 'labels' });
@@ -2392,7 +2404,7 @@ export function render(container) {
       const sv = scoreOf(s);
       const w = Math.max(1.5, x(sv) - marginL);
       const rect = svgEl('rect', {
-        x: marginL, y: y + 3, width: w, height: bh, rx: 2,
+        x: marginL, y: y + 3, width: w, height: bh, rx: 2, 'data-ce-role': 'barh',
         fill: groupColor(s.enrichedIdx), 'fill-opacity': 0.85,
         'data-ce-series-fill': 's' + s.enrichedIdx,
       });
@@ -2438,6 +2450,7 @@ export function render(container) {
       elements: [
         { id: 'title', create: { text: t('barplots.bmTitle'), x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'labels', selector: '[data-ce="labels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],

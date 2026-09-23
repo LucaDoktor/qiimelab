@@ -206,7 +206,7 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
         const isLeaf = !ch.node.children.length;
         const catIdx = isLeaf ? catIdxOf(ch.node.label) : -1;
         const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
-        const lineAttrs = { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
+        const lineAttrs = { x1: px, y1: cy, x2: xOf(ch.node.id), y2: cy, class: 'ql-baseline-line', 'data-ce-role': 'line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           lineAttrs.stroke = leafColor;
           lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
@@ -229,7 +229,7 @@ function drawCladogramRect(svg, tree, { colorForLeaf = () => null, matchedCatego
       }
 
       const dotAttrs = {
-        cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot',
+        cx: px, cy: py, r: 2.6, class: 'ql-phylo-leafdot', 'data-ce-role': 'marker',
         'data-ce-series-fill': catIdx >= 0 ? 's' + catIdx : 'branch',
         'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch',
       };
@@ -377,7 +377,7 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
       if (sweep > 1e-9) {
         linesG.appendChild(svgEl('path', {
           d: 'M ' + p0.x + ' ' + p0.y + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + p1.x + ' ' + p1.y,
-          fill: 'none', class: 'ql-baseline-line', 'data-ce-series-stroke': 'branch',
+          fill: 'none', class: 'ql-baseline-line', 'data-ce-role': 'line', 'data-ce-series-stroke': 'branch',
         }));
       }
       node.children.forEach((ch) => {
@@ -386,7 +386,7 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
         const isLeaf = !ch.node.children.length;
         const catIdx = isLeaf ? catIdxOf(ch.node.label) : -1;
         const leafColor = catIdx >= 0 ? categoryColorMap.get(matchedCategories[catIdx]) : null;
-        const lineAttrs = { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
+        const lineAttrs = { x1: pIn.x, y1: pIn.y, x2: pOut.x, y2: pOut.y, class: 'ql-baseline-line', 'data-ce-role': 'line', 'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch' };
         if (leafColor) {
           lineAttrs.stroke = leafColor;
           lineAttrs.style = 'stroke:' + leafColor + ';stroke-width:1.6;';
@@ -410,7 +410,7 @@ function drawCladogramCircular(svg, tree, { colorForLeaf = () => null, matchedCa
       }
 
       const dotAttrs = {
-        cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot',
+        cx: pLeaf.x, cy: pLeaf.y, r: 2.6, class: 'ql-phylo-leafdot', 'data-ce-role': 'marker',
         'data-ce-series-fill': catIdx >= 0 ? 's' + catIdx : 'branch',
         'data-ce-series-stroke': catIdx >= 0 ? 's' + catIdx : 'branch',
       };

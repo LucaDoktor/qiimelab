@@ -238,16 +238,16 @@ function drawPerPosQuality(parent, r, key) {
       svg.appendChild(svgEl('rect', {
         x: x - step * 0.32, y: yOf(r.perPos.p75[i]), width: step * 0.64,
         height: Math.max(1, yOf(r.perPos.p25[i]) - yOf(r.perPos.p75[i])),
-        fill: 'var(' + bandCol + ')', opacity: 0.35, stroke: 'var(' + bandCol + ')', 'stroke-width': 0.8,
+        fill: 'var(' + bandCol + ')', opacity: 0.35, stroke: 'var(' + bandCol + ')', 'stroke-width': 0.8, 'data-ce-role': 'bar',
       }));
       svg.appendChild(svgEl('line', { x1: x - step * 0.32, x2: x + step * 0.32, y1: yOf(med), y2: yOf(med), stroke: 'var(--ink)', 'stroke-width': 1.2 }));
     } else {
       svg.appendChild(svgEl('line', { x1: x, x2: x, y1: yOf(r.perPos.p75[i]), y2: yOf(r.perPos.p25[i]), stroke: 'var(' + bandCol + ')', 'stroke-width': Math.max(1, step * 0.7), opacity: 0.55 }));
-      svg.appendChild(svgEl('circle', { cx: x, cy: yOf(med), r: Math.max(0.7, step * 0.28), fill: 'var(--ink)' }));
+      svg.appendChild(svgEl('circle', { cx: x, cy: yOf(med), r: Math.max(0.7, step * 0.28), fill: 'var(--ink)', 'data-ce-role': 'marker' }));
     }
     meanPts.push((mL + i * step + step / 2) + ',' + yOf(r.perPos.mean[i]));
   }
-  svg.appendChild(svgEl('polyline', { points: meanPts.join(' '), fill: 'none', stroke: 'var(--cat-2)', 'stroke-width': 1.6, opacity: 0.9 }));
+  svg.appendChild(svgEl('polyline', { points: meanPts.join(' '), fill: 'none', stroke: 'var(--cat-2)', 'stroke-width': 1.6, opacity: 0.9, 'data-ce-role': 'line' }));
 
   const every = Math.ceil(n / 14);
   for (let i = 0; i < n; i += every) {
@@ -285,7 +285,7 @@ function drawLines(parent, { n, xValues, series, yMax, yLabel, xLabel, pct }, ke
   series.forEach((s, i) => {
     const pts = s.values.map((v, j) => (mL + j * step + step / 2) + ',' + yOf(v)).join(' ');
     svg.appendChild(svgEl('polyline', {
-      points: pts, fill: 'none', stroke: 'var(' + s.colorVar + ')', 'stroke-width': 1.7, opacity: 0.95,
+      points: pts, fill: 'none', stroke: 'var(' + s.colorVar + ')', 'stroke-width': 1.7, opacity: 0.95, 'data-ce-role': 'line',
       'data-ce-series-stroke': 's' + i,
     }));
   });
@@ -336,7 +336,7 @@ function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }, k
     const x = mL + i * bw;
     svg.appendChild(svgEl('rect', {
       x: x + bw * 0.15, y: yOf(b.value), width: bw * 0.7, height: Math.max(0, yOf(0) - yOf(b.value)),
-      fill: 'var(' + (b.colorVar || colorVar || '--cat-1') + ')', rx: 2, 'data-ce-series-fill': 's0',
+      fill: 'var(' + (b.colorVar || colorVar || '--cat-1') + ')', rx: 2, 'data-ce-series-fill': 's0', 'data-ce-role': 'bar',
     }));
     const tk = svgEl('text', { x: x + bw / 2, y: H - (rotate ? 40 : 12), class: 'ql-tick-label', 'text-anchor': rotate ? 'end' : 'middle' });
     tk.textContent = b.label;
@@ -345,7 +345,7 @@ function drawBars(parent, { bars, yLabel, xLabel, colorVar, overlay, rotate }, k
   });
   if (overlay) {
     const pts = overlay.map((o, i) => (mL + i * bw + bw / 2) + ',' + yOf(o.value)).join(' ');
-    svg.appendChild(svgEl('polyline', { points: pts, fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3' }));
+    svg.appendChild(svgEl('polyline', { points: pts, fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', 'data-ce-role': 'line' }));
   }
   let hasXtitle = false;
   if (xLabel) {

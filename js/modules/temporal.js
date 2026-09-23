@@ -22,7 +22,7 @@ import { collectAlphaMetrics } from '../lib/alphaMetrics.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { makeGroupResolver, matchSampleId } from '../lib/sampleMatch.js';
 import { CAT_VARS, groupColor } from '../lib/groupBoxplot.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getFigureOptions } from '../lib/chartEditor.js';
 import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
@@ -351,7 +351,7 @@ export function render(container) {
       }));
     }
 
-    drawChart(svg, chartWrap, tooltip, series, { xCol, yLabel, viewMode, subjectCol, groups, groupCol });
+    const auto = drawChart(svg, chartWrap, tooltip, series, { xCol, yLabel, viewMode, subjectCol, groups, groupCol });
 
     const paletteSeries = groups.map((g, i) => ({ id: 's' + i, label: g == null ? t('temporal.allSamples') : String(g) }));
     editor = attachChartEditor({
@@ -363,6 +363,9 @@ export function render(container) {
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
       paletteSeries, paletteType: 'categorical',
+      // rangos de ejes (Ajustes > Estructura): dominios AUTOMÁTICOS como valor por defecto
+      figureOptions: { axis: { domain: auto.y }, axisX: { domain: auto.x } },
+      onFigureOptionsChange: () => paint(),
       onReset: () => paint(),
       startEditing: wasEditing,
     });
@@ -378,7 +381,10 @@ export function render(container) {
     const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const yMinRaw = Math.min(...yErrLo), yMaxRaw = Math.max(...yErrHi);
     const xPad = (xMax - xMin) * 0.06 || 1, yPad = (yMaxRaw - yMinRaw) * 0.12 || 1;
-    const xLo = xMin - xPad, xHi = xMax + xPad, yLo = yMinRaw - yPad, yHi = yMaxRaw + yPad;
+    const autoX = [xMin - xPad, xMax + xPad], autoY = [yMinRaw - yPad, yMaxRaw + yPad];
+    const so = getFigureOptions('temporal-' + o.viewMode);
+    const xLo = so.axisXMin != null ? so.axisXMin : autoX[0], xHi = so.axisXMax != null ? so.axisXMax : autoX[1];
+    const yLo = so.axisMin != null ? so.axisMin : autoY[0], yHi = so.axisMax != null ? so.axisMax : autoY[1];
 
     const mL = 64, mR = 20, mT = 30, mB = 70;
     const W = 760, innerH = 380;
@@ -406,19 +412,29 @@ export function render(container) {
     svg.appendChild(svgEl('line', { x1: mL, x2: mL, y1: mT, y2: mT + innerH, class: 'ql-baseline-line' }));
     svg.appendChild(svgEl('line', { x1: mL, x2: W - mR, y1: mT + innerH, y2: mT + innerH, class: 'ql-baseline-line' }));
 
+    // los datos se recortan al área de trazado: con un rango de eje manual más
+    // estrecho que los datos, nada se dibuja por encima de ejes ni márgenes
+    const clipId = 'ql-clip-temporal';
+    const defs = svgEl('defs', {});
+    defs.appendChild(svgEl('clipPath', { id: clipId }));
+    defs.firstChild.appendChild(svgEl('rect', { x: mL, y: mT, width: W - mL - mR, height: innerH }));
+    svg.appendChild(defs);
+    const layer = svgEl('g', { 'clip-path': 'url(#' + clipId + ')' });
+    svg.appendChild(layer);
+
     series.forEach((s, si) => {
       const colorVar = CAT_VARS[si % CAT_VARS.length];
       if (s.points.length >= 2 && !s.noLine) {
         const d = s.points.map((p) => sx(p.x) + ',' + sy(p.y)).join(' ');
-        svg.appendChild(svgEl('polyline', { points: d, fill: 'none', stroke: 'var(' + colorVar + ')', 'stroke-width': 2, 'data-ce-series-stroke': s.id, opacity: s.isSpaghetti ? 0.55 : 1 }));
+        layer.appendChild(svgEl('polyline', { points: d, fill: 'none', stroke: 'var(' + colorVar + ')', 'stroke-width': 2, 'data-ce-series-stroke': s.id, 'data-ce-role': 'line', opacity: s.isSpaghetti ? 0.55 : 1 }));
       }
       s.points.forEach((p, pi) => {
         if (o.viewMode === 'mean' && p[errBar] > 0) {
           const y1 = sy(p.y - p[errBar]), y2 = sy(p.y + p[errBar]);
-          svg.appendChild(svgEl('line', { x1: sx(p.x), x2: sx(p.x), y1, y2, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.4, opacity: 0.85 }));
+          layer.appendChild(svgEl('line', { x1: sx(p.x), x2: sx(p.x), y1, y2, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.4, 'data-ce-role': 'line', opacity: 0.85 }));
         }
         const c = svgEl('circle', {
-          cx: sx(p.x), cy: sy(p.y), r: s.isSpaghetti ? 3 : 4, fill: 'var(' + colorVar + ')', stroke: 'var(--surface)', 'stroke-width': 1,
+          cx: sx(p.x), cy: sy(p.y), r: s.isSpaghetti ? 3 : 4, fill: 'var(' + colorVar + ')', stroke: 'var(--surface)', 'stroke-width': 1, 'data-ce-role': 'marker',
           'data-ce-series-fill': s.id, 'data-si': si, 'data-pi': pi,
         });
         c.addEventListener('mouseenter', () => {
@@ -428,7 +444,7 @@ export function render(container) {
           showTooltip(chartWrap, sx(p.x), sy(p.y), '', lines.join('<br>'), { svg, W, H, tooltip, rawHtml: true });
         });
         c.addEventListener('mouseleave', () => hideTooltip(tooltip));
-        svg.appendChild(c);
+        layer.appendChild(c);
       });
     });
 
@@ -461,6 +477,7 @@ export function render(container) {
       legG.setAttribute('transform', 'translate(' + mL + ',' + (mT + innerH + 60) + ')');
       svg.appendChild(legG);
     }
+    return { x: autoX, y: autoY };
   }
 
   paint();

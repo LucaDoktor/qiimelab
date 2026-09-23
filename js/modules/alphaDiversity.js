@@ -8,8 +8,8 @@ import {
   collectAlphaMetrics, groupRichnessEstimators, RICHNESS_ESTIMATORS, countVectors,
 } from '../lib/alphaMetrics.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
-import { svgEl, escapeHtml } from '../lib/dom.js';
+import { attachChartEditor, getFigureOptions } from '../lib/chartEditor.js';
+import { svgEl, escapeHtml, plotClip } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 
@@ -489,26 +489,31 @@ export function render(container) {
     const mL = 58, mR = 22, mT = 42, mB = 92;
     const innerW = W - mL - mR, innerH = H - mT - mB;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    const sx = (v) => mL + (v / (maxN || 1)) * innerW;
-    const sy = (v) => mT + innerH - (v / (maxS || 1)) * innerH;
+    // rangos de eje manuales (Ajustes > Estructura); por defecto 0..máximo de los datos
+    const so = getFigureOptions('alphaRarefaction');
+    const xLo = so.axisXMin != null ? so.axisXMin : 0, xHi = so.axisXMax != null ? so.axisXMax : (maxN || 1);
+    const yLo = so.axisMin != null ? so.axisMin : 0, yHi = so.axisMax != null ? so.axisMax : (maxS || 1);
+    const sx = (v) => mL + ((v - xLo) / ((xHi - xLo) || 1)) * innerW;
+    const sy = (v) => mT + innerH - ((v - yLo) / ((yHi - yLo) || 1)) * innerH;
 
     // reconstruye SOLO el contenido del <svg> — se puede llamar de nuevo al
     // mover el slider de profundidad sin recrear chartWrap/tooltip/controles
     function drawChart() {
       svg.replaceChildren();
+      const clip = plotClip(svg, 'ql-clip-rare', mL, mT, innerW, innerH);
       const g = svgEl('g', {});
       svg.appendChild(g);
 
       // gridlines + ticks
       for (let i = 0; i <= 4; i++) {
-        const yv = (i / 4) * maxS, y = sy(yv);
+        const yv = yLo + (i / 4) * (yHi - yLo), y = sy(yv);
         g.appendChild(svgEl('line', { x1: mL, x2: mL + innerW, y1: y, y2: y, class: 'ql-gridline' }));
         const tk = svgEl('text', { x: mL - 8, y: y + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
-        tk.textContent = Math.round(yv);
+        tk.textContent = (yHi - yLo) < 10 ? yv.toFixed(1) : String(Math.round(yv));
         g.appendChild(tk);
       }
       for (let i = 0; i <= 4; i++) {
-        const xv = (i / 4) * maxN, x = sx(xv);
+        const xv = xLo + (i / 4) * (xHi - xLo), x = sx(xv);
         g.appendChild(svgEl('line', { x1: x, x2: x, y1: mT, y2: mT + innerH, class: 'ql-gridline' }));
         const tk = svgEl('text', { x, y: mT + innerH + 18, class: 'ql-tick-label', 'text-anchor': 'middle' });
         tk.textContent = xv >= 1000 ? (xv / 1000).toFixed(xv >= 10000 ? 0 : 1) + 'k' : String(Math.round(xv));
@@ -553,7 +558,7 @@ export function render(container) {
         const excluded = c.N < rareDepth;
         const pts = c.depths.map((d, i) => sx(d) + ',' + sy(c.richness[i])).join(' ');
         const pl = svgEl('polyline', {
-          points: pts, fill: 'none', stroke: colorFor(c.group),
+          points: pts, fill: 'none', stroke: colorFor(c.group), 'data-ce-role': 'line', 'clip-path': clip,
           'stroke-width': excluded ? 1.1 : 1.6, 'stroke-opacity': excluded ? 0.28 : 0.8, 'stroke-linejoin': 'round',
           ...(c.group ? { 'data-ce-series-stroke': 's' + groupNames.indexOf(c.group) } : {}),
         });
@@ -616,6 +621,8 @@ export function render(container) {
       ],
       paletteSeries: groupNames.map((g, i) => ({ id: 's' + i, label: g })),
       paletteType: 'categorical',
+      figureOptions: { axis: { domain: [0, maxS || 1] }, axisX: { domain: [0, maxN || 1] } },
+      onFigureOptionsChange: () => paint(),
       onReset: () => paint(),
       startEditing: wasEditing,
     });

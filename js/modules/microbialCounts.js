@@ -836,7 +836,7 @@ export function render(container) {
       const yBase = yScale(yMin);
       const rect = svgEl('rect', {
         x: cx - barW / 2, y: yTop, width: barW, height: Math.max(1, yBase - yTop),
-        fill: col, 'fill-opacity': 0.22, stroke: col, 'stroke-width': 1.5, rx: 3,
+        fill: col, 'fill-opacity': 0.22, stroke: col, 'stroke-width': 1.5, rx: 3, 'data-ce-role': 'bar',
         'data-ce-series-fill': 's' + gi, 'data-ce-series-stroke': 's' + gi,
       });
       rect.addEventListener('mouseenter', () => {
@@ -853,9 +853,9 @@ export function render(container) {
       let errTopY = yTop;
       if (g.n >= 2 && e > 0) {
         const yHi = yScale(g.meanLog + e), yLo = yScale(Math.max(yMin, g.meanLog - e));
-        svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yHi, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
-        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yHi, y2: yHi, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
-        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yLo, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5 }));
+        svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yHi, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5, 'data-ce-role': 'line' }));
+        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yHi, y2: yHi, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5, 'data-ce-role': 'line' }));
+        svg.appendChild(svgEl('line', { x1: cx - 7, x2: cx + 7, y1: yLo, y2: yLo, class: 'ql-errorbar-line', stroke: 'var(--ink)', 'stroke-width': 1.5, 'data-ce-role': 'line' }));
         errTopY = yHi;
       }
 

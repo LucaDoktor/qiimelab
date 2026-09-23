@@ -145,7 +145,7 @@ export function drawVenn(host, groups, byMask, onRegion, opts = {}) {
   layout.shapes.forEach((sh) => {
     const col = 'var(' + CAT_VARS[sh.ci % CAT_VARS.length] + ')';
     const common = {
-      fill: col, 'fill-opacity': fillAlpha, stroke: col, 'stroke-opacity': 0.55, 'stroke-width': 1,
+      fill: col, 'fill-opacity': fillAlpha, stroke: col, 'stroke-opacity': 0.55, 'stroke-width': 1, 'data-ce-role': 'line',
       'data-ce-series-fill': 's' + sh.ci, 'data-ce-series-stroke': 's' + sh.ci,
     };
     if (sh.type === 'circle') svg.appendChild(svgEl('circle', { cx: sh.cx, cy: sh.cy, r: sh.r, ...common }));
@@ -221,7 +221,7 @@ export function drawUpset(host, groups, byMask, presence, onRegion, opts = {}) {
     const h = (c.n / maxCombo) * (topH - 24);
     const g = svgEl('g', { class: 'vn-region', 'data-mask': c.mask, style: 'cursor:pointer;' });
     g.appendChild(svgEl('rect', { x, y: 0, width: colW, height: H, fill: 'transparent' }));
-    g.appendChild(svgEl('rect', { x: x + 4, y: topH - h, width: colW - 8, height: Math.max(h, 1), fill: 'var(--ink-2)', rx: 2 }));
+    g.appendChild(svgEl('rect', { x: x + 4, y: topH - h, width: colW - 8, height: Math.max(h, 1), fill: 'var(--ink-2)', rx: 2, 'data-ce-role': 'bar' }));
     const tEl = svgEl('text', { x: x + colW / 2, y: topH - h - 6, 'text-anchor': 'middle', class: 'ql-tick-label' });
     tEl.textContent = c.n;
     g.appendChild(tEl);
@@ -233,7 +233,7 @@ export function drawUpset(host, groups, byMask, presence, onRegion, opts = {}) {
     const y = matrixY0 + gi * rowH;
     const w = (setSizes[gi] / maxSet) * barMaxW;
     const col = 'var(' + CAT_VARS[gi % CAT_VARS.length] + ')';
-    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: col, 'fill-opacity': 0.85, rx: 2, 'data-ce-series-fill': 's' + gi }));
+    svg.appendChild(svgEl('rect', { x: leftW + (barMaxW - w), y: y + 4, width: Math.max(w, 1), height: rowH - 9, fill: col, 'fill-opacity': 0.85, rx: 2, 'data-ce-role': 'barh', 'data-ce-series-fill': 's' + gi }));
     const lbl = svgEl('text', { x: leftW - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'ql-tick-label', fill: col, 'font-weight': 600, 'data-ce': 'set' + gi, 'data-ce-series-fill': 's' + gi });
     lbl.textContent = (g.length > 20 ? g.slice(0, 19) + '…' : g) + ' · ' + setSizes[gi];
     svg.appendChild(lbl);
@@ -245,10 +245,10 @@ export function drawUpset(host, groups, byMask, presence, onRegion, opts = {}) {
     groups.forEach((_, gi) => {
       const cy = matrixY0 + gi * rowH + rowH / 2;
       const on = (c.mask >> gi) & 1;
-      svg.appendChild(svgEl('circle', { cx, cy, r: dotR, fill: on ? 'var(--ink)' : 'var(--gridline)' }));
+      svg.appendChild(svgEl('circle', { cx, cy, r: dotR, fill: on ? 'var(--ink)' : 'var(--gridline)', 'data-ce-role': 'marker' }));
       if (on) rowsIn.push(cy);
     });
-    if (rowsIn.length > 1) svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: Math.min(...rowsIn), y2: Math.max(...rowsIn), stroke: 'var(--ink)', 'stroke-width': 2.5 }));
+    if (rowsIn.length > 1) svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: Math.min(...rowsIn), y2: Math.max(...rowsIn), stroke: 'var(--ink)', 'stroke-width': 2.5, 'data-ce-role': 'line' }));
   });
 
   host.appendChild(svg);

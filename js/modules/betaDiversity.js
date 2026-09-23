@@ -7,10 +7,10 @@ import { rda, cca } from '../lib/constrainedOrdination.js';
 import { glossaryLinkHtml } from '../lib/glossaryLink.js';
 import { taxaRelativeAbundance } from '../lib/taxaAbundance.js';
 import { loadExampleCommunityData, loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor, getColorScaleOptions } from '../lib/chartEditor.js';
+import { attachChartEditor, getColorScaleOptions, getFigureOptions } from '../lib/chartEditor.js';
 import { CATEGORICAL_SCATTER_MAX, paletteColorsOf } from '../lib/palettes.js';
 import { makeColorScale } from '../lib/colorScale.js';
-import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover, plotClip } from '../lib/dom.js';
 import { showTooltip, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 
@@ -470,9 +470,13 @@ export function render(container) {
     const xr = [Math.min(-arrowScale, ...allX), Math.max(arrowScale, ...allX)];
     const yr = [Math.min(-arrowScale, ...allY), Math.max(arrowScale, ...allY)];
     const padX = (xr[1] - xr[0]) * 0.1 || 0.1, padY = (yr[1] - yr[0]) * 0.1 || 0.1;
-    const xMin = xr[0] - padX, xMax = xr[1] + padX, yMin = yr[0] - padY, yMax = yr[1] + padY;
+    const autoX = [xr[0] - padX, xr[1] + padX], autoY = [yr[0] - padY, yr[1] + padY];
+    const so = getFigureOptions('betaConstrained');
+    const xMin = so.axisXMin != null ? so.axisXMin : autoX[0], xMax = so.axisXMax != null ? so.axisXMax : autoX[1];
+    const yMin = so.axisMin != null ? so.axisMin : autoY[0], yMax = so.axisMax != null ? so.axisMax : autoY[1];
     const sx = (v) => m.l + ((v - xMin) / (xMax - xMin)) * innerW;
     const sy = (v) => m.t + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+    const clip = plotClip(svg, 'ql-clip-rda', m.l, m.t, innerW, innerH);
 
     for (let k = 0; k <= 4; k++) {
       const gx = m.l + (k / 4) * innerW, gy = m.t + (k / 4) * innerH;
@@ -484,11 +488,11 @@ export function render(container) {
 
     // especies (opcional), debajo de todo lo demás
     if (rdaShowSpecies) {
-      const spG = svgEl('g', {});
+      const spG = svgEl('g', { 'clip-path': clip });
       svg.appendChild(spG);
       res.speciesScores.forEach((s, i) => {
         const cx = sx(s[ax1]), cy = sy(s[ax2]);
-        spG.appendChild(svgEl('circle', { cx, cy, r: 3, fill: 'var(--ink-muted)', 'fill-opacity': 0.55 }));
+        spG.appendChild(svgEl('circle', { cx, cy, r: 3, fill: 'var(--ink-muted)', 'fill-opacity': 0.55, 'data-ce-role': 'marker' }));
         const lb = svgEl('text', { x: cx + 5, y: cy + 3, class: 'ql-tick-label', fill: 'var(--ink-muted)', 'font-size': 9 });
         lb.textContent = speciesNames[i].length > 14 ? speciesNames[i].slice(0, 13) + '…' : speciesNames[i];
         spG.appendChild(lb);
@@ -496,12 +500,12 @@ export function render(container) {
     }
 
     // flechas de variables explicativas
-    const arrowG = svgEl('g', {});
+    const arrowG = svgEl('g', { 'clip-path': clip });
     svg.appendChild(arrowG);
     res.biplotScores.forEach((b, j) => {
       const ex = b[ax1] * arrowScale, ey = b[ax2] * arrowScale;
       const x1 = sx(0), y1 = sy(0), x2 = sx(ex), y2 = sy(ey);
-      arrowG.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: 'var(--enriched)', 'stroke-width': 1.6, 'marker-end': 'url(#rda-arrowhead)' }));
+      arrowG.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: 'var(--enriched)', 'stroke-width': 1.6, 'marker-end': 'url(#rda-arrowhead)', 'data-ce-role': 'line' }));
       const lb = svgEl('text', { x: x2 + (ex >= 0 ? 4 : -4), y: y2, class: 'ql-tick-label', 'text-anchor': ex >= 0 ? 'start' : 'end', fill: 'var(--enriched)', 'font-weight': 600 });
       lb.textContent = varNames[j];
       arrowG.appendChild(lb);
@@ -511,13 +515,13 @@ export function render(container) {
     svg.insertBefore(defs, svg.firstChild);
 
     // sitios
-    const pts = svgEl('g', {});
+    const pts = svgEl('g', { 'clip-path': clip });
     svg.appendChild(pts);
     validSamples.forEach((sid, i) => {
       const cx = sx(res.siteScores[i][ax1]), cy = sy(res.siteScores[i][ax2]);
       const g = resolveColor ? resolveColor(sid) : null;
       pts.appendChild(svgEl('circle', {
-        cx, cy, r: 5, fill: colorFor(g), 'fill-opacity': 0.82, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-i': i,
+        cx, cy, r: 5, fill: colorFor(g), 'fill-opacity': 0.82, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-i': i, 'data-ce-role': 'marker',
         ...(g != null ? { 'data-ce-series-fill': 's' + colorGroups.indexOf(g) } : {}),
       }));
     });
@@ -566,6 +570,8 @@ export function render(container) {
       ],
       paletteSeries: colorGroups.map((g, i) => ({ id: 's' + i, label: g })),
       paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
+      figureOptions: { axis: { domain: autoY }, axisX: { domain: autoX } },
+      onFigureOptionsChange: () => paint(),
       onReset: () => paint(),
     });
 
@@ -787,7 +793,7 @@ export function render(container) {
         const v = data.matrix[idxOf[rowId]][idxOf[colId]];
         const x = marginL + ci * cellSize, y = marginT + ri * cellSize;
         const rect = svgEl('rect', {
-          x, y, width: cellSize - 1, height: cellSize - 1,
+          x, y, width: cellSize - 1, height: cellSize - 1, 'data-ce-role': 'cell',
           fill: colorScale.scale(v) || 'var(--surface)',
           ...(cellBorder ? { stroke: cellBorder.color, 'stroke-width': cellBorder.width } : {}),
           'data-ri': ri, 'data-ci': ci,
@@ -839,6 +845,13 @@ export function render(container) {
     });
     yTitle.textContent = t('beta.axisSamples');
     svg.appendChild(yTitle);
+
+    // título del eje X (las columnas son las mismas muestras que las filas)
+    const xTitleHm = svgEl('text', {
+      x: marginL + gridSize / 2, y: marginT + gridSize + 14, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle',
+    });
+    xTitleHm.textContent = t('beta.axisSamples');
+    svg.appendChild(xTitleHm);
 
     const legendGradId = 'ql-cscale-betaDiversity';
     const legGrad = svgEl('linearGradient', { id: legendGradId, x1: '0', y1: '0', x2: '1', y2: '0' });
@@ -925,6 +938,7 @@ export function render(container) {
       key: 'betaDiversity', svg, mount: chartPanel, filename: t('beta.title') + '-' + metric, lang: getLang(), startEditing: wasEditing,
       elements: [
         { id: 'title', create: { text: metric, x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
@@ -1129,9 +1143,13 @@ export function render(container) {
     const ys = ord.coords.map((c) => c[pcY]);
     const xr = [Math.min(...xs), Math.max(...xs)], yr = [Math.min(...ys), Math.max(...ys)];
     const padX = (xr[1] - xr[0]) * 0.08 || 0.1, padY = (yr[1] - yr[0]) * 0.08 || 0.1;
-    const xMin = xr[0] - padX, xMax = xr[1] + padX, yMin = yr[0] - padY, yMax = yr[1] + padY;
+    const autoX = [xr[0] - padX, xr[1] + padX], autoY = [yr[0] - padY, yr[1] + padY];
+    const so = getFigureOptions((pcoaPlotStyle === 'bubbles' && sizeVals) ? 'betaPcoaBubbles' : 'betaPcoa');
+    const xMin = so.axisXMin != null ? so.axisXMin : autoX[0], xMax = so.axisXMax != null ? so.axisXMax : autoX[1];
+    const yMin = so.axisMin != null ? so.axisMin : autoY[0], yMax = so.axisMax != null ? so.axisMax : autoY[1];
     const sx = (v) => m.l + ((v - xMin) / (xMax - xMin)) * innerW;
     const sy = (v) => m.t + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+    const clip = plotClip(svg, 'ql-clip-pcoa', m.l, m.t, innerW, innerH);
 
     for (let k = 0; k <= 4; k++) {
       const gx = m.l + (k / 4) * innerW, gy = m.t + (k / 4) * innerH;
@@ -1172,7 +1190,7 @@ export function render(container) {
     // al construir el polígono.
     let ellipsesOmitted = [];
     if (pcoaShowEllipses && groups.length > 0) {
-      const ellG = svgEl('g', { 'data-ce': 'ellipses' });
+      const ellG = svgEl('g', { 'data-ce': 'ellipses', 'clip-path': clip });
       groups.forEach((g, gi) => {
         const idxs = ord.sampleIds.map((sid, i) => (groupOf[sid] === g ? i : -1)).filter((i) => i >= 0);
         const xs = idxs.map((i) => ord.coords[i][pcX]), ys = idxs.map((i) => ord.coords[i][pcY]);
@@ -1187,14 +1205,14 @@ export function render(container) {
       svg.appendChild(ellG);
     }
 
-    const pts = svgEl('g', {});
+    const pts = svgEl('g', { 'clip-path': clip });
     svg.appendChild(pts);
     ord.sampleIds.forEach((sid, i) => {
       const cx = sx(ord.coords[i][pcX]), cy = sy(ord.coords[i][pcY]);
       const g = groupOf[sid];
       const c = svgEl('circle', {
         cx, cy, r: radiusFor(sid), fill: colorForGroup(g), 'fill-opacity': 0.78, stroke: 'var(--surface)', 'stroke-width': 1.4,
-        'data-i': i,
+        'data-i': i, 'data-ce-role': 'marker',
         ...(g != null ? { 'data-ce-series-fill': 's' + groups.indexOf(g) } : {}),
       });
       pts.appendChild(c);
@@ -1261,6 +1279,8 @@ export function render(container) {
       // así que la paleta categórica se limita a CATEGORICAL_SCATTER_MAX tonos.
       paletteSeries: groups.map((g, i) => ({ id: 's' + i, label: g })),
       paletteType: 'categorical', paletteMax: CATEGORICAL_SCATTER_MAX,
+      figureOptions: { axis: { domain: autoY }, axisX: { domain: autoX } },
+      onFigureOptionsChange: () => paint(),
       onReset: () => paint(),
     });
     }
@@ -1327,7 +1347,7 @@ export function render(container) {
           const c = svgEl('circle', {
             cx: p.x, cy: p.y, r: (3.6 + frac * 3.2).toFixed(2),
             fill: colorForGroup(gname), 'fill-opacity': (0.5 + frac * 0.4).toFixed(2),
-            stroke: 'var(--surface)', 'stroke-width': 1.2, 'data-i': p.i,
+            stroke: 'var(--surface)', 'stroke-width': 1.2, 'data-i': p.i, 'data-ce-role': 'marker',
             ...(gname != null ? { 'data-ce-series-fill': 's' + groups.indexOf(gname) } : {}),
           });
           pts.appendChild(c);

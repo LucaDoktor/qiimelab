@@ -1243,7 +1243,7 @@ export function drawChromatogram(svg, read, trimRange) {
       const pts = [];
       for (let ti = 0; ti < traceLen; ti += step) pts.push(xOfTraceIdx(ti).toFixed(1) + ',' + yOf(read.trace[b][ti]).toFixed(1));
       svg.appendChild(svgEl('polyline', {
-        points: pts.join(' '), fill: 'none', stroke: BASE_COLOR[b], 'stroke-width': 1.1,
+        points: pts.join(' '), fill: 'none', stroke: BASE_COLOR[b], 'stroke-width': 1.1, 'data-ce-role': 'line',
         'data-ce-series-stroke': 'base-' + b,
       }));
     });

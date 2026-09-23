@@ -209,27 +209,27 @@ export function drawGroupBoxplot(o) {
     const colorVar = CAT_VARS[gi % CAT_VARS.length];
     const boxW = 44;
 
-    svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(whiskerLo), y2: yScale(q1), class: 'ql-baseline-line' }));
-    svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(q3), y2: yScale(whiskerHi), class: 'ql-baseline-line' }));
-    svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerLo), y2: yScale(whiskerLo), class: 'ql-baseline-line' }));
-    svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerHi), y2: yScale(whiskerHi), class: 'ql-baseline-line' }));
+    svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(whiskerLo), y2: yScale(q1), class: 'ql-baseline-line', 'data-ce-role': 'line' }));
+    svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(q3), y2: yScale(whiskerHi), class: 'ql-baseline-line', 'data-ce-role': 'line' }));
+    svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerLo), y2: yScale(whiskerLo), class: 'ql-baseline-line', 'data-ce-role': 'line' }));
+    svg.appendChild(svgEl('line', { x1: cx - 10, x2: cx + 10, y1: yScale(whiskerHi), y2: yScale(whiskerHi), class: 'ql-baseline-line', 'data-ce-role': 'line' }));
 
     const seriesId = 's' + gi;
     svg.appendChild(svgEl('rect', {
       x: cx - boxW / 2, y: yScale(q3), width: boxW, height: Math.max(1, yScale(q1) - yScale(q3)),
-      fill: 'var(' + colorVar + ')', 'fill-opacity': 0.16, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.5, rx: 3,
+      fill: 'var(' + colorVar + ')', 'fill-opacity': 0.16, stroke: 'var(' + colorVar + ')', 'stroke-width': 1.5, rx: 3, 'data-ce-role': 'bar',
       'data-ce-series-fill': seriesId, 'data-ce-series-stroke': seriesId,
     }));
     svg.appendChild(svgEl('line', {
       x1: cx - boxW / 2, x2: cx + boxW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5,
-      'data-ce-series-stroke': seriesId,
+      'data-ce-series-stroke': seriesId, 'data-ce-role': 'line',
     }));
 
     vals.forEach((v) => {
       const jitter = (rnd() - 0.5) * boxW * 0.7;
       const c = svgEl('circle', {
         cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', stroke: 'var(--surface)', 'stroke-width': 1,
-        'data-ce-series-fill': seriesId, class: 'ql-boxplot-point',
+        'data-ce-series-fill': seriesId, 'data-ce-role': 'marker', class: 'ql-boxplot-point',
       });
       c.addEventListener('mouseenter', () => {
         showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), {
@@ -418,7 +418,7 @@ export function drawGroupViolin(o) {
     svg.appendChild(svgEl('line', { x1: cx, x2: cx, y1: yScale(q1), y2: yScale(q3), class: 'ql-baseline-line', 'stroke-width': 2 }));
     svg.appendChild(svgEl('rect', {
       x: cx - thinW / 2, y: yScale(q3), width: thinW, height: Math.max(1, yScale(q1) - yScale(q3)),
-      fill: 'var(--surface)', stroke: 'var(' + colorVar + ')', 'stroke-width': 1.2,
+      fill: 'var(--surface)', stroke: 'var(' + colorVar + ')', 'stroke-width': 1.2, 'data-ce-role': 'bar',
     }));
     svg.appendChild(svgEl('line', { x1: cx - thinW / 2, x2: cx + thinW / 2, y1: yScale(median), y2: yScale(median), stroke: 'var(' + colorVar + ')', 'stroke-width': 2 }));
 
@@ -427,7 +427,7 @@ export function drawGroupViolin(o) {
       const jitter = (rnd() - 0.5) * Math.min(thinW * 1.8, violinHalfWidth * 0.5);
       const c = svgEl('circle', {
         cx: cx + jitter, cy: yScale(v), r: 2.6, fill: 'var(' + colorVar + ')', stroke: 'var(--surface)', 'stroke-width': 0.8,
-        'data-ce-series-fill': seriesId, class: 'ql-boxplot-point',
+        'data-ce-series-fill': seriesId, 'data-ce-role': 'marker', class: 'ql-boxplot-point',
       });
       c.addEventListener('mouseenter', () => {
         showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), { svg, W, H, tooltip });
@@ -584,14 +584,14 @@ export function drawGroupStripPlot(o) {
     // marca de mediana — un trazo, no una caja: no implica cuartiles
     svg.appendChild(svgEl('line', {
       x1: cx - 18, x2: cx + 18, y1: yScale(median), y2: yScale(median),
-      stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5, 'data-ce-series-stroke': seriesId,
+      stroke: 'var(' + colorVar + ')', 'stroke-width': 2.5, 'data-ce-series-stroke': seriesId, 'data-ce-role': 'line',
     }));
 
     vals.forEach((v) => {
       const jitter = (rnd() - 0.5) * jitterW;
       const c = svgEl('circle', {
         cx: cx + jitter, cy: yScale(v), r: 4, fill: 'var(' + colorVar + ')', opacity: 0.8, stroke: 'var(--surface)', 'stroke-width': 1,
-        'data-ce-series-fill': seriesId,
+        'data-ce-series-fill': seriesId, 'data-ce-role': 'marker',
       });
       c.addEventListener('mouseenter', () => {
         showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), {
