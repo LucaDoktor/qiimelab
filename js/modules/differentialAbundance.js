@@ -7,11 +7,11 @@ import {
 import { ingestFile } from '../lib/ingest.js';
 import { formatP } from '../lib/stats.js';
 import { partitionByMask, drawVenn } from '../lib/setDiagram.js';
-import { attachChartEditor, getColorScaleOptions } from '../lib/chartEditor.js';
+import { attachChartEditor, getColorScaleOptions, getFigureOptions } from '../lib/chartEditor.js';
 import { makeColorScale } from '../lib/colorScale.js';
 import { paletteColorsOf } from '../lib/palettes.js';
 import { annotateKO, keggEntryUrl } from '../lib/koAnnotate.js';
-import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { svgEl, escapeHtml, delegateHover, plotClip } from '../lib/dom.js';
 import { showTooltip as showTooltipCentral, hideTooltip } from '../lib/tooltip.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
 import { drawGroupBoxplot, legendPositionLabel } from '../lib/groupBoxplot.js';
@@ -138,6 +138,7 @@ export function render(container) {
   let cmpSort = { key: 'count', dir: 'desc' };
   let cmpOpenMask = null;      // región del diagrama de solapamiento seleccionada
   let editor = null;
+  let wasEditing = false; // capturado en paint(); lo leen renderChart() y renderCompare() (ver cfg.startEditing en chartEditor.js)
 
   // columnas de log2FoldChange presentes en la tabla (la mapeada + cualquier
   // otra que lo parezca, para el mapa de calor multi-comparación)
@@ -184,7 +185,7 @@ export function render(container) {
     // ver cfg.startEditing en chartEditor.js: sin esto, cada repintado
     // disparado DESDE DENTRO del propio editor (escala de color,
     // "Restablecer"…) cerraría el panel "Personalizar" de golpe.
-    const wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
+    wasEditing = editor && editor.isEditing ? editor.isEditing() : false;
     if (editor) { editor.destroy(); editor = null; }
     container.innerHTML = '';
     const header = document.createElement('header');
@@ -639,23 +640,28 @@ export function render(container) {
       data.forEach((d) => { maxAbsLfc = Math.max(maxAbsLfc, Math.abs(d.lfc)); maxNeglog = Math.max(maxNeglog, d.neglog); });
       const xMax = Math.max(maxAbsLfc * 1.2, thresholds.lfc * 1.6, 1.5);
       const yMax = Math.max(maxNeglog * 1.15, -Math.log10(thresholds.padj) * 1.3, 1);
-      const xScale = (v) => MARGIN.left + ((v + xMax) / (2 * xMax)) * innerW;
-      const yScale = (v) => MARGIN.top + innerH - (v / yMax) * innerH;
+      // rangos manuales (Ajustes > Estructura); por defecto los automáticos
+      const autoVX = [-xMax, xMax], autoVY = [0, yMax];
+      const vso = getFigureOptions('differentialAbundance');
+      const xLo = vso.axisXMin != null ? vso.axisXMin : autoVX[0], xHi = vso.axisXMax != null ? vso.axisXMax : autoVX[1];
+      const yLo = vso.axisMin != null ? vso.axisMin : autoVY[0], yHi = vso.axisMax != null ? vso.axisMax : autoVY[1];
+      const xScale = (v) => MARGIN.left + ((v - xLo) / ((xHi - xLo) || 1)) * innerW;
+      const yScale = (v) => MARGIN.top + innerH - ((v - yLo) / ((yHi - yLo) || 1)) * innerH;
 
       const g = svgEl('g', {});
       svg.appendChild(g);
 
-      const xStep = niceStep(2 * xMax, 6);
-      const xStart = Math.ceil(-xMax / xStep) * xStep;
-      for (let xv = xStart; xv <= xMax; xv += xStep) {
+      const xStep = niceStep(xHi - xLo, 6);
+      const xStart = Math.ceil(xLo / xStep) * xStep;
+      for (let xv = xStart; xv <= xHi + 1e-9; xv += xStep) {
         const xPix = xScale(xv);
         g.appendChild(svgEl('line', { x1: xPix, x2: xPix, y1: MARGIN.top, y2: MARGIN.top + innerH, class: 'ql-gridline' }));
         const tk = svgEl('text', { x: xPix, y: MARGIN.top + innerH + 18, class: 'ql-tick-label', 'text-anchor': 'middle' });
         tk.textContent = (Math.round(xv * 100) / 100).toString();
         g.appendChild(tk);
       }
-      const yStep = niceStep(yMax, 5);
-      for (let yv = 0; yv <= yMax; yv += yStep) {
+      const yStep = niceStep(yHi - yLo, 5);
+      for (let yv = Math.ceil(yLo / yStep) * yStep; yv <= yHi + 1e-9; yv += yStep) {
         const yPix = yScale(yv);
         g.appendChild(svgEl('line', { x1: MARGIN.left, x2: MARGIN.left + innerW, y1: yPix, y2: yPix, class: 'ql-gridline' }));
         const tk = svgEl('text', { x: MARGIN.left - 10, y: yPix + 3, class: 'ql-tick-label', 'text-anchor': 'end' });
@@ -665,14 +671,14 @@ export function render(container) {
       g.appendChild(svgEl('line', { x1: MARGIN.left, x2: MARGIN.left + innerW, y1: MARGIN.top + innerH, y2: MARGIN.top + innerH, class: 'ql-baseline-line' }));
       g.appendChild(svgEl('line', { x1: MARGIN.left, x2: MARGIN.left, y1: MARGIN.top, y2: MARGIN.top + innerH, class: 'ql-baseline-line' }));
 
-      if (thresholds.lfc > 0 && thresholds.lfc < xMax) {
-        [thresholds.lfc, -thresholds.lfc].forEach((v) => {
+      if (thresholds.lfc > 0) {
+        [thresholds.lfc, -thresholds.lfc].filter((v) => v > xLo && v < xHi).forEach((v) => {
           const xp = xScale(v);
           g.appendChild(svgEl('line', { x1: xp, x2: xp, y1: MARGIN.top, y2: MARGIN.top + innerH, class: 'ql-threshold-line' }));
         });
       }
       const padjY = -Math.log10(thresholds.padj);
-      if (padjY > 0 && padjY < yMax) {
+      if (padjY > yLo && padjY < yHi) {
         const yp = yScale(padjY);
         g.appendChild(svgEl('line', { x1: MARGIN.left, x2: MARGIN.left + innerW, y1: yp, y2: yp, class: 'ql-threshold-line' }));
       }
@@ -687,7 +693,7 @@ export function render(container) {
       drawSvgLegend(g, MARGIN.left + innerW / 2, H - 40);
 
       const hasSearch = searchTerm.length > 0;
-      const pointsLayer = svgEl('g', {});
+      const pointsLayer = svgEl('g', { 'clip-path': plotClip(svg, 'ql-clip-volcano', MARGIN.left, MARGIN.top, innerW, innerH) });
       g.appendChild(pointsLayer);
       const pointNodes = [];
       activeTooltip = (el) => {
@@ -703,7 +709,7 @@ export function render(container) {
           pointsLayer.appendChild(svgEl('circle', { cx, cy, r: 9.5, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 }));
         }
         const c = svgEl('circle', {
-          cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6,
+          cx, cy, r: d.status === 'ns' ? 4 : 4.6, fill: colorFor(d.status), opacity: dim ? 0.2 : (d.status === 'ns' ? 0.55 : 0.92), stroke: 'var(--surface)', 'stroke-width': 1.6, 'data-ce-role': 'marker',
           'data-tt': i, 'data-cx': cx, 'data-cy': cy,
           ...(d.status === 'ns' ? {} : { 'data-ce-series-fill': d.status }),
         });
@@ -740,22 +746,25 @@ export function render(container) {
         ],
         paletteSeries: [{ id: 'up', label: t('differential.legendUp') }, { id: 'down', label: t('differential.legendDown') }],
         paletteType: 'divergentPoles',
+        figureOptions: { axis: { domain: autoVY }, axisX: { domain: autoVX } },
       };
     }
 
     // ===== Lollipop =====
     const LOLLI_W = 780;
-    function lolliCfg() {
+    function lolliCfg(autoX) {
       return {
         key: 'differentialAbundance-lollipop',
         filename: t('differential.title') + '-lollipop',
         elements: [
           { id: 'title', create: { text: t('differential.chartLolli'), x: LOLLI_W / 2, y: 24, anchor: 'middle', cls: 'ce-title' } },
           { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+          { id: 'ytitle', selector: '[data-ce="ytitle"]' },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
         ],
         paletteSeries: [{ id: 'up', label: t('differential.legendUp') }, { id: 'down', label: t('differential.legendDown') }],
         paletteType: 'divergentPoles',
+        ...(autoX ? { figureOptions: { axisX: { domain: autoX } } } : {}),
       };
     }
     function renderLollipop(searchTerm) {
@@ -774,11 +783,15 @@ export function render(container) {
       let maxAbs = 0;
       sig.forEach((d) => { maxAbs = Math.max(maxAbs, Math.abs(d.lfc)); });
       const xMax = Math.max(maxAbs * 1.12, thresholds.lfc * 1.4, 1);
-      const xScale = (v) => mL + ((v + xMax) / (2 * xMax)) * innerW;
+      const autoLX = [-xMax, xMax];
+      const lso = getFigureOptions('differentialAbundance-lollipop');
+      const xLo = lso.axisXMin != null ? lso.axisXMin : autoLX[0], xHi = lso.axisXMax != null ? lso.axisXMax : autoLX[1];
+      const xScale = (v) => mL + ((v - xLo) / ((xHi - xLo) || 1)) * innerW;
+      const lclip = plotClip(svg, 'ql-clip-lolli', mL, mT, innerW, plotH);
 
-      const xStep = niceStep(2 * xMax, 6);
-      const xStart = Math.ceil(-xMax / xStep) * xStep;
-      for (let xv = xStart; xv <= xMax + 1e-9; xv += xStep) {
+      const xStep = niceStep(xHi - xLo, 6);
+      const xStart = Math.ceil(xLo / xStep) * xStep;
+      for (let xv = xStart; xv <= xHi + 1e-9; xv += xStep) {
         const xp = xScale(xv);
         g.appendChild(svgEl('line', { x1: xp, x2: xp, y1: mT, y2: mT + plotH, class: 'ql-gridline' }));
         const tk = svgEl('text', { x: xp, y: mT + plotH + 18, class: 'ql-tick-label', 'text-anchor': 'middle' });
@@ -786,8 +799,8 @@ export function render(container) {
         g.appendChild(tk);
       }
       g.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(0), y1: mT, y2: mT + plotH, class: 'ql-baseline-line' }));
-      if (thresholds.lfc > 0 && thresholds.lfc < xMax) {
-        [thresholds.lfc, -thresholds.lfc].forEach((v) => g.appendChild(svgEl('line', { x1: xScale(v), x2: xScale(v), y1: mT, y2: mT + plotH, class: 'ql-threshold-line' })));
+      if (thresholds.lfc > 0) {
+        [thresholds.lfc, -thresholds.lfc].filter((v) => v > xLo && v < xHi).forEach((v) => g.appendChild(svgEl('line', { x1: xScale(v), x2: xScale(v), y1: mT, y2: mT + plotH, class: 'ql-threshold-line' })));
       }
 
       activeTooltip = (el) => {
@@ -801,9 +814,9 @@ export function render(container) {
         const col = d.status === 'up' ? 'var(--enriched)' : 'var(--depleted)';
         const row = svgEl('g', dim ? { opacity: 0.25 } : {});
         if (matches) row.appendChild(svgEl('rect', { x: mL - 6, y: y - rowH / 2 + 1, width: innerW + 12, height: rowH - 2, fill: 'var(--accent-soft)', rx: 3 }));
-        row.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(d.lfc), y1: y, y2: y, stroke: col, 'stroke-width': 2, 'data-ce-series-stroke': d.status }));
+        row.appendChild(svgEl('line', { x1: xScale(0), x2: xScale(d.lfc), y1: y, y2: y, stroke: col, 'stroke-width': 2, 'data-ce-series-stroke': d.status, 'data-ce-role': 'line', 'clip-path': lclip }));
         const dot = svgEl('circle', {
-          cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-ce-series-fill': d.status,
+          cx: xScale(d.lfc), cy: y, r: 5, fill: col, stroke: 'var(--surface)', 'stroke-width': 1.4, 'data-ce-series-fill': d.status, 'data-ce-role': 'marker', 'clip-path': lclip,
           'data-tt': i, 'data-cx': xScale(d.lfc), 'data-cy': y,
         });
         row.appendChild(dot);
@@ -816,10 +829,13 @@ export function render(container) {
       const xt = svgEl('text', { x: mL + innerW / 2, y: H2 - 30, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
       xt.textContent = 'log2FoldChange';
       g.appendChild(xt);
+      const ytL = svgEl('text', { x: 12, y: mT + plotH / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 12 ' + (mT + plotH / 2) + ')', 'data-ce': 'ytitle' });
+      ytL.textContent = cap(entName);
+      g.appendChild(ytL);
       drawSvgLegend(g, mL + innerW / 2, H2 - 10, ['up', 'down']);
       if (capped) capText(LOLLI_W / 2, 42, totalSig);
 
-      return lolliCfg();
+      return lolliCfg(autoLX);
     }
 
     // ===== Mapa de calor =====
@@ -829,6 +845,8 @@ export function render(container) {
         filename: t('differential.title') + '-heatmap',
         elements: [
           { id: 'title', create: { text: t('differential.chartHeat'), x: HW / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+          { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+          { id: 'ytitle', selector: '[data-ce="ytitle"]' },
           { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
         ],
         colorScale: { type: 'divergent', domain: [-(maxAbs || 1), maxAbs || 1], defaultMidpoint: 0 },
@@ -885,7 +903,7 @@ export function render(container) {
           const v = single ? d.lfc : d.lfcExtra[ci];
           const x = mL + ci * cellW;
           const rect = svgEl('rect', {
-            x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v), opacity: dim ? 0.3 : 1,
+            x, y, width: cellW - 2, height: rowH - 2, rx: 2, fill: lfcFill(v), opacity: dim ? 0.3 : 1, 'data-ce-role': 'cell',
             ...(cellBorder ? { stroke: cellBorder.color, 'stroke-width': cellBorder.width } : {}),
             'data-tt': ri + ':' + ci, 'data-cx': x + cellW / 2, 'data-cy': y + rowH / 2,
           });
@@ -934,6 +952,12 @@ export function render(container) {
       const lnote = svgEl('text', { x: 0, y: 41, class: 'ql-tick-label', fill: 'var(--ink-muted)' });
       lnote.textContent = t('differential.heatLegendNote');
       legG.appendChild(lnote);
+      const xtH = svgEl('text', { x: mL + gridW / 2, y: mT + plotH + 14, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+      xtH.textContent = t('differential.axisComparison');
+      g.appendChild(xtH);
+      const ytH = svgEl('text', { x: 12, y: mT + plotH / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 12 ' + (mT + plotH / 2) + ')', 'data-ce': 'ytitle' });
+      ytH.textContent = cap(entName);
+      g.appendChild(ytH);
       legG.setAttribute('transform', 'translate(' + mL + ',' + (mT + plotH + 22) + ')');
       svg.appendChild(legG);
 
@@ -1289,9 +1313,25 @@ export function render(container) {
       diagWrap.className = 'ql-chartwrap';
       diagCard.appendChild(diagWrap);
       container.appendChild(diagCard);
-      drawVenn(diagWrap, setNames, byMask, (mask) => { cmpOpenMask = (cmpOpenMask === mask ? null : mask); paint(); }, {
+      const cmpSvg = drawVenn(diagWrap, setNames, byMask, (mask) => { cmpOpenMask = (cmpOpenMask === mask ? null : mask); paint(); }, {
         ariaLabel: t('differential.cmpOverlapAria'),
       });
+      // mismo editor que el Venn de #/venn: este diagrama era el único sin
+      // barra Personalizar/Ajustes/pantalla completa/descargas
+      if (cmpSvg) {
+        const vb = cmpSvg.viewBox.baseVal;
+        editor = attachChartEditor({
+          key: 'differentialAbundance-compareVenn', svg: cmpSvg, mount: diagCard, filename: 'diferencial-solapamiento', lang: getLang(),
+          elements: [
+            { id: 'title', create: { text: t('differential.cmpOverlapTitle'), x: vb.x + vb.width / 2, y: vb.y + 16, anchor: 'middle', cls: 'ce-title' } },
+            ...setNames.map((_, gi) => ({ id: 'grp' + gi, selector: '[data-ce="grp' + gi + '"]' })),
+          ],
+          paletteSeries: setNames.map((g, i) => ({ id: 's' + i, label: g })),
+          paletteType: 'categorical',
+          onReset: () => paint(),
+          startEditing: wasEditing,
+        });
+      }
       if (cmpOpenMask != null) {
         const inSets = setNames.filter((_, i) => (cmpOpenMask >> i) & 1);
         const members = (byMask.get(cmpOpenMask) || []).slice().sort();

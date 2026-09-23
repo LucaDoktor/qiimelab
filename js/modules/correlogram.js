@@ -398,7 +398,7 @@ export function render(container) {
     const marginL = Math.min(200, 30 + labelChars * 6.2);
     const marginR = 16;
     const marginT = 44;
-    const marginB = Math.min(180, 30 + labelChars * 6.2 * 0.72) + 54; // etiquetas rotadas + leyenda
+    const marginB = Math.min(180, 30 + labelChars * 6.2 * 0.72) + 54 + 18; // etiquetas rotadas + título X + leyenda
     const gridS = cell * k;
     const W = Math.max(marginL + gridS + marginR, 420);
     const H = marginT + gridS + marginB;
@@ -437,7 +437,7 @@ export function render(container) {
         const isDiag = i === j;
         const x = marginL + j * cell, y = marginT + i * cell;
         const rect = svgEl('rect', {
-          x, y, width: cell - 1.5, height: cell - 1.5, rx: 2,
+          x, y, width: cell - 1.5, height: cell - 1.5, rx: 2, 'data-ce-role': 'cell',
           fill: isDiag ? 'var(--corr-diag)' : (isBubbles ? 'var(--surface)' : (colorScale.scale(res.r) || 'var(--corr-zero)')),
           stroke: (isBubbles && !isDiag) ? 'var(--gridline)' : (cellBorder ? cellBorder.color : undefined),
           'stroke-width': cellBorder ? cellBorder.width : undefined,
@@ -452,7 +452,7 @@ export function render(container) {
             svg.appendChild(svgEl('circle', {
               cx: x + (cell - 1.5) / 2, cy: y + (cell - 1.5) / 2, r,
               fill: res.r >= 0 ? 'var(--corr-pos)' : 'var(--corr-neg)', 'fill-opacity': 0.82,
-              'data-ce-series-fill': res.r >= 0 ? 'pos' : 'neg', 'pointer-events': 'none',
+              'data-ce-series-fill': res.r >= 0 ? 'pos' : 'neg', 'data-ce-role': 'marker', 'pointer-events': 'none',
             }));
           }
         } else if (!isDiag && showValue) {
@@ -509,6 +509,14 @@ export function render(container) {
     svg.appendChild(rowLabels);
     svg.appendChild(colLabels);
 
+    // títulos de eje: filas y columnas son las mismas variables
+    const xTc = svgEl('text', { x: marginL + gridS / 2, y: marginT + gridS + Math.min(180, 30 + labelChars * 6.2 * 0.72) + 10, class: 'ql-axis-label', 'text-anchor': 'middle', 'data-ce': 'xtitle' });
+    xTc.textContent = t('correlogram.axisVariables');
+    svg.appendChild(xTc);
+    const yTc = svgEl('text', { x: 10, y: marginT + gridS / 2, class: 'ql-axis-label', 'text-anchor': 'middle', transform: 'rotate(-90 10 ' + (marginT + gridS / 2) + ')', 'data-ce': 'ytitle' });
+    yTc.textContent = t('correlogram.axisVariables');
+    svg.appendChild(yTc);
+
     // leyenda: barra divergente -1…0…+1 (mapa de calor) o 2 colores de signo
     // + referencia de tamaño |r| (burbujas — el tamaño ya es la magnitud)
     const legG = svgEl('g', { 'data-ce': 'legend' });
@@ -562,6 +570,8 @@ export function render(container) {
       filename: t('correlogram.title') + '-' + method,
       elements: [
         { id: 'title', create: { text: t('correlogram.figTitle', { method: method === 'pearson' ? t('correlogram.pearson') : t('correlogram.spearman') }), x: W / 2, y: 22, anchor: 'middle', cls: 'ce-title' } },
+        { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'rowlabels', selector: '[data-ce="rowlabels"]', kind: 'group' },
         { id: 'collabels', selector: '[data-ce="collabels"]', kind: 'group' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
@@ -668,7 +678,7 @@ export function render(container) {
         x1: a.x, y1: a.y, x2: b.x, y2: b.y,
         stroke: edgeColor(e.r), 'stroke-width': (1 + w * 4.5).toFixed(2),
         'stroke-opacity': baseOpacity, 'stroke-linecap': 'round',
-        'data-ce-series-stroke': e.r >= 0 ? 'pos' : 'neg',
+        'data-ce-series-stroke': e.r >= 0 ? 'pos' : 'neg', 'data-ce-role': 'line',
         'data-ei': idx,
       });
       edgeLayer.appendChild(ln);
@@ -684,7 +694,7 @@ export function render(container) {
       const rad = 5 + Math.min(6, degree[i] * 1.1);
       const c = svgEl('circle', {
         cx: p.x, cy: p.y, r: rad,
-        fill: 'var(--accent-soft)', stroke: 'var(--accent)', 'stroke-width': 1.5,
+        fill: 'var(--accent-soft)', stroke: 'var(--accent)', 'stroke-width': 1.5, 'data-ce-role': 'marker',
         'data-ni': i,
       });
       nodeLayer.appendChild(c);

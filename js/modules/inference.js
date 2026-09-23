@@ -10,20 +10,36 @@ import { groupTaxaByAbundance, OTHER_COLOR } from './taxaBarplot.js';
 import { computeGroupTaxaMatrix, computeAlluvialLayout, buildAlluvialLinkPath } from '../lib/alluvial.js';
 import { makeGroupResolver } from '../lib/sampleMatch.js';
 import { loadRealCommunityData, mountExampleButtons } from '../lib/exampleData.js';
-import { attachChartEditor } from '../lib/chartEditor.js';
+import { attachChartEditor, getFigureOptions } from '../lib/chartEditor.js';
 import { chartTypeField } from '../lib/chartTypeSelector.js';
-import { groupColor } from '../lib/groupBoxplot.js';
-import { svgEl, escapeHtml, delegateHover } from '../lib/dom.js';
+import { groupColor, CAT_VARS } from '../lib/groupBoxplot.js';
+import { svgEl, escapeHtml, delegateHover, plotClip } from '../lib/dom.js';
 
-const CAT_FALLBACKS = [
-  '#2a78d6', '#d97706', '#10b981', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
-  '#f97316', '#6366f1', '#14b8a6', '#e11d48'
-];
-
+// Colores de serie: la paleta categórica de la app (--cat-N, la misma que usan
+// barplots/alfa/beta...) en vez de los hex fijos de antes, para que el editor
+// pueda recolorear cada serie (sección Paleta de Personalizar). Las series
+// comparten hueco cada CAT_VARS.length, igual que en taxaBarplot.js.
 function getSeriesColor(index, isOther = false) {
   if (isOther) return OTHER_COLOR;
-  return CAT_FALLBACKS[index % CAT_FALLBACKS.length];
+  return 'var(' + CAT_VARS[index % CAT_VARS.length] + ')';
+}
+/** Atributo que enlaza un elemento con su hueco de paleta editable. */
+function seriesTag(index, isOther = false) {
+  return isOther ? {} : { 'data-ce-series-fill': 's' + (index % CAT_VARS.length) };
+}
+/** paletteSeries para attachChartEditor: un hueco por color realmente usado
+ *  (`series` en el MISMO orden que los índices con los que se pintó). */
+function paletteSeriesFor(series) {
+  const seen = new Set();
+  const out = [];
+  series.forEach((sObj, i) => {
+    if (!sObj || sObj.isOther) return;
+    const slot = i % CAT_VARS.length;
+    if (seen.has(slot)) return;
+    seen.add(slot);
+    out.push({ id: 's' + slot, label: formatFunctionName(sObj.key, getLang()) });
+  });
+  return out;
 }
 
 /**
@@ -1005,7 +1021,9 @@ export function render(container) {
           x, y,
           width: barWidth,
           height: Math.max(0.5, h),
+          'data-ce-role': 'bar',
           fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(cIdx, sObj.isOther),
+          ...seriesTag(cIdx, sObj.isOther),
           stroke: 'var(--surface)',
           'stroke-width': '0.5',
           'data-sample': sId,
@@ -1058,7 +1076,8 @@ export function render(container) {
         x: 0, y: y - 10,
         width: 12, height: 12,
         rx: 2,
-        fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(i, sObj.isOther)
+        fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(i, sObj.isOther),
+        ...seriesTag(i, sObj.isOther),
       });
       gItem.appendChild(swatch);
 
@@ -1101,6 +1120,8 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: paletteSeriesFor(series),
+      paletteType: 'categorical',
       startEditing: wasEditing,
     });
   }
@@ -1156,7 +1177,10 @@ export function render(container) {
     });
 
     const maxVal = Math.max(1e-9, ...values.map((v) => Math.max(v.overall, ...(v.byGroup ? Object.values(v.byGroup) : [0]))));
-    const xScale = (v) => margin.left + (v / maxVal) * innerW;
+    const lso = getFigureOptions('inference-lollipop');
+    const xLo = lso.axisXMin != null ? lso.axisXMin : 0, xHi = lso.axisXMax != null ? lso.axisXMax : maxVal;
+    const xScale = (v) => margin.left + ((v - xLo) / ((xHi - xLo) || 1)) * innerW;
+    const lclip = plotClip(svg, 'ql-clip-inflolli', margin.left, margin.top, innerW, innerH);
 
     const axesG = svgEl('g');
     axesG.appendChild(svgEl('line', { x1: margin.left, x2: margin.left, y1: margin.top, y2: margin.top + innerH, class: 'ql-baseline-line' }));
@@ -1165,7 +1189,8 @@ export function render(container) {
       // f=0 coincide con la línea base ya dibujada arriba — no duplicar
       if (f > 0) axesG.appendChild(svgEl('line', { x1: x, x2: x, y1: margin.top, y2: margin.top + innerH, class: 'ql-gridline' }));
       const lbl = svgEl('text', { x, y: margin.top + innerH + 16, class: 'ql-tick-label', 'text-anchor': 'middle' });
-      lbl.textContent = (maxVal * f).toFixed(maxVal * f < 1 ? 2 : 1) + '%';
+      const xv = xLo + f * (xHi - xLo);
+      lbl.textContent = xv.toFixed(Math.abs(xv) < 1 ? 2 : 1) + '%';
       axesG.appendChild(lbl);
     });
 
@@ -1184,6 +1209,12 @@ export function render(container) {
     });
     xTitle.textContent = t('inference.lollipopAxis') || 'Abundancia relativa media (%)';
     axesG.appendChild(xTitle);
+    const yTitleL = svgEl('text', {
+      x: 12, y: margin.top + innerH / 2, 'text-anchor': 'middle', transform: 'rotate(-90 12 ' + (margin.top + innerH / 2) + ')',
+      'font-size': '12px', 'font-weight': '600', fill: 'var(--ink-1)', class: 'ql-axis-label ql-chart-y-title', 'data-ce': 'ytitle',
+    });
+    yTitleL.textContent = isPhenotypes ? t('inference.axisTrait') : t('inference.axisFunction');
+    axesG.appendChild(yTitleL);
     svg.appendChild(axesG);
 
     const rowsG = svgEl('g');
@@ -1197,20 +1228,20 @@ export function render(container) {
       if (v.byGroup) {
         const gxs = groupNames.map((g) => xScale(v.byGroup[g]));
         if (groupNames.length > 1) {
-          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick' }));
+          rowsG.appendChild(svgEl('line', { x1: Math.min(...gxs), x2: Math.max(...gxs), y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick', 'data-ce-role': 'line', 'clip-path': lclip }));
         }
         groupNames.forEach((g, gi) => {
           const cx = xScale(v.byGroup[g]);
           rowsG.appendChild(svgEl('circle', {
-            cx, cy, r: 4.5, fill: groupColor(gi), stroke: 'var(--surface)', 'stroke-width': 1,
+            cx, cy, r: 4.5, fill: groupColor(gi), 'data-ce-role': 'marker', 'clip-path': lclip, 'data-ce-series-fill': 'g' + gi, stroke: 'var(--surface)', 'stroke-width': 1,
             'data-fn': v.sObj.key, 'data-group': g, 'data-val': v.byGroup[g].toFixed(2),
           }));
         });
       } else {
         const cx = xScale(v.overall);
-        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick' }));
+        rowsG.appendChild(svgEl('line', { x1: margin.left, x2: cx, y1: cy, y2: cy, class: 'ql-baseline-line', 'data-ce-series-stroke': 'stick', 'data-ce-role': 'line', 'clip-path': lclip }));
         rowsG.appendChild(svgEl('circle', {
-          cx, cy, r: 5, fill: v.sObj.isOther ? OTHER_COLOR : getSeriesColor(i, v.sObj.isOther), stroke: 'var(--surface)', 'stroke-width': 1,
+          cx, cy, r: 5, fill: v.sObj.isOther ? OTHER_COLOR : getSeriesColor(i, v.sObj.isOther), 'data-ce-role': 'marker', 'clip-path': lclip, ...seriesTag(i, v.sObj.isOther), stroke: 'var(--surface)', 'stroke-width': 1,
           'data-fn': v.sObj.key, 'data-val': v.overall.toFixed(2),
         }));
       }
@@ -1234,7 +1265,7 @@ export function render(container) {
       const legendG = svgEl('g', { 'data-ce': 'legend', transform: `translate(${W - margin.right + 20}, ${margin.top})` });
       groupNames.forEach((g, gi) => {
         const y = 14 + gi * 18;
-        legendG.appendChild(svgEl('circle', { cx: 5, cy: y - 4, r: 5, fill: groupColor(gi) }));
+        legendG.appendChild(svgEl('circle', { cx: 5, cy: y - 4, r: 5, fill: groupColor(gi), 'data-ce-series-fill': 'g' + gi }));
         const lt = svgEl('text', { x: 16, y, class: 'ql-tick-label' });
         lt.textContent = g.length > 20 ? g.slice(0, 18) + '…' : g;
         legendG.appendChild(lt);
@@ -1259,9 +1290,15 @@ export function render(container) {
       elements: [
         { id: 'title', selector: '[data-ce="title"]' },
         { id: 'xtitle', selector: '[data-ce="xtitle"]' },
+        { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         ...(groupNames ? [{ id: 'legend', selector: '[data-ce="legend"]', kind: 'group' }] : []),
       ],
-      paletteSeries: [{ id: 'stick', label: t('inference.lollipopStick') || 'Palillo' }],
+      paletteSeries: [
+        ...(groupNames ? groupNames.map((g, gi) => ({ id: 'g' + gi, label: g })) : paletteSeriesFor(values.map((v) => v.sObj))),
+        { id: 'stick', label: t('inference.lollipopStick') || 'Palillo' },
+      ],
+      figureOptions: { axisX: { domain: [0, maxVal] } },
+      onFigureOptionsChange: () => paint(),
       paletteType: 'categorical',
       startEditing: wasEditing,
     });
@@ -1330,6 +1367,7 @@ export function render(container) {
         fill: color,
         'fill-opacity': '0.45',
         stroke: 'none',
+        ...seriesTag(cIdx >= 0 ? cIdx : 0, isOther),
         'data-taxon': lk.taxonKey,
         'data-source': lk.sourceGroup,
         'data-target': lk.targetGroup,
@@ -1369,6 +1407,8 @@ export function render(container) {
         fill: color,
         stroke: 'var(--surface)',
         'stroke-width': '0.5',
+        'data-ce-role': 'bar',
+        ...seriesTag(cIdx >= 0 ? cIdx : 0, isOther),
         'data-taxon': nd.taxonKey,
       });
       nodesG.appendChild(rect);
@@ -1456,6 +1496,7 @@ export function render(container) {
         width: 12, height: 12,
         rx: 2,
         fill: sObj.isOther ? OTHER_COLOR : getSeriesColor(i, sObj.isOther),
+        ...seriesTag(i, sObj.isOther),
       });
       gItem.appendChild(swatch);
 
@@ -1490,6 +1531,8 @@ export function render(container) {
         { id: 'ytitle', selector: '[data-ce="ytitle"]' },
         { id: 'legend', selector: '[data-ce="legend"]', kind: 'group' },
       ],
+      paletteSeries: paletteSeriesFor(series),
+      paletteType: 'categorical',
       startEditing: wasEditing,
     });
   }
