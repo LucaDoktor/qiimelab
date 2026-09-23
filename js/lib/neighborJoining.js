@@ -394,6 +394,15 @@ export function midpointRoot(root) {
   }
   into = Math.max(0, Math.min(edgeLen, into));
 
+  return { root: rebuildRootedAtSplit(edges, nodesById, edgeA, edgeB, into, edgeLen), diameter };
+}
+
+/** Reconstruye el árbol con una nueva raíz insertada a `into` unidades de
+ *  `edgeA` sobre la arista (edgeA,edgeB) — mismo paso final que ya usaba
+ *  `midpointRoot` (partir la arista en dos, DFS desde el nuevo nodo), ahora
+ *  compartido con `rerootAtLeaf` para que ambos acepten CUALQUIER arista, no
+ *  solo la del punto medio global. */
+function rebuildRootedAtSplit(edges, nodesById, edgeA, edgeB, into, edgeLen) {
   const midId = Math.max(...nodesById.keys()) + 1;
   const newEdges = edges.filter((e) => !((e.a === edgeA && e.b === edgeB) || (e.a === edgeB && e.b === edgeA)));
   newEdges.push({ a: edgeA, b: midId, length: into });
@@ -409,7 +418,28 @@ export function midpointRoot(root) {
     }
     return node;
   }
-  return { root: dfs(midId, null), diameter };
+  return dfs(midId, null);
+}
+
+/**
+ * Reenraiza el árbol en el PUNTO MEDIO de la rama terminal que lleva a la
+ * hoja `leafId` (reenraizado por outgroup/cepa de referencia): la hoja
+ * elegida queda dibujada como grupo externo/hermana del resto, convención
+ * habitual. Generaliza `midpointRoot` (que solo reenraizaba en el punto
+ * medio del DIÁMETRO global) para aceptar cualquier hoja como referencia.
+ * @param {object} root
+ * @param {number} leafId  id de una hoja de `root` (no de un nodo interno)
+ * @returns {{ root: object } | null}  null si leafId no es una hoja de este árbol
+ */
+export function rerootAtLeaf(root, leafId) {
+  const { edges, nodesById } = buildEdges(root);
+  if (!leafIdsUnder(root).includes(leafId)) return null;
+  const adj = buildAdjacency(edges);
+  const neighbors = adj.get(leafId) || [];
+  if (neighbors.length !== 1) return null; // una hoja tiene exactamente 1 arista
+  const { to: parentId, length: edgeLen } = neighbors[0];
+  const into = edgeLen / 2;
+  return { root: rebuildRootedAtSplit(edges, nodesById, leafId, parentId, into, edgeLen) };
 }
 
 function escapeNewickLabel(label) {

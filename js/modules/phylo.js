@@ -18,7 +18,7 @@ import { t, getLang } from '../lib/i18n.js';
 import { parseFasta } from '../lib/primerTemplate.js';
 import { needlemanWunsch, buildProgressiveAlignment } from '../lib/phyloAlign.js';
 import { pDistance, buildDistanceMatrix } from '../lib/phyloDistance.js';
-import { neighborJoining, toNewick, collectLeaves, computeDrawDepths, nniRefine, midpointRoot } from '../lib/neighborJoining.js';
+import { neighborJoining, toNewick, collectLeaves, computeDrawDepths, nniRefine, midpointRoot, rerootAtLeaf } from '../lib/neighborJoining.js';
 import { upgma } from '../lib/stats.js';
 import { attachChartEditor } from '../lib/chartEditor.js';
 import { getSlot, subscribe } from '../state.js';
@@ -37,7 +37,7 @@ const PROGRESS_EVERY = 30;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none', colorCol: '' }; }
+function defaultState() { return { fastaText: '', correction: 'p', layout: 'rect', nni: false, rooting: 'none', referenceLeaf: '', colorCol: '' }; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || 'null');
@@ -47,7 +47,8 @@ function load() {
         correction: raw.correction === 'jc' ? 'jc' : 'p',
         layout: raw.layout === 'circular' ? 'circular' : 'rect',
         nni: !!raw.nni,
-        rooting: raw.rooting === 'midpoint' ? 'midpoint' : 'none',
+        rooting: raw.rooting === 'midpoint' ? 'midpoint' : (raw.rooting === 'reference' ? 'reference' : 'none'),
+        referenceLeaf: typeof raw.referenceLeaf === 'string' ? raw.referenceLeaf : '',
         colorCol: typeof raw.colorCol === 'string' ? raw.colorCol : '',
       };
     }
@@ -820,7 +821,7 @@ export function render(container) {
     rootField.innerHTML = '<label>' + t('phylo.rootingLabel') + '</label>';
     const rootSeg = document.createElement('div');
     rootSeg.className = 'ql-segmented';
-    [['none', t('phylo.rootingNone')], ['midpoint', t('phylo.rootingMidpoint')]].forEach(([v, lbl]) => {
+    [['none', t('phylo.rootingNone')], ['midpoint', t('phylo.rootingMidpoint')], ['reference', t('phylo.rootingReference')]].forEach(([v, lbl]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ql-seg-btn' + (s.rooting === v ? ' is-on' : '');
@@ -831,6 +832,32 @@ export function render(container) {
     rootField.appendChild(rootSeg);
     rootField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.rootingHelp') + '</p>');
     ctrl.appendChild(rootField);
+
+    if (s.rooting === 'reference') {
+      const refField = document.createElement('div');
+      refField.className = 'ql-field';
+      refField.innerHTML = '<label for="phylo-reference-leaf">' + t('phylo.referenceLeafLabel') + '</label>';
+      const refSel = document.createElement('select');
+      refSel.id = 'phylo-reference-leaf';
+      refSel.className = 'ql-select';
+      refSel.setAttribute('aria-label', t('phylo.referenceLeafLabel'));
+      const refDefOpt = document.createElement('option');
+      refDefOpt.value = '';
+      refDefOpt.textContent = t('phylo.referenceLeafNone');
+      if (!s.referenceLeaf) refDefOpt.selected = true;
+      refSel.appendChild(refDefOpt);
+      records.forEach((r) => {
+        const o = document.createElement('option');
+        o.value = r.name;
+        o.textContent = r.name;
+        if (r.name === s.referenceLeaf) o.selected = true;
+        refSel.appendChild(o);
+      });
+      refSel.addEventListener('change', () => { s.referenceLeaf = refSel.value; paint(); });
+      refField.appendChild(refSel);
+      refField.insertAdjacentHTML('beforeend', '<p class="ql-field-help">' + t('phylo.referenceLeafHelp') + '</p>');
+      ctrl.appendChild(refField);
+    }
 
     const nniField = document.createElement('div');
     nniField.className = 'ql-field';
@@ -865,6 +892,13 @@ export function render(container) {
       if (s.nni) { const res = nniRefine(tree, matrix, {}); tree = res.root; nniInfo = res; }
       let rootInfo = null;
       if (s.rooting === 'midpoint') { const res = midpointRoot(tree); tree = res.root; rootInfo = res; }
+      else if (s.rooting === 'reference' && s.referenceLeaf) {
+        // reenraiza DIRECTAMENTE sobre el árbol tal cual llega (trifurcación
+        // sin enraizar de NJ, o ya con NNI aplicado) -- nunca pasa antes por
+        // midpointRoot, tal y como pide el prompt para este caso.
+        const targetLeaf = collectLeaves(tree).find((l) => l.label === s.referenceLeaf);
+        if (targetLeaf) { const res = rerootAtLeaf(tree, targetLeaf.id); if (res) tree = res.root; }
+      }
 
       statsBox.insertAdjacentHTML('beforeend',
         '<div class="ql-stat"><div class="ql-stat-label">' + t('phylo.statWidth') + '</div><div class="ql-stat-value" style="font-size:20px;">' + alignedOrdered[0].length + '</div></div>');

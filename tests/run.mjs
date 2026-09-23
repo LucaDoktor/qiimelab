@@ -33,6 +33,7 @@ const SUITE = [
   { name: 'sequenceqc-editor', file: 'sequenceqc-editor.mjs', kind: 'navegador' },
   { name: 'venn-editor', file: 'venn-editor.mjs', kind: 'navegador' },
   { name: 'phylo-editor', file: 'phylo-editor.mjs', kind: 'navegador' },
+  { name: 'phylo-reroot', file: 'phylo-reroot.mjs', kind: 'navegador' },
   { name: 'sanger-editor', file: 'sanger-editor.mjs', kind: 'navegador' },
   { name: 'inference-lollipop-editor', file: 'inference-lollipop-editor.mjs', kind: 'navegador' },
   { name: 'chartpresets', file: 'chartpresets.mjs', kind: 'navegador' },

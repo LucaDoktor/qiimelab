@@ -20,7 +20,7 @@
 //   node tests/phylonni.mjs
 
 import { APP_ROOT } from './lib/env.mjs';
-const { neighborJoining, nniRefine, midpointRoot } = await import(APP_ROOT + '/js/lib/neighborJoining.js');
+const { neighborJoining, nniRefine, midpointRoot, rerootAtLeaf, collectLeaves } = await import(APP_ROOT + '/js/lib/neighborJoining.js');
 
 let failed = false;
 const check = (name, ok, extra = '') => {
@@ -156,6 +156,55 @@ const leaf = (id, label) => ({ id, label, children: [] });
   check('midpoint (n=12, NJ real): raíz con 2 hijos', rooted.children.length === 2);
   check('midpoint (n=12, NJ real): longitud total conservada', Math.abs(totalLength(rooted) - before) < 1e-6,
     'antes=' + before.toFixed(6) + ' después=' + totalLength(rooted).toFixed(6));
+}
+
+// ---- 6. rerootAtLeaf: reenraizado por cepa de referencia (outgroup) ----
+{
+  const [A, B, C] = [leaf(0, 'A'), leaf(1, 'B'), leaf(2, 'C')];
+  // raíz con 3 hijos: A a 6, B a 2, C a 2 -- reenraizar en A debe dejar la
+  // mitad de SU rama (3) como distancia A-nuevaRaíz, y (B,C) como el resto
+  // del árbol colgando del otro lado, sin perder longitud total
+  const root = { id: 3, label: null, children: [{ node: A, length: 6 }, { node: B, length: 2 }, { node: C, length: 2 }] };
+  const before = totalLength(root);
+  const idOfA = collectLeaves(root).find((l) => l.label === 'A').id;
+  const { root: rooted } = rerootAtLeaf(root, idOfA);
+  check('rerootAtLeaf: la nueva raíz tiene exactamente 2 hijos', rooted.children.length === 2);
+  function depthsOfLeaves(node, depth, out) {
+    if (!node.children.length) { out[node.label] = depth; return; }
+    for (const { node: c, length } of node.children) depthsOfLeaves(c, depth + length, out);
+  }
+  const depths = {};
+  depthsOfLeaves(rooted, 0, depths);
+  check('rerootAtLeaf: A queda a mitad de su propia rama (3 de 6) respecto a la nueva raíz',
+    Math.abs(depths.A - 3) < 1e-9, JSON.stringify(depths));
+  check('rerootAtLeaf: A queda como grupo externo (uno de los 2 hijos directos de la raíz es A)',
+    rooted.children.some((ch) => ch.node.label === 'A' && Math.abs(ch.length - 3) < 1e-9), JSON.stringify(rooted.children.map((c) => [c.node.label, c.length])));
+  check('rerootAtLeaf: no se pierde ni se añade longitud total al árbol', Math.abs(totalLength(rooted) - before) < 1e-9,
+    'antes=' + before + ' después=' + totalLength(rooted));
+
+  const idOfNonLeaf = 3; // el id de la raíz original, nunca es una hoja
+  check('rerootAtLeaf: devuelve null si el id no es una hoja del árbol', rerootAtLeaf(root, idOfNonLeaf) === null);
+  check('rerootAtLeaf: devuelve null con un id que no existe en el árbol', rerootAtLeaf(root, 9999) === null);
+}
+
+// ---- 7. rerootAtLeaf sobre un árbol NJ real: sigue sin perder longitud, converge con "sin enraizar -> referencia directa" ----
+{
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const rnd = mulberry32(7);
+  const n = 8;
+  const labels = Array.from({ length: n }, (_, i) => 'R' + i);
+  const D = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const v = 1 + rnd() * 9; D[i][j] = v; D[j][i] = v; }
+  const tree = neighborJoining(D, labels); // "sin enraizar" -- trifurcación directa de NJ
+  const before = totalLength(tree);
+  const idOfR3 = collectLeaves(tree).find((l) => l.label === 'R3').id;
+  // aplicar directamente sobre el árbol SIN ENRAIZAR (sin pasar antes por midpointRoot), como pide el prompt
+  const { root: rooted } = rerootAtLeaf(tree, idOfR3);
+  check('rerootAtLeaf (NJ real, árbol sin enraizar previamente): raíz con 2 hijos', rooted.children.length === 2);
+  check('rerootAtLeaf (NJ real): longitud total conservada', Math.abs(totalLength(rooted) - before) < 1e-6,
+    'antes=' + before.toFixed(6) + ' después=' + totalLength(rooted).toFixed(6));
+  check('rerootAtLeaf (NJ real): la cepa de referencia (R3) es uno de los 2 hijos directos de la nueva raíz',
+    rooted.children.some((ch) => ch.node.label === 'R3'), JSON.stringify(rooted.children.map((c) => c.node.label)));
 }
 
 console.log('\nRESULTADO: ' + (failed ? 'FAIL' : 'PASS'));
