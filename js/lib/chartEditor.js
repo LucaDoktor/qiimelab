@@ -227,6 +227,7 @@ const FIG_STYLE_VARS = [
   // que el resto de este motor; el color/grosor de rejilla/eje ya estaba.
   { id: 'gridVisible', css: '--fig-grid-opacity', kind: 'toggle' },
   { id: 'legendVisible', css: '--fig-legend-opacity', kind: 'toggle' },
+  { id: 'pointsVisible', css: '--fig-points-opacity', kind: 'toggle' },
   { id: 'panelBorderColor', css: '--fig-panel-border-color', kind: 'color', role: '.ql-panel-border', prop: 'stroke' },
   { id: 'panelBorderWidth', css: '--fig-panel-border-width', kind: 'number', role: '.ql-panel-border', prop: 'strokeWidth', min: 0, max: 4, step: 0.5 },
   { id: 'panelBgColor', css: '--fig-panel-bg-color', kind: 'color', role: '.ql-panel-bg', prop: 'fill' },
@@ -258,12 +259,15 @@ const I18N = {
         titlesTitle: 'Títulos de la figura', chartTitle: 'Título del Gráfico', xAxisTitle: 'Título Eje X', yAxisTitle: 'Título Eje Y',
         geometryTitle: 'Geometría',
         figureStyleTitle: 'Estilo de la figura', gridLabel: 'Rejilla', axisLabel: 'Eje', tickLabel: 'Marcas de eje', axisTitleLabel: 'Título de eje',
-        gridVisibleLabel: 'Mostrar rejilla', legendVisibleLabel: 'Mostrar leyenda',
+        gridVisibleLabel: 'Mostrar rejilla', legendVisibleLabel: 'Mostrar leyenda', pointsVisibleLabel: 'Mostrar puntos individuales',
         panelBorderLabel: 'Marco del panel', panelBgLabel: 'Fondo del panel', legendPosition: 'Posición',
         dashLabel: 'Trazo', dashSolid: 'Sólida', dashDotted: 'Punteada', dashDashed: 'Discontinua',
         statsTitle: 'Significación estadística', statsMode: 'Mostrar', statsModeStars: 'Solo asteriscos',
         statsModeExact: 'Solo p exacto', statsModeBoth: 'Asteriscos + p', statsStyle: 'Estilo',
         statsThreshold: 'Umbral de significación', statsMethod: 'Ajuste de p (varias comparaciones)',
+        statsTestLabel: 'Test a usar', statsTestAuto: 'Automático (recomendado)',
+        statsTestStudent: 't-test de Student', statsTestWelch: 't-test de Welch', statsTestMW: 'Mann-Whitney U',
+        statsTestAnovaTukey: 'ANOVA + Tukey HSD', statsTestWelchGH: 'ANOVA de Welch + Games-Howell', statsTestKruskalDunn: 'Kruskal-Wallis + Dunn',
         colorScaleTitle: 'Escala de color', csPalette: 'Paleta', csDomain: 'Dominio (mín–máx)',
         csDomainMin: 'Mínimo del dominio', csDomainMax: 'Máximo del dominio', csResetDomain: 'Restablecer',
         csMidpoint: 'Punto medio', csSteps: 'Nº de pasos (0 = continuo)', csInvert: 'Invertir escala',
@@ -304,12 +308,15 @@ const I18N = {
         titlesTitle: 'Figure titles', chartTitle: 'Chart Title', xAxisTitle: 'X Axis Title', yAxisTitle: 'Y Axis Title',
         geometryTitle: 'Geometry',
         figureStyleTitle: 'Figure style', gridLabel: 'Gridlines', axisLabel: 'Axis', tickLabel: 'Tick labels', axisTitleLabel: 'Axis titles',
-        gridVisibleLabel: 'Show gridlines', legendVisibleLabel: 'Show legend',
+        gridVisibleLabel: 'Show gridlines', legendVisibleLabel: 'Show legend', pointsVisibleLabel: 'Show individual points',
         panelBorderLabel: 'Panel border', panelBgLabel: 'Panel background', legendPosition: 'Position',
         dashLabel: 'Dash', dashSolid: 'Solid', dashDotted: 'Dotted', dashDashed: 'Dashed',
         statsTitle: 'Statistical significance', statsMode: 'Show', statsModeStars: 'Stars only',
         statsModeExact: 'Exact p only', statsModeBoth: 'Stars + p', statsStyle: 'Style',
         statsThreshold: 'Significance threshold', statsMethod: 'p adjustment (multiple comparisons)',
+        statsTestLabel: 'Test to use', statsTestAuto: 'Automatic (recommended)',
+        statsTestStudent: 'Student’s t-test', statsTestWelch: 'Welch’s t-test', statsTestMW: 'Mann-Whitney U',
+        statsTestAnovaTukey: 'ANOVA + Tukey HSD', statsTestWelchGH: 'Welch ANOVA + Games-Howell', statsTestKruskalDunn: 'Kruskal-Wallis + Dunn',
         colorScaleTitle: 'Colour scale', csPalette: 'Palette', csDomain: 'Domain (min–max)',
         csDomainMin: 'Domain minimum', csDomainMax: 'Domain maximum', csResetDomain: 'Reset',
         csMidpoint: 'Midpoint', csSteps: 'Number of steps (0 = continuous)', csInvert: 'Invert scale',
@@ -436,6 +443,7 @@ text.ce-title { font-family:var(--font-display); font-size:15px; font-weight:600
 .ce-stats-row { display:flex; align-items:center; gap:8px; }
 .ce-stats-row label { flex:0 0 auto; min-width:150px; font-size:12px; color:var(--ink-2); }
 .ce-stats-row select { flex:1; min-width:0; }
+.ce-stats-diagnostic { font-size:11.5px; color:var(--ink-2); line-height:1.4; background:var(--page); border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
 .ce-stats-row input[type=number] { width:72px; flex:none; }
 .ce-colorscale { flex:1 1 100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .ce-colorscale h5 { margin:0 0 8px; font-size:11.5px; font-weight:600; color:var(--ink-2); }
@@ -1585,6 +1593,24 @@ export function attachChartEditor(cfg) {
       ], (v) => setStatsValue('method', v))));
     }
 
+    // Auto-selección de test (prompt "quick wins" 22 sep 2026, punto 2):
+    // diagnóstico de normalidad (Shapiro-Wilk)/homogeneidad de varianzas
+    // (Levene) que trae ya calculado el propio módulo (groupBoxplot.js,
+    // vía js/lib/statAutoSelect.js) -- aquí solo se explica en lenguaje
+    // llano y se deja el selector manual para forzar otro test.
+    if (statsControls.diagnostic) {
+      const d = statsControls.diagnostic;
+      const box = document.createElement('div');
+      box.className = 'ce-stats-diagnostic';
+      box.textContent = d.reason;
+      rows.appendChild(box);
+
+      const testOptions2 = [['auto', T.statsTestAuto], ['student', T.statsTestStudent], ['welch', T.statsTestWelch], ['mannwhitney', T.statsTestMW]];
+      const testOptionsK = [['auto', T.statsTestAuto], ['anova-tukey', T.statsTestAnovaTukey], ['welch-anova-gh', T.statsTestWelchGH], ['kruskal-dunn', T.statsTestKruskalDunn]];
+      rows.appendChild(statsRow(T.statsTestLabel, statsSelect(s.testOverride || 'auto', statsControls.hasMultiGroup ? testOptionsK : testOptions2,
+        (v) => setStatsValue('testOverride', v === 'auto' ? '' : v))));
+    }
+
     wrap.appendChild(rows);
     return wrap;
   }
@@ -2017,6 +2043,7 @@ export function attachChartEditor(cfg) {
     rows.appendChild(figStyleSingleRow(T.legendVisibleLabel, 'legendVisible', ov));
     rows.appendChild(figStyleGroupRow(T.panelBorderLabel, ['panelBorderColor', 'panelBorderWidth'], ov));
     rows.appendChild(figStyleSingleRow(T.panelBgLabel, 'panelBgColor', ov));
+    rows.appendChild(figStyleSingleRow(T.pointsVisibleLabel, 'pointsVisible', ov));
 
     wrap.appendChild(rows);
     return wrap;

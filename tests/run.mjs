@@ -80,6 +80,8 @@ const SUITE = [
   { name: 'stats/cca', file: 'stats/cca.mjs', kind: 'R' },
   { name: 'stats/randomforest', file: 'stats/randomforest.mjs', kind: 'R' },
   { name: 'stats/pairwisestats', file: 'stats/pairwisestats.mjs', kind: 'R' },
+  { name: 'stats/statautoselect', file: 'stats/statautoselect.mjs', kind: 'R' },
+  { name: 'statautoselect-editor', file: 'statautoselect-editor.mjs', kind: 'navegador' },
   { name: 'stats/primertm', file: 'stats/primertm.mjs', kind: 'Biopython' },
   { name: 'keyboard-editor', file: 'keyboard-editor.mjs', kind: 'navegador' },
   { name: 'paletteseries', file: 'paletteseries.mjs', kind: 'navegador' },

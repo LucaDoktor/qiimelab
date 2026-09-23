@@ -714,7 +714,7 @@ export function render(container) {
     const yTitle = t('recuentos.yAxis', { unit: s.mapping.alreadyLog ? (summary.valueName || t('recuentos.value')) : ('log₁₀ ' + (summary.valueName || t('recuentos.value'))) });
     const blockTitle = (s.label || t('recuentos.title')) + (level ? ' — ' + level : '');
 
-    const { ceElements, paletteSeries, figureOptions, legendPositions } = drawGroupStripPlot({
+    const { ceElements, paletteSeries, figureOptions, legendPositions, statsControls } = drawGroupStripPlot({
       svg, chartWrap, tooltip, groupNames, groupData,
       title: blockTitle, xTitle: summary.groupColNames.join(' × ') || t('recuentos.group'),
       yTitle, valueLabel: yTitle, valueDecimals: 3,
@@ -726,6 +726,7 @@ export function render(container) {
       filename: t('recuentos.title') + '-' + (s.label || 'serie') + (level ? '-' + level : '') + '-jitter', lang: getLang(),
       elements: ceElements,
       paletteSeries, paletteType: 'categorical',
+      statsControls, onStatsChange: () => paint(),
       figureOptions, onFigureOptionsChange: () => paint(),
       legendPositions: (legendPositions || []).map((p) => ({ ...p, label: legendPositionLabel(p.id, getLang()) })),
       onReset: () => paint(),

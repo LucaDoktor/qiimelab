@@ -122,6 +122,28 @@ try {
   check('"mostrar leyenda" desmarcado pone opacity:0 en el grupo de leyenda',
     toggleTest.legendOpacity === '0', JSON.stringify(toggleTest));
 
+  // ---- puntos individuales del boxplot (prompt "quick wins" 22 sep): toggle
+  // universal --fig-points-opacity, reutiliza el mismo motor que rejilla/leyenda ----
+  const pointsToggleTest = await c.ev(`(() => {
+    const rows = [...document.querySelectorAll('.ce-figstyle-row')];
+    const ptRow = rows.find((r) => /puntos individuales|individual points/i.test(r.querySelector('label').textContent) && r.querySelector('input[type=checkbox]'));
+    if (!ptRow) return { err: 'no se encontró la fila de puntos individuales' };
+    const chk = ptRow.querySelector('input[type=checkbox]');
+    const svg = document.querySelector('svg.ql-svg');
+    const before = { checked: chk.checked, opacity: getComputedStyle(svg.querySelector('.ql-boxplot-point')).opacity };
+    chk.checked = false; chk.dispatchEvent(new Event('change', { bubbles: true }));
+    const after = { opacity: getComputedStyle(svg.querySelector('.ql-boxplot-point')).opacity };
+    chk.checked = true; chk.dispatchEvent(new Event('change', { bubbles: true }));
+    const restored = { opacity: getComputedStyle(svg.querySelector('.ql-boxplot-point')).opacity };
+    return { before, after, restored };
+  })()`);
+  check('"Mostrar puntos individuales" viene marcado por defecto y los puntos arrancan con su opacidad habitual (0.75)',
+    pointsToggleTest.before && pointsToggleTest.before.checked && pointsToggleTest.before.opacity === '0.75', JSON.stringify(pointsToggleTest));
+  check('desmarcarlo pone opacity:0 en los puntos del boxplot (sin repintar, motor --fig-*)',
+    pointsToggleTest.after && pointsToggleTest.after.opacity === '0', JSON.stringify(pointsToggleTest));
+  check('volver a marcarlo restaura la opacidad 0.75 de siempre',
+    pointsToggleTest.restored && pointsToggleTest.restored.opacity === '0.75', JSON.stringify(pointsToggleTest));
+
   // ---- G6: posiciones predefinidas de leyenda ----
   const legendPosTest = await c.ev(`(() => {
     // re-marcar leyenda visible para poder verla/seleccionarla

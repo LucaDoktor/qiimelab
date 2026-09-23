@@ -121,11 +121,20 @@ console.log('\n--- drawSignificanceBrackets: sin label usa formatPStyled (estilo
   check('p=0.002 sin label → "**" (estilo GraphPad por defecto: ≤0.01, no ≤0.001)', text.textContent === '**');
 }
 
-console.log('\n--- Paso 2: drawGroupBoxplot/drawGroupStripPlot con 2 grupos usa Mann-Whitney directo ---');
+console.log('\n--- Paso 2: drawGroupBoxplot/drawGroupStripPlot con 2 grupos no normales usa Mann-Whitney ---');
+// Desde el prompt "quick wins" del 22 sep 2026 (punto 2, motor de auto-
+// selección en js/lib/statAutoSelect.js), qué test usar con exactamente 2
+// grupos ya NO es un Mann-Whitney fijo: lo decide recommendTest() según
+// normalidad (Shapiro-Wilk) y homogeneidad de varianzas (Levene) de CADA
+// caso -- Mann-Whitney sigue siendo el resultado natural cuando (como
+// aquí) al menos un grupo no pasa Shapiro-Wilk, así que la fórmula de este
+// test sigue siendo válida, solo que ahora el fixture tiene que ser
+// claramente no-normal a propósito para forzar esa rama (antes daba igual
+// la forma de los datos, el test era siempre Mann-Whitney).
 {
   const { drawGroupBoxplot, drawGroupStripPlot } = await import('../js/lib/groupBoxplot.js');
   const groupNames = ['A', 'B'];
-  const groupData = { A: [1, 2, 3, 4, 5], B: [10, 11, 12, 13, 14] }; // separación total
+  const groupData = { A: [1, 1, 1, 1, 1, 2], B: [10, 11, 12, 13, 14, 15] }; // A claramente no normal (Shapiro-Wilk p~2e-5) -> mannwhitney, y con separación total (p de MW significativo, se dibuja el corchete)
   const chartWrap = document.createElement('div');
   const tooltip = document.createElement('div');
   const expectedMw = mannWhitneyU(groupData.A, groupData.B);
@@ -138,12 +147,13 @@ console.log('\n--- Paso 2: drawGroupBoxplot/drawGroupStripPlot con 2 grupos usa 
     });
     check(name + ': sigue calculando Kruskal-Wallis (informativo, para el cuadro de estadística)', kw && isFinite(kw.p));
     check(name + ': statsControls.hasMultiGroup es false con 2 grupos', statsControls.hasMultiGroup === false);
+    check(name + ': el diagnóstico recomienda mannwhitney para este fixture no normal', statsControls.testChoice === 'mannwhitney', statsControls.testChoice);
 
     const sigG = findAll(svg, (e) => e.getAttribute && e.getAttribute('data-ce') === 'sig')[0];
     const text = sigG && findAll(sigG, (e) => e.tagName === 'text')[0];
     // por defecto: mode='stars+exact', style='gp' → "** (0.0079)", NO la
-    // frase de Kruskal-Wallis de antes de Paso 2 (el propio prompt pide
-    // Mann-Whitney directo con 2 grupos, no un post-hoc de un solo par).
+    // frase de Kruskal-Wallis de antes de Paso 2 (el corchete usa el test
+    // recomendado por el motor de auto-selección, Mann-Whitney en este caso).
     const expectedStars = expectedMw.p <= 0.0001 ? '****' : expectedMw.p <= 0.001 ? '***' : expectedMw.p <= 0.01 ? '**' : expectedMw.p <= 0.05 ? '*' : 'ns';
     const expectedText = expectedStars + ' (' + expectedMw.p.toFixed(4) + ')';
     check(name + ': el corchete usa el p de mannWhitneyU (no el de kruskalWallis)',
@@ -152,11 +162,11 @@ console.log('\n--- Paso 2: drawGroupBoxplot/drawGroupStripPlot con 2 grupos usa 
   });
 }
 
-console.log('\n--- Paso 2: con ≥3 grupos usa Dunn post-hoc + ajuste (holm por defecto) ---');
+console.log('\n--- Paso 2: con ≥3 grupos no normales usa Dunn post-hoc + ajuste (holm por defecto) ---');
 {
   const { drawGroupBoxplot } = await import('../js/lib/groupBoxplot.js');
   const groupNames = ['A', 'B', 'C'];
-  const groupData = { A: [1, 2, 2, 3, 4], B: [10, 11, 12, 13, 14], C: [1.5, 2.5, 2, 3.5, 3] }; // B muy distinto de A y C; A≈C
+  const groupData = { A: [1, 1, 1, 1, 15], B: [10, 11, 12, 13, 14], C: [1.5, 2.5, 2, 3.5, 3] }; // A claramente no normal (Shapiro-Wilk) -> kruskal-dunn; B muy distinto de A y C, A≈C
   const chartWrap = document.createElement('div');
   const tooltip = document.createElement('div');
   const expectedDunn = dunnTest(groupNames.map((g) => ({ label: g, values: groupData[g] })));
@@ -179,7 +189,7 @@ console.log('\n--- Paso 3: getStatsOptions persistidas cambian modo/estilo/umbra
 {
   const { drawGroupBoxplot } = await import('../js/lib/groupBoxplot.js');
   const groupNames = ['A', 'B', 'C'];
-  const groupData = { A: [1, 2, 2, 3, 4], B: [10, 11, 12, 13, 14], C: [1.5, 2.5, 2, 3.5, 3] };
+  const groupData = { A: [1, 1, 1, 1, 15], B: [10, 11, 12, 13, 14], C: [1.5, 2.5, 2, 3.5, 3] }; // A claramente no normal -> kruskal-dunn, igual que el bloque anterior
   const chartWrap = document.createElement('div');
   const tooltip = document.createElement('div');
   const key = 'test-custom-options';

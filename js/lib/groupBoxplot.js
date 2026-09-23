@@ -5,12 +5,13 @@
 // diferencial (vista cajas) — misma figura para no reescribirla tres veces.
 // Ver Paso 2 de qiimelab-prompt-editor-fase-1-anotaciones-estadisticas.md.
 
-import { kruskalWallis, quartiles } from './stats.js';
-import { mannWhitneyU, dunnTest } from './pairwiseStats.js';
+import { kruskalWallis, quartiles, oneWayAnova } from './stats.js';
+import { mannWhitneyU, studentT, welchT, dunnTest } from './pairwiseStats.js';
 import { svgEl } from './dom.js';
 import { showTooltip, hideTooltip } from './tooltip.js';
 import { drawSignificanceBrackets, countBracketRows } from './statAnnotations.js';
 import { getStatsOptions, getFigureOptions } from './chartEditor.js';
+import { recommendTest, welchAnova, tukeyHSD, gamesHowell } from './statAutoSelect.js';
 
 // paleta categórica por grupo — la misma en boxplot, curvas de rarefacción, etc.
 export const CAT_VARS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7'];
@@ -40,21 +41,38 @@ export function legendPositionLabel(id, lang) {
   return (dict[lang] || dict.es)[id] || id;
 }
 
-/** Comparaciones por pares: Mann-Whitney directo con exactamente 2 grupos
- *  (más simple que un post-hoc de Dunn con un solo par, y es lo que un
- *  usuario esperaría ver coincidir con un wilcox.test hecho a mano en R);
- *  Dunn post-hoc + el método de ajuste elegido con ≥3. `p` ya viene
- *  ajustado — drawSignificanceBrackets no vuelve a tocarlo. */
-function computeSignificancePairs(groupNames, groupData, method) {
+/** Comparaciones por pares -- qué test usar lo decide `recommendTest()`
+ *  (normalidad por Shapiro-Wilk + homogeneidad de varianzas por Levene/
+ *  Brown-Forsythe, prompt "quick wins" del 22 sep 2026, punto 2), salvo que
+ *  `testOverride` fuerce uno a mano. `p` ya viene ajustado donde aplica
+ *  (Dunn/Tukey/Games-Howell ya corrigen por comparaciones múltiples;
+ *  Student/Welch/Mann-Whitney con exactamente 2 grupos no tienen nada que
+ *  ajustar) -- drawSignificanceBrackets no vuelve a tocarlo.
+ *  @returns {{ sigPairs: Array, diagnostic: object, testChoice: string }} */
+function computeSignificancePairs(groupNames, groupData, method, testOverride) {
+  const groups = groupNames.map((g) => groupData[g]);
+  const diagnostic = recommendTest(groups);
+  const testChoice = (testOverride && testOverride !== 'auto') ? testOverride : diagnostic.recommended;
+
+  let sigPairs = [];
   if (groupNames.length === 2) {
-    const mw = mannWhitneyU(groupData[groupNames[0]], groupData[groupNames[1]]);
-    return [{ i: 0, j: 1, p: mw.p }];
+    const [x, y] = groups;
+    if (testChoice === 'student') sigPairs = [{ i: 0, j: 1, p: studentT(x, y).p }];
+    else if (testChoice === 'welch') sigPairs = [{ i: 0, j: 1, p: welchT(x, y).p }];
+    else sigPairs = [{ i: 0, j: 1, p: mannWhitneyU(x, y).p }]; // 'mannwhitney' o cualquier valor inesperado -> el default seguro de siempre
+  } else if (groupNames.length >= 3) {
+    if (testChoice === 'anova-tukey') {
+      const th = tukeyHSD(groups);
+      sigPairs = th.error ? [] : th.pairwise.map((c) => ({ i: c.i, j: c.j, p: c.p }));
+    } else if (testChoice === 'welch-anova-gh') {
+      const gh = gamesHowell(groups);
+      sigPairs = gh.error ? [] : gh.pairwise.map((c) => ({ i: c.i, j: c.j, p: c.p }));
+    } else {
+      const dt = dunnTest(groupNames.map((g) => ({ label: g, values: groupData[g] })));
+      sigPairs = dt.comparisons.map((c) => ({ i: groupNames.indexOf(c.a), j: groupNames.indexOf(c.b), p: c.adj[method] }));
+    }
   }
-  if (groupNames.length >= 3) {
-    const dt = dunnTest(groupNames.map((g) => ({ label: g, values: groupData[g] })));
-    return dt.comparisons.map((c) => ({ i: groupNames.indexOf(c.a), j: groupNames.indexOf(c.b), p: c.adj[method] }));
-  }
-  return [];
+  return { sigPairs, diagnostic, testChoice };
 }
 
 /** Orden de categorías (Paso 2/G4 de qiimelab-prompt-editor-fase-4-ejes-
@@ -94,14 +112,16 @@ function computeGroupStats(groupNames, groupData, key) {
   const style = statsOpts.style || 'gp';
   const threshold = statsOpts.threshold != null ? statsOpts.threshold : 0.05;
   const method = statsOpts.method || 'holm';
-  const sigPairs = computeSignificancePairs(groupNames, groupData, method);
+  const { sigPairs, diagnostic, testChoice } = groupNames.length >= 2
+    ? computeSignificancePairs(groupNames, groupData, method, statsOpts.testOverride)
+    : { sigPairs: [], diagnostic: null, testChoice: null };
 
   const marginL = 52, slotW = 140, rowHeight = 26;
   const xPositions = groupNames.map((_, gi) => marginL + slotW * gi + slotW / 2);
   const bracketRows = countBracketRows(sigPairs, xPositions, threshold);
   const marginT = bracketRows ? 44 + (bracketRows - 1) * rowHeight + 24 : 44;
 
-  return { kw, sigPairs, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions };
+  return { kw, sigPairs, diagnostic, testChoice, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions };
 }
 
 /**
@@ -137,7 +157,7 @@ export function drawGroupBoxplot(o) {
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  const { kw, sigPairs, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions } =
+  const { kw, sigPairs, diagnostic, testChoice, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions } =
     computeGroupStats(groupNames, groupData, o.key);
 
   const legCols = groupNames.length > 5 ? 2 : 1;
@@ -208,8 +228,8 @@ export function drawGroupBoxplot(o) {
     vals.forEach((v) => {
       const jitter = (rnd() - 0.5) * boxW * 0.7;
       const c = svgEl('circle', {
-        cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', opacity: 0.75, stroke: 'var(--surface)', 'stroke-width': 1,
-        'data-ce-series-fill': seriesId,
+        cx: cx + jitter, cy: yScale(v), r: 3.2, fill: 'var(' + colorVar + ')', stroke: 'var(--surface)', 'stroke-width': 1,
+        'data-ce-series-fill': seriesId, class: 'ql-boxplot-point',
       });
       c.addEventListener('mouseenter', () => {
         showTooltip(chartWrap, cx + jitter, yScale(v), String(g), valueLabel + ': ' + v.toFixed(decimals), {
@@ -276,7 +296,7 @@ export function drawGroupBoxplot(o) {
   const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
 
   return {
-    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 },
+    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3, diagnostic, testChoice },
     // Paso 4/G4-G5-G6 (qiimelab-prompt-editor-fase-4-ejes-rejilla-leyenda-
     // lienzo.md): el módulo que llama solo tiene que repartir esto en su
     // attachChartEditor({ ...figureOptions, legendPositions: ... }) — no
@@ -327,7 +347,7 @@ export function drawGroupStripPlot(o) {
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  const { kw, sigPairs, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions } =
+  const { kw, sigPairs, diagnostic, testChoice, mode, style, threshold, rowHeight, marginT, marginL, slotW, xPositions } =
     computeGroupStats(groupNames, groupData, o.key);
 
   const legCols = groupNames.length > 5 ? 2 : 1;
@@ -445,7 +465,7 @@ export function drawGroupStripPlot(o) {
   const paletteSeries = groupNames.map((g, i) => ({ id: 's' + i, label: String(g) }));
 
   return {
-    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3 },
+    kw, W, H, ceElements, paletteSeries, statsControls: { hasMultiGroup: groupNames.length >= 3, diagnostic, testChoice },
     figureOptions: { axis: { domain: [vMin - pad, vMax + pad] }, categoryOrder: true, gridMinor: true },
     legendPositions: legendPresetPositions(legNaturalX, legNaturalY, { marginL, marginT, marginR, innerH, W, colW }),
   };
